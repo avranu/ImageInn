@@ -37,7 +37,21 @@ class FileService:
     def calculate_analytics(self):
         total_files = File.objects.count()
         total_duplicates = sum(file.duplicate_count for file in File.objects.all())
-        return {'total_files': total_files, 'total_duplicates': total_duplicates}
+        total_unique_files = total_files - total_duplicates
+        return {'total_files': total_files, 'total_duplicates': total_duplicates, 'total_unique_files': total_unique_files}
 
     def detect_corruption(self, file):
         return not file.exists() or self.checksum_changed(file)
+from rest_framework import serializers
+from dashboard.models import File
+
+class FileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = File
+        fields = ['path', 'checksum', 'duplicate_count', 'duplicates']
+
+from rest_framework import viewsets
+
+class FileViewSet(viewsets.ModelViewSet):
+    queryset = File.objects.all()
+    serializer_class = FileSerializer
