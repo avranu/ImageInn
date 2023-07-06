@@ -6,6 +6,7 @@ from django.urls import path, include, re_path
 from rest_framework import routers
 # App Imports
 from dashboard.services import SDViewSet
+from backend.dashboard.models import FileInfoViewSet, FileChecksumViewSet
 
 app_name = 'dashboard'
 
@@ -13,6 +14,8 @@ app_name = 'dashboard'
 routes = {
 	#'chart': api.ChartViewSet,
 	'sd': SDViewSet,
+	'file': FileInfoViewSet,
+	'file_checksum': FileChecksumViewSet,
 }
 # Use the default router to define endpoints
 router = routers.DefaultRouter()
