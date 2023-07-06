@@ -1,0 +1,100 @@
+# Generic Imports
+from __future__ import annotations
+from typing_extensions import Self
+import datetime
+# Django Imports
+from django.db import models
+from django.db.models import DO_NOTHING
+from django.utils.translation import gettext as _
+# Lib Imports
+from models import fields
+# App Imports
+from app.models import abstract
+
+class QuerySet(abstract.QuerySet):
+	'''
+	A custom QuerySet for this class which provides additional methods for filtering results
+	All classes in this module should return this queryset instead of the django default.
+	'''
+
+class Manager(abstract.Manager.from_queryset(QuerySet)):
+	'''
+	A custom query manager. This creates QuerySets and is used in all models interacting with the this app's db.
+	'''
+	def all(self) -> QuerySet:
+		return super().all()
+
+class {{ model_name }}(abstract.Model_NoIndex):
+	'''
+	The {{ model_name }} model represents the {{db_table|default('UNKNOWN TABLE NAME')|string}} table in the DB
+	'''
+
+{%- if fields is not none and fields|length > 0 %}
+	#
+	# Columns
+	#
+{%- for field_name, field_definition in fields.items() %}
+	{{ field_name }} = {{ field_definition }}
+{%- endfor %}
+{% endif %}
+
+{%- if foreign_keys is not none and foreign_keys|length > 0 %}
+	#
+	# Foreign Keys
+	#
+{%- for field_name, field_definition in foreign_keys.items() %}
+	{{ field_name }} = {{ field_definition }}
+{%- endfor %}
+{% endif %}
+	_database = '{{ database }}'
+	objects : Manager = Manager()
+
+	def __str__(self):
+		'''
+		Return a string representation of this object
+		'''
+		return "{{ model_name }} %d" % self.pk
+
+	class Meta(abstract.Model_NoIndex.Meta):
+		'''
+		Metadata details about the table
+		'''
+		# Tell django where to find the table (in this schema)
+		db_table = '{{ db_table|default('UNKNOWN_TABLE') }}'
+	{%- if verbose_name is defined %}
+		verbose_name = "{{ verbose_name|default(model_name) }}"
+	{%- endif -%}
+	{%- if verbose_name_plural is defined %}
+		verbose_name_plural = "{{verbose_name_plural|default(verbose_name ~ 's')}}"
+	{%- endif %}
+		managed = {{ managed|default('False') }}
+	{% if indexes is not none and indexes|length > 0 %}
+		"""
+		Indexes
+		"""
+		indexes = [
+	{%- for index in indexes %}
+			models.Index(fields=[{%- for column in index.columns %}"{{ column.name|default('ERR-UNKNOWN-COL-NAME') }}"{% if not loop.last %}, {% endif %}{%- endfor %}], name="{{ index.name }}"){% if not loop.last %},{% endif %}
+	{%- endfor %}
+		]
+	{% endif %}
+	{% if unique_constraints is not none and unique_constraints|length > 0 %}
+		"""
+		Unique Constraints
+		"""
+		unique_together = [
+		{%- for constraint in unique_constraints %}
+			({%- for field in constraint.fields %}"{{ field }}"{% if not loop.last %}, {% endif %}{%- endfor %}){% if not loop.last %},{% endif %}
+		{%- endfor %}
+	]
+	{% endif %}
+
+class {{ model_name }}Serializer(abstract.Serializer):
+
+    class Meta:
+        model = {{ model_name }}
+        fields = '__all__'
+
+class {{ model_name }}ViewSet(abstract.ViewSet):
+    queryset = {{ model_name }}.objects.all()
+    serializer_class = {{ model_name }}Serializer

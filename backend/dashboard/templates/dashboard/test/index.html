@@ -1,0 +1,10 @@
+{% extends "dashboard/classes/default.html" %}
+{% block content %}
+
+    <h1>Test:</h1>
+
+    {% for obj in test %}
+        <div>{{ obj.case_id }}</div>
+    {% endfor %}
+
+{% endblock %}

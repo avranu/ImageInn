@@ -1,0 +1,9 @@
+        <li>
+            <div class="collapsible-header">
+                <span class="material-symbols-outlined">
+                    {{ icon }}
+                </span> {{ label }}
+            </div>
+                        
+            {% include "dashboard/classes/pane.html" with url=url class="collapsible-body" only %}
+        </li>

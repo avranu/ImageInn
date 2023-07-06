@@ -1,0 +1,3 @@
+<div {% if id != None %}id="{{ id }}"{% endif %} class="pane{% if class != None %} {{ class }}{% endif %}" data-content="{{ url }}">
+    {% include "dashboard/classes/loading.html" with title=title|default:None %}
+</div>

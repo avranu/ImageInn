@@ -1,0 +1,20 @@
+  <div class="tab-container row">
+    <div class="col s12">
+      <ul class="tabs tabs-nav blue-grey lighten-5">
+        {% for tab in tabs %}
+            <li class="tab col">
+                <a href="#tab-{{ tab.id|default:forloop.counter }}">{{ tab.label|default:forloop.counter }}</a>
+            </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% for tab in tabs %}
+        {% if tab.url != None %}
+            {% include "dashboard/classes/pane.html" with url=tab.url id="tab-"|add:tab.id|default:forloop.counter class="col s12" %}
+        {% else %}
+            <div id="tab-{{ tab.id|default:forloop.counter }}" class="col s12">
+                {{ tab.html|default:"Empty" }}
+            </div>
+        {% endif %}
+    {% endfor %}
+  </div>

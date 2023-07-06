@@ -5,13 +5,14 @@ from django.urls import path, include, re_path
 # 3rd Party imports
 from rest_framework import routers
 # App Imports
-from dashboard.controllers import react
+from dashboard.services import SDViewSet
 
 app_name = 'dashboard'
 
 # Define all our REST API routes
 routes = {
 	#'chart': api.ChartViewSet,
+	'sd': SDViewSet,
 }
 # Use the default router to define endpoints
 router = routers.DefaultRouter()
@@ -24,8 +25,7 @@ for route, viewset in routes.items():
 
 urlpatterns = [
 	# ex: /api/
-	path('rest/', include(router.urls)),
+	path('api/', include(router.urls)),
 
-	# Send everything else to react.
-	re_path(r'^.*$', react.ReactController.as_view(), name="react"),
+	# Send everything else to... todo
 ]

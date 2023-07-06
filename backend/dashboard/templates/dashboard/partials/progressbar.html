@@ -1,0 +1,24 @@
+
+<div class='progress-wrapper'>
+<div id='progress-bar' class='progress-bar' style="background-color: #68a9ef; width: 0%;">&nbsp;</div>
+</div>
+<div id="progress-bar-message">Waiting for progress to start...</div>
+
+<h3 id="result-header" style="display:none">Result:</h3>
+<div id="celery-result"></div>
+
+<script type="text/javascript">
+	var progressUrl = "{% url 'celery_progress:task_status' task_id %}";
+
+	function parseResult(resultElement, result) {
+		jQuery('#result-header').show();
+		jQuery( resultElement ).append(result);
+	}
+
+	jQuery(function ($) {
+		CeleryProgressBar.initProgressBar(progressUrl, {
+				onResult: parseResult,
+			})
+	});
+
+</script>

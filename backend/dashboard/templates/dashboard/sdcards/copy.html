@@ -1,0 +1,10 @@
+{% extends "dashboard/classes/default.html" %}
+{% block content %}
+
+    {% if success %}
+    <p>The SD card has been successfully copied.</p>
+    {% else %}
+    <p>There was an error copying the SD card.</p>
+    {% endif %}
+
+{% endblock %}
