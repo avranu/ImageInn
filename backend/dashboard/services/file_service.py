@@ -28,9 +28,6 @@ class FileService:
             file.duplicate_count = duplicates.count() - 1
             file.save()
 
-    def file_exists(self, file):
-        return os.path.exists(file.path)
-
     def checksum_changed(self, file):
         return file.checksum != self.calculate_checksum(file.path)
 
@@ -43,4 +40,4 @@ class FileService:
         return {'total_files': total_files, 'total_duplicates': total_duplicates}
 
     def detect_corruption(self, file):
-        return not self.file_exists(file) or self.checksum_changed(file)
+        return not file.exists() or self.checksum_changed(file)
