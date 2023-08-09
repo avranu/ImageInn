@@ -1,0 +1,41 @@
+import os
+from datetime import datetime
+
+# Function to change the timestamp of a single file
+def change_timestamp(filename, new_year, new_month, new_day):
+    try:
+        # Get the current modified and created timestamps
+        modified_time = os.path.getmtime(filename)
+        created_time = os.path.getctime(filename)
+
+        # Convert to datetime objects
+        modified_dt = datetime.fromtimestamp(modified_time)
+        created_dt = datetime.fromtimestamp(created_time)
+
+        # Create new datetime objects with the desired year, month, and day
+        new_modified_dt = modified_dt.replace(year=new_year, month=new_month, day=new_day)
+        new_created_dt = created_dt.replace(year=new_year, month=new_month, day=new_day)
+
+        # Convert back to timestamps
+        new_modified_time = new_modified_dt.timestamp()
+        new_created_time = new_created_dt.timestamp()
+
+        # Update the file timestamps
+        os.utime(filename, (new_created_time, new_modified_time))
+        print(f"Timestamps updated for file: {filename}")
+    except Exception as e:
+        print(f"An error occurred while processing {filename}: {str(e)}")
+
+# Get the list of all files in the current directory
+files = [f for f in os.listdir() if os.path.isfile(f)]
+
+# Define the new year, month, and day
+new_year = 2023
+new_month = 7
+new_day = 21
+
+# Iterate through files and update the timestamps
+for filename in files:
+    change_timestamp(filename, new_year, new_month, new_day)
+
+print("Operation completed.")
