@@ -1,5 +1,6 @@
 import argparse
 import datetime
+from enum import Enum
 import errno
 import hashlib
 import math
@@ -18,6 +19,14 @@ logger = logging.getLogger(__name__)
 
 # The maximum number of times to retry a copy before giving up
 MAX_RETRIES = 3
+
+# An enum of copy operations (rsync, teracopy, etc)
+class CopyOperation(str, Enum):
+	"""
+	An enum of copy operations (rsync, teracopy, etc)
+	"""
+	RSYNC = 'rsync'
+	TERACOPY = 'teracopy'
 
 class SDDirectory:
 	"""
@@ -38,12 +47,24 @@ class SDDirectory:
 		self.num_files = num_files
 		self.num_dirs = num_dirs
 
-class SDCards:
-	"""
-	Allows us to interact with sd cards mounted to the server this code is running on.
-	"""
+class SDCard:
+	_path : str
 
-	def get_media_dir(self) -> str:
+	def __init__(self, path: str):
+		self.path = path
+
+	@property
+	def path(self) -> str:
+		return self._path
+	
+	@path.setter
+	def path(self, value: str):
+		# Ensure a trailing slash
+		self._path = os.path.join(value, '')
+
+
+	@classmethod
+	def get_media_dir(cls) -> str:
 		"""
 		Get the media directory for the current operating system.
 		
@@ -54,8 +75,7 @@ class SDCards:
 			FileNotFoundError: If the media directory does not exist.
 			
 			Examples:
-				>>> sd_cards = SDCards()
-				>>> sd_cards.get_media_dir()
+				>>> SDCards.get_media_dir()
 				'/media'
 		"""
 		# Windows
@@ -87,7 +107,8 @@ class SDCards:
 		# Unsupported
 		raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), '/media')
 	
-	def sd_contains_photos(self, sd_path: str, raise_errors : bool = True) -> bool:
+	@classmethod
+	def sd_contains_photos(cls, sd_path: str, raise_errors : bool = True) -> bool:
 		"""
 		Determines if the SD card is structured in the way we expect to contain DSLR photos.
 		
@@ -104,18 +125,58 @@ class SDCards:
 			FileNotFoundError: If the SD card does not exist and the raise_errors parameter is True.
 			
 		Examples:
-			>>> sd_cards = SDCards()
-			>>> sd_cards.sd_contains_photos('/media/SD_CARD')
+			>>> SDCards.sd_contains_photos('/media/SD_CARD')
 			True
 		"""
-		if not self.is_path_valid(sd_path):
+		if not cls.is_path_valid(sd_path):
 			if raise_errors:
 				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), sd_path)
 			return False
 		
-		return self.is_path_valid(os.path.join(sd_path, 'DCIM'))
+		return cls.is_path_valid(os.path.join(sd_path, 'DCIM'))
 			
-	def is_path_valid(self, path: str) -> bool:
+
+class Workflow:
+	"""
+	Allows us to interact with sd cards mounted to the server this code is running on.
+	"""
+	_raw_path: str
+	_jpg_path: str
+	_backup_path: str
+	_sd_card : SDCard
+
+	def __init__(self, raw_path : str, jpg_path : str, backup_path : str, sd_card : Optional[str | SDCard] = None):
+		"""
+		Args:
+			raw_path (str): 
+				The path to the network location to copy raw files from the SD Card to. 
+				NOTE: This destination should be a "Photography" directory, where the files will be organized and renamed.
+			jpg_path (str):
+				The path to the network location to copy jpg files from the SD Card to.
+			backup_path (str): 
+				The path to the backup network location to copy the SD card to.
+				This destination should be a "backup" directory, where the SD card will be copied exactly as-is.
+			sd_card (str | None): 
+				The SDCard (or a path to an SD card) to copy. Defaults to attempting to find the SD card automatically.
+		"""
+		self.raw_path = raw_path
+		self.jpg_path = jpg_path
+		self.backup_path = backup_path
+
+		# If no sd_path is provided, try to find it
+		if sd_card is None:
+			self.sd_path = self.get_media_dir()
+		else:
+			self.sd_path = sd_path
+
+		# Ensure all paths have a trailing slash at the end
+		self.sd_path = os.path.join(self.sd_path, '')
+		self.raw_path = os.path.join(self.raw_path, '')
+		self.jpg_path = os.path.join(self.jpg_path, '')
+		self.backup_path = os.path.join(self.backup_path, '')
+
+	@classmethod
+	def is_path_valid(cls, path: str) -> bool:
 		"""
 		Check if the given path exists and is a directory.
 		"""
@@ -129,7 +190,8 @@ class SDCards:
 
 		return True
 
-	def is_path_writable(self, path: str) -> bool:
+	@classmethod
+	def is_path_writable(cls, path: str) -> bool:
 		"""
 		Check if the given path is writable.
 		"""
@@ -139,7 +201,8 @@ class SDCards:
 
 		return True
 
-	def calculate_checksums(self, base_path: str) -> dict[str, str]:
+	@classmethod
+	def calculate_checksums(cls, base_path: str) -> dict[str, str]:
 		"""
 		Calculate checksums for all files under the given base_path.
 
@@ -153,14 +216,13 @@ class SDCards:
 			FileNotFoundError: If the base_path does not exist.
 
 		Examples:
-			>>> sd_cards = SDCards()
-			>>> sd_cards.calculate_checksums('/media/SD_CARD')
+			>>> SDCards.calculate_checksums('/media/SD_CARD')
 			{
 				'/media/SD_CARD/DCIM/100CANON/IMG_0001.JPG': 'a1b2c3d4e5f6...',
 				'/media/SD_CARD/DCIM/100CANON/IMG_0002.JPG': 'dbb2s3dbe5d2...',
 			}
 		"""
-		if not self.is_path_valid(base_path):
+		if not cls.is_path_valid(base_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), base_path)
 
 		checksums = {}
@@ -168,13 +230,14 @@ class SDCards:
 			for file in files:
 				file_path = os.path.join(root, file)
 				if os.path.isfile(file_path) and os.access(file_path, os.R_OK):
-					checksums[file_path] = self.calculate_single_checksum(file_path)
+					checksums[file_path] = self.calculate_checksum(file_path)
 				else:
 					logger.error(f'File not accessible: {file_path}')
 
 		return checksums
 	
-	def calculate_single_checksum(self, file_path: str) -> str:
+	@classmethod
+	def calculate_checksum(cls, file_path: str) -> str:
 		"""
 		Calculate the checksum for a single file.
 		
@@ -188,8 +251,7 @@ class SDCards:
 			FileNotFoundError: If the file does not exist.
 			
 		Examples:
-			>>> sd_cards = SDCards()
-			>>> sd_cards.calculate_single_checksum('/media/SD_CARD/DCIM/100CANON/IMG_0001.JPG')
+			>>> SDCards.calculate_checksum('/media/SD_CARD/DCIM/100CANON/IMG_0001.JPG')
 			'f3b4...
 		"""
 		with open(file_path, 'rb') as afile:
@@ -197,8 +259,9 @@ class SDCards:
 			for buf in iter(lambda: afile.read(4096), b""):
 				hasher.update(buf)
 			return hasher.hexdigest()
-			
-	def get_list(self, media_path : Optional[str] = None) -> list[SDDirectory]:
+	
+	@classmethod
+	def get_list(cls, media_path : Optional[str] = None) -> list[SDDirectory]:
 		"""
 		Get all SD cards mounted to the server this code is running on.
 		
@@ -217,10 +280,10 @@ class SDCards:
 		"""
 		# Handle multiple operating systems
 		if not media_path:
-			media_path = self.get_media_dir()
+			media_path = cls.get_media_dir()
 
 		# Ensure the path exists
-		if not self.check_sd_path(media_path):
+		if not cls.ensure_path(media_path):
 			return []
 
 		sd_cards = []
@@ -231,8 +294,35 @@ class SDCards:
 			sd_cards.append(sd_directory)
 
 		return sd_cards
+	
+	def get_info(self) -> SDDirectory:
+		"""
+		Get info about the SD card at this card's path.
+		
+		This includes the total size, used space, and free space, number of files, etc.
 
-	def get_info(self, sd_card_path : Optional[str] = None) -> SDDirectory:
+		Returns:
+			SDDirectory: An object containing info about the SD card.
+
+		Raises:
+			FileNotFoundError: If the SD card does not exist.
+
+		Examples:
+			>>> card = SDCards()
+			>>> card.get_sd_card('/media/pi/SD')
+			SDDirectory {
+				'path': '/media/pi/SD',
+				'total': 32000000000,
+				'used': 10000000000,
+				'free': 22000000000,
+				'num_files': 100,
+				'num_dirs': 10
+			}
+		"""
+		return self.get_info_for(self.sd_path)
+
+	@classmethod
+	def get_info_for(cls, sd_card_path : Optional[str] = None) -> SDDirectory:
 		"""
 		Get info about the SD card at the given path. 
 		
@@ -248,8 +338,7 @@ class SDCards:
 			FileNotFoundError: If the SD card does not exist.
 
 		Examples:
-			>>> sd_cards = SDCards()
-			>>> sd_cards.get_sd_card('/media/pi/SD')
+			>>> SDCards.get_sd_card('/media/pi/SD')
 			SDDirectory {
 				'path': '/media/pi/SD',
 				'total': 32000000000,
@@ -260,10 +349,10 @@ class SDCards:
 			}
 		"""
 		if not sd_card_path:
-			sd_card_path = self.get_media_dir()
+			sd_card_path = cls.get_media_dir()
 
 		# Ensure the path exists
-		if not self.check_sd_path(sd_card_path):
+		if not cls.ensure_path(sd_card_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), sd_card_path)
 		
 		# Get the total size of the SD card
@@ -285,7 +374,8 @@ class SDCards:
 			num_dirs = num_dirs
 		)
 	
-	def calculate_checksum(self, file_path : str) -> str:
+	@classmethod
+	def calculate_checksum(cls, file_path : str) -> str:
 		"""
 		Calculate the checksum of the given file.
 		
@@ -321,7 +411,8 @@ class SDCards:
 		
 		return result
 	
-	def check_sd_path(self, sd_card_path : Optional[str] = None) -> bool:
+	@classmethod
+	def ensure_path(cls, path : Optional[str] = None) -> bool:
 		"""
 		Ensure the given path is a valid SD card path.
 
@@ -331,56 +422,46 @@ class SDCards:
 		Returns:
 			bool: True if the path is valid, False otherwise.
 		"""
-		if not sd_card_path:
-			sd_card_path = self.get_media_dir()
+		if not path:
+			path = cls.get_media_dir()
 
 		# Ensure the path exists
-		if not os.path.exists(sd_card_path):
-			logger.error(f'The SD card path does not exist: {sd_card_path}')
+		if not os.path.exists(path):
+			logger.error(f'The SD card path does not exist: {path}')
 			return False
 		
 		# Ensure the path is a directory
-		if not os.path.isdir(sd_card_path):
-			logger.error(f'The SD card path is not a directory: {sd_card_path}')
+		if not os.path.isdir(path):
+			logger.error(f'The SD card path is not a directory: {path}')
 			return False
 		
 		return True
 	
-	def copy_sd_card(self, sd_card_path: str, network_path: str, backup_network_path: str) -> bool:
+	def copy(self, operation : CopyOperation = CopyOperation.TERACOPY) -> bool:
 		"""
-		Use rsync to copy the SD card to 2 separate network locations, and verify checksums after copy.
+		Copy the SD card to several different network locations, and verify checksums after copy.
 
 		Args:
-			sd_card_path (str): 
-				The path to the SD card to copy.
-			network_path (str): 
-				The path to the network location to copy the SD card to. 
-				NOTE: This destination should be a "Photography" directory, where the files will be organized and renamed.
-			backup_network_path (str): 
-				The path to the backup network location to copy the SD card to.
-				This destination should be a "backup" directory, where the SD card will be copied exactly as-is.
+			operation (CopyOperation):
+				The copy operation to use. Defaults to Teracopy.
 
 		Returns:
 			bool: True if the copy was successful, False otherwise.
 
 		Examples:
-			>>> copy_sd_card('/media/pi/SD_CARD', '/mnt/photography', '/mnt/backup')
+			>>> card = SDCards('/media/pi/SD', '/media/pi/Network', '/media/pi/Backup')
+			>>> card.copy()
 			True
 		"""
 		logger.info('Copying sd card...')
 		errors : list[str] = []
 
-		# Ensure all paths have a trailing slash at the end
-		sd_card_path = os.path.join(sd_card_path, '')
-		network_path = os.path.join(network_path, '')
-		backup_network_path = os.path.join(backup_network_path, '')
-
 		# Check if paths are valid and writable
-		if not all(map(self.is_path_valid, [sd_card_path, network_path, backup_network_path])):
-			logger.critical('One or more paths are invalid')
+		if not all(map(self.is_path_valid, [self.sd_path, network_path, backup_network_path])):
+			logger.error('One or more paths are invalid')
 			return False
 		if not all(map(self.is_path_writable, [network_path, backup_network_path])):
-			logger.critical('One or more paths are not writable')
+			logger.error('One or more paths are not writable')
 			return False
 		
 		# Ensure a subdirectory exists for a temporary storage location
@@ -388,59 +469,94 @@ class SDCards:
 		if not os.path.exists(temp_path):
 			os.makedirs(temp_path, exist_ok=True)
 		if not self.is_path_writable(temp_path):
-			logger.critical(f'Unable to write to temporary storage location: {temp_path}')
+			logger.error(f'Unable to write to temporary storage location: {temp_path}')
 			return False
 
 		# Calculate checksums before transferring anything
-		checksums_before = self.calculate_checksums(sd_card_path)
+		checksums_before = self.calculate_checksums(self.sd_path)
 
-		# Perform the backup first, using rsync.
-		if not self.perform_rsync(sd_card_path, backup_network_path):
-			logger.critical('Rsync Backup failed')
-			errors.append('Rsync Backup failed')
-			# Ask user if they want to continue
-			if not self.ask_user_continue(errors):
-				logger.critical('User chose to abort')
-				return False
+		# Create a list of files that need to be copied
+		(list_path, files_to_copy, skipped, mismatched) = self.create_filelist(self.sd_path, network_path, backup_network_path)
 
-		# Validate checksums after rsync
-		elif not self.validate_checksums(checksums_before, backup_network_path):
-			logger.critical('Checksum validation failed on backup')
-			errors.append('Checksum validation failed on backup')
-			# Ask user if they want to continue
-			if not self.ask_user_continue(errors):
-				logger.critical('User chose to abort')
-				return False
-		
-		# Perform the copy to the photography directory, using teracopy.
-		if not self.perform_teracopy(sd_card_path, temp_path):
-			logger.critical('TeraCopy failed')
-			errors.append('TeraCopy failed')
-			# Ask user if they want to continue
-			if not self.ask_user_continue(errors):
-				logger.critical('User chose to abort')
-				return False
+		if files_to_copy:
+			# Perform the backup first
+			if not self.perform_copy_from_list(list_path, backup_network_path, checksums_before, operation):
+				errors.append(f'Copy operation failed to {backup_network_path}')
 			
-		# Organize the files that teracopy created
-		results = self.organize_files(temp_path, network_path)
+			# Perform the copy to the photography directory
+			if not self.perform_copy_from_list(list_path, temp_path, checksums_before, operation):
+				errors.append(f'Copy operation failed to {temp_path}')
+				
+			# Organize the files that were created
+			results = self.organize_files(temp_path, network_path)
+			if not results:
+				logger.error('Failed to organize files, cannot continue')
+				logger.critical('The system state may be inconsistent or unexpected. Please verify all files are in the correct location.')
+				return False
 
-		# Map the temp_paths in results to the original sd_card paths
-		files = {}
-		for temp_file, network_file in results.items():
-			filename = os.path.basename(temp_file)
-			filepath = os.path.join(sd_card_path, filename)
-			files[filepath] = network_file
-		
-		# Validate checksums after teracopy
-		if not self.validate_checksum_list(checksums_before, files):
-			logger.critical('Checksum validation failed on teracopy')
-			errors.append('Checksum validation failed on teracopy')
+			# Map the temp_paths in results to the original sd_card paths
+			files = {}
+			for temp_file, network_file in results.items():
+				filename = os.path.basename(temp_file)
+				filepath = os.path.join(self.sd_path, filename)
+				files[filepath] = network_file
+			
+			# Validate checksums after teracopy
+			if not self.validate_checksum_list(checksums_before, files):
+				logger.critical('Checksum validation failed on operation %s', operation)
+				errors.append('Checksum validation failed on operation %s' % operation)
 
 		if len(errors) > 0:
 			logger.critical('Copy failed due to previous errors.')
 			return False
 
 		return True
+	
+	def perform_copy_from_list(self, list_path : str, destination_path: str, checksums_before : dict[str, str], operation : CopyOperation = CopyOperation.TERACOPY) -> bool:
+		"""
+		Perform a copy from a list of files to a destination using an arbitrary method, and verify checksums.
+		
+		This method exists to allow us to swap out different copy methods without changing the main logic.
+		
+		Args:
+			list_path (str): The path to the list of files to copy.
+			destination_path (str): The path to the destination directory to copy to.
+			checksums_before (dict[str, str]): The checksums of the files before the copy.
+			operation (CopyOperation): The copy operation to use. Defaults to Teracopy.
+			
+		Raises:
+			KeyboardInterrupt: If errors occur during copy and the user chooses to abort.
+			FileNotFoundError: If either path does not exist.
+			ValueError: If an invalid copy operation is specified.
+
+		Returns:
+			bool: True if the copy was successful without any errors, False otherwise.
+		"""
+		success = True
+
+		# Figure out which copy operation to use
+		if operation == CopyOperation.TERACOPY:
+			perform_copy = self.perform_teracopy_from_list
+		elif operation == CopyOperation.RSYNC:
+			raise NotImplementedError('Rsync is not yet implemented for file lists')
+		else:
+			raise ValueError('Invalid copy operation specified')
+
+		# Perform the backup first
+		if not perform_copy(list_path, destination_path):
+			logger.critical('Perform copy failed for %s', destination_path)
+			# Ask user if they want to continue
+			self.ask_user_continue('Copy failed')
+			success = False
+
+		# Validate checksums after copy
+		if not self.validate_checksums(checksums_before, destination_path):
+			logger.critical('Checksum validation failed for %s', destination_path)
+			# Ask user if they want to continue
+			self.ask_user_continue('Checksum validation failed')
+			success = False
+
+		return success
 
 	def perform_rsync(self, source_path: str, destination_path: str) -> bool:
 		"""
@@ -475,19 +591,145 @@ class SDCards:
 		Returns:
 			bool: True if the copy was successful, False otherwise.
 		"""
-		# Check if the teracopy.exe executable exists, otherwise default to rsync with a warning
-		if not os.path.exists('teracopy.exe'):
-			logger.warning('teracopy.exe not found, defaulting to rsync')
-			return self.perform_rsync(source_path, destination_path)
-
 		try:
-			subprocess.check_call(['teracopy.exe', '/Copy', '/Verify', '/Close', '/SkipAll', '/NoConfirm', source_path, destination_path])
+			subprocess.check_call(['teracopy.exe', 'Copy', source_path, destination_path, '/NoClose', '/RenameAll'])
 		except subprocess.CalledProcessError as e:
-			logger.error(f'Copy to {destination_path} failed with error code {e.returncode}')
+			logger.error(f'Teracopy to {destination_path} failed with error code {e.returncode}')
 			return False
 
 		return True
 	
+	def perform_teracopy_from_list(self, list_path : str, destination_path: str) -> bool:
+		"""
+		Use teracopy to copy files using a list of file paths to the destination directory and verify checksums.
+
+		Args:
+			list_path (str): The path to the list of files to copy.
+			destination_path (str): The path to the destination directory to copy to.
+
+		Returns:
+			bool: True if the copy was successful, False otherwise.
+		"""
+		if not os.path.exists(list_path):
+			raise FileNotFoundError(f'File list {list_path} does not exist')
+		
+		try:
+			subprocess.check_call(['teracopy.exe', 'Copy', f'*"{list_path}"', destination_path, '/NoClose', '/SkipAll'])
+		except subprocess.CalledProcessError as e:
+			logger.error(f'Teracopy to {destination_path} failed with error code {e.returncode}')
+			return False
+
+		return True
+	
+	def create_filelist(self, source_path: str, destination_path : str, backup_path : str, list_path : Optional[str] = None, file_extension : Optional[str] = '*') -> tuple[str, list[str], list[str], dict[str, str]]:
+		"""
+		Generates a list of files in the source path which are not present in either the destination path or backup path.
+
+		When files are present in the destination or backup path, checksums are verified to ensure they are identical.
+
+		NOTE: It is assumed that files in the destination_path are named and organized via generate_name and generate_path.
+
+		Args:
+			source_path (str): The path to the source directory to copy.
+			destination_path (str): The path to the destination directory to copy to.
+			backup_path (str): The path to the backup directory to copy to.
+			list_path (str): A path to the list file we wish to write. It will be created if it does not exist.
+			file_extension (str): The file extension to use when generating the list of files. Defaults to all files (*).
+
+		Raises:
+			KeyboardInterrupt: If the conflicting files exist and the user chooses to abort the program.
+			FileNotFoundError: If one of the paths provided does not exist.
+			
+		Returns:
+			tuple[str, list[str], list[str], dict[str, str]]: A tuple containing the list_path, a list of files to copy, a list of files skipped, and a dictionary of mismatched files.
+		"""
+		if not all([os.path.exists(path) for path in [source_path, destination_path, backup_path]]):
+			logger.info('One or more of the paths provided does not exist: "%s", "%s", "%s"', source_path, destination_path, backup_path)
+			raise FileNotFoundError('One or more of the paths provided does not exist.')
+
+		# Find all files in the source_path, including all subdirectories
+		# [ (source_path, destination_path, backup_path), ...]
+		files : list[tuple[str, str, str]] = []
+		for root, _, filenames in os.walk(source_path):
+			for filename in filenames:
+				if file_extension == '*' or filename.endswith(file_extension):
+					files.append( (
+						os.path.join(root, filename),
+						self.generate_path(os.path.join(root, filename), destination_path),
+						os.path.join(backup_path, filename)
+					) )
+		logger.debug('Found %d files in source_path', len(files))
+
+		# Find all files in the destination_path, including all subdirectories
+		destination_files = []
+		for root, _, filenames in os.walk(destination_path):
+			for filename in filenames:
+				destination_files.append(os.path.join(root, filename))
+		logger.debug('Found %d files in destination_path', len(destination_files))
+
+		# Find all files in the backup_path, including all subdirectories
+		backup_files = []
+		for root, _, filenames in os.walk(backup_path):
+			for filename in filenames:
+				backup_files.append(os.path.join(root, filename))
+		logger.debug('Found %d files in backup_path', len(backup_files))
+
+		# Default list_path to import_list_YMDHMS.txt
+		if list_path is None:
+			now = datetime.datetime.now()
+			list_path = f'import_list_{now.strftime("%Y%m%d%H%M%S")}.txt'
+
+		# Create the list file
+		queue : list[str] = []
+		skipped : list[str] = []
+		mismatches : dict[str, str] = {}
+		if os.path.exists(list_path):
+			logger.warning('List file already exists, overwriting')
+			
+		with open(list_path, 'w') as f:
+			for source_file, destination_file, backup_file in files:
+				in_dest = False
+				in_backup = False
+
+				# If the file is in the destination_path, verify the checksums match
+				if destination_file in destination_files:
+					if not self.compare_checksums(source_file, destination_file):
+						logger.warning(f'Checksum mismatch for {source_file} and {destination_file}')
+						mismatches[source_file] = destination_file
+					else:
+						in_dest = True
+
+				# If the file is in the backup_path, verify the checksums match
+				if backup_file in backup_files:
+					if not self.compare_checksums(source_file, backup_file):
+						logger.warning(f'Checksum mismatch for {source_file} and {backup_file}')
+						mismatches[source_file] = backup_file
+					else:
+						in_backup = True
+
+				# Skip files that are everywhere we want to copy them.
+				if in_dest and in_backup:
+					logger.debug(f'Skipping {source_file} because it is in both the destination and backup paths')
+					skipped.append(source_file)
+					continue
+
+				# Write the source_file to the list file
+				queue.append(source_file)
+				f.write(source_file + '\n')
+		
+		to_copy = len(queue)
+		to_skip = len(skipped)
+		mismatch_count = len(mismatches.keys())
+		logger.info(f'List created. ({to_copy} to copy, {to_skip} to skip, {mismatch_count} mismatches)')
+		'''
+		if len(mismatches) > 0:
+			logger.critical('Checksum mismatches were found %s', message)
+			errors = [f'{source_file} -> {destination_file}' for source_file, destination_file in mismatches.items()]
+			self.ask_user_continue(f'WARNING: Checksum mismatches were found {message}:', errors)
+		'''
+
+		return (list_path, queue, skipped, mismatches)
+		
 	def organize_files(self, source_path: str, destination_path: str) -> dict[str, str]:
 		"""
 		Organize files into folders by date, and rename them based on their attributes.
@@ -501,6 +743,11 @@ class SDCards:
 			dict[str, str]: A dictionary of the original file paths to the new file paths.
 		"""
 		results = {}
+
+		# Verify the paths exist
+		if not all([os.path.exists(path) for path in [source_path, destination_path]]):
+			logger.info('One or more of the paths provided does not exist: "%s", "%s"', source_path, destination_path)
+			raise FileNotFoundError('One or more of the paths provided does not exist.')
 
 		# Find all files in the source_path, including all subdirectories
 		files = []
@@ -518,15 +765,47 @@ class SDCards:
 
 			# Do not clobber existing files
 			if os.path.exists(new_file_path):
-				logger.error(f'File already exists: {new_file_path}')
-				results[file_path] = None
-				continue
+				# Compare checksums
+				if self.compare_checksums(file_path, new_file_path):
+					logger.debug('File already exists with the same content, skipping...')
+					results[file_path] = new_file_path
+					continue
+
+				# If checksums don't match, we want to keep both copies. Try appending to the name until we have a unique name.
+				logger.warning('File already exists, but checksums mismatch. Keeping both files.')
+				mismatched_file_path = new_file_path
+				for i in range(1, 1000):
+					new_file_path = f'{mismatched_file_path} ({i})'
+					if not os.path.exists(new_file_path):
+						break
+				
+				# If we couldn't find a unique name, skip the file
+				if os.path.exists(new_file_path):
+					logger.critical(f'Could not find a unique name for {file_path}')
+					self.ask_user_continue(f'Checksums mismatch for {file_path}, and cannot create a unique name for it.')
+					results[file_path] = None
+					continue
 
 			# Rename the file
 			os.rename(file_path, new_file_path)
 			results[file_path] = new_file_path
 
 		return results
+	
+	def compare_checksums(self, source_file : str, destination_file : str) -> bool:
+		"""
+		Compare the checksums of two files.
+
+		Args:
+			source_file (str): The path to the source file to compare.
+			destination_file (str): The path to the destination file to compare.
+
+		Returns:
+			bool: True if the checksums match, False otherwise.
+		"""
+		source_checksum = self.calculate_checksum(source_file)
+		destination_checksum = self.calculate_checksum(destination_file)
+		return source_checksum == destination_checksum
 
 	def validate_checksums(self, checksums_before: dict[str, str], destination_path: str) -> bool:
 		"""
@@ -572,12 +851,14 @@ class SDCards:
 			bool: True if the checksums were valid, False otherwise.
 		"""
 		mismatches = 0
-		logger.critical('Checksums before copying: %s', checksums_before)
-		logger.critical('FILES: %s', files)
 
 		# Loop over each file that was copied
 		for source_file_path, destination_file_path in files.items():
-			logger.critical('Searching for checksum for %s', source_file_path)
+			if source_file_path is None or destination_file_path is None:
+				logger.critical(f'File path is None: {source_file_path} -> {destination_file_path}')
+				mismatches += 1
+				continue
+
 			# Get the checksum before copying
 			checksum_before = checksums_before.get(source_file_path)
 			if checksum_before is None:
@@ -585,16 +866,11 @@ class SDCards:
 				mismatches += 1
 				continue
 
-			logger.critical('File 1: %s', source_file_path)
-			logger.critical('File 2: %s', destination_file_path)
-
 			# Get the checksum after copying
 			checksum_after = self.calculate_checksum(destination_file_path)
-			logger.critical('Checksum 1: %s', checksum_before)
-			logger.critical('Checksum 2: %s', checksum_after)
 
 			if checksum_before == checksum_after:
-				logger.critical(f'Checksum match for {source_file_path}')
+				logger.debug(f'Checksum match for {source_file_path}')
 			else:
 				logger.critical(f'Checksum mismatch for {source_file_path}: {checksum_before} != {checksum_after}')
 				mismatches += 1
@@ -894,26 +1170,36 @@ class SDCards:
 
 		return path
 	
-	def ask_user_continue(self, errors : list) -> bool:
+	def ask_user_continue(self, message : str = f"Errors were found:", errors : Optional[list] = None, continue_message : str = "Continue to the next step? [y/n]", throw_error : bool = True) -> bool:
 		"""
 		Ask the user if they want to continue copying the SD card, given the errors that occurred, using the CLI.
 		
 		Args:
+			message (str, optional): The message to print to the user. Defaults to f"Errors were found:".
 			errors (list): The errors that occurred.
+			continue_message (str, optional): The message to print to the user to ask if they want to continue. Defaults to "Continue to the next step? [y/n]".
+			throw_error (bool, optional): Whether to throw an error if the user decides to abort. Defaults to True. If false, the function will return a bool.
 			
 		Returns:
 			bool: Whether the user wants to continue copying the SD card.
 		"""
+		if errors is None:
+			errors = []
+
 		# Print the errors
-		print('Errors were found: ')
+		print(message + ' ')
 		for error in errors:
 			print(error)
 
 		# Ask the user if they want to continue
-		choice = input('Continue to the next step? [y/n] ')
+		choice = input(continue_message + ' ')
 		if choice.lower() == 'y':
+			logger.info('User decided to continue.')
 			return True
 		else:
+			logger.info('User decided to abort.')
+			if throw_error:
+				raise KeyboardInterrupt('User decided to abort. Prompt was "%s"', message)
 			return False
 
 def main():
@@ -928,7 +1214,7 @@ def main():
 	args = parser.parse_args()
 
 	# Set up logging
-	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler()])
 
 	# Copy the SD card
 	copier = SDCards()
@@ -943,4 +1229,10 @@ def main():
 	sys.exit(1)
 
 if __name__ == '__main__':
-	main()
+	# Keep terminal open until script finishes and user presses enter
+	try:
+		main()
+	except KeyboardInterrupt:
+		pass
+
+	input('Press Enter to exit...')

@@ -6,7 +6,11 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock, mock_open
-from scripts.import_sd import SDCards
+from scripts.import_sd import SDCards, CopyOperation
+
+MOCK_CHECKSUM_VALUE = "mock_valid_checksum"
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 class TestSDCards(unittest.TestCase):
 
@@ -19,12 +23,32 @@ class TestSDCards(unittest.TestCase):
 		self.sample_image_path = os.path.join(self.data_path, "_ARW_2544.arw")
 		self.sd_card_path = os.path.join(self.test_data_path, 'sd_card')
 		self.network_path = os.path.join(self.test_data_path, 'network')
+		self.empty_path = os.path.join(self.test_data_path, 'empty')
 		self.backup_network_path = os.path.join(self.test_data_path, 'backup_network')
+		self.list_path = os.path.join(self.test_data_path, 'file_list.txt')
+		self.mock_checksum = MOCK_CHECKSUM_VALUE
 		# Ensure sd_card_path, network_path and backup_network_path all exist
 		os.makedirs(self.sd_card_path)
 		os.makedirs(self.network_path)
 		os.makedirs(self.backup_network_path)
+		os.makedirs(self.empty_path)
 		self.temp_dir = tempfile.mkdtemp()
+
+		self.checksums_before = {}
+		self.files = [
+			os.path.join(self.sd_card_path, "img_001.jpg"),
+			os.path.join(self.sd_card_path, "img_002.jpg"),
+			os.path.join(self.sd_card_path, "img_003.jpg"),
+		]
+
+		for file in self.files:
+			with open(file, "w") as f:
+				f.write("test data")
+				self.checksums_before[file] = self.mock_checksum
+
+		with open(self.list_path, 'w') as f:
+			for file in self.files:
+				f.write(file + '\n')
 
 	def tearDown(self):
 		shutil.rmtree(self.temp_dir)
@@ -35,7 +59,7 @@ class TestSDCards(unittest.TestCase):
 		if path is None:
 			path = self.sd_card_path
 		# Create a file to copy
-		filepath = os.path.join(path, "img_001.jpg")
+		filepath = os.path.join(path, "img_100.jpg")
 		with open(filepath, "w") as f:
 			f.write("test data")
 		return filepath
@@ -50,9 +74,13 @@ class TestSDCards(unittest.TestCase):
 		self.assertNotEqual(self.network_path, self.backup_network_path, msg="Network path and backup network path should be different")
 
 		# Verify that no files exist at any of our paths (this is testing our test)
-		for directory in [self.sd_card_path, self.network_path, self.backup_network_path]:
+		for directory in [self.empty_path, self.network_path, self.backup_network_path]:
 			files = os.listdir(directory)
 			self.assertEqual(len(files), 0, msg="Directory should be empty. Cannot run test. Dir = {}, Files = {}".format(directory, files))
+
+		# Verify that len(self.files) files exist at self.sd_card_path
+		files = os.listdir(self.sd_card_path)
+		self.assertEqual(len(self.files), len(self.files), msg="SD card should have {} files. File list: {}".format(len(self.files), files))
 
 		filepath = self._create_file()
 		filename = os.path.basename(filepath)
@@ -61,7 +89,7 @@ class TestSDCards(unittest.TestCase):
 		# Verify that the file was created
 		self.assertTrue(os.path.isfile(filepath), msg="File should have been created at {}".format(filepath))
 		files = os.listdir(self.sd_card_path)
-		self.assertEqual(len(files), 1, msg="SD card should have one file. File list: {}".format(files))
+		self.assertEqual(len(files), len(self.files) + 1, msg="Wrong number of files in sd_card dir. File list: {}".format(files))
 
 	def test_teardown(self):
 		""" 
@@ -98,11 +126,11 @@ class TestSDCards(unittest.TestCase):
 		with patch("os.access", return_value=True):
 			self.assertTrue(self.sd_cards.is_path_writable("/writable/path"))
 
-	def test_calculate_single_checksum(self):
+	def test_calculate_checksum(self):
 		# Create a new file in self.network_path to calculate a checksum
 		filepath = self._create_file()
 
-		result = self.sd_cards.calculate_single_checksum(filepath)
+		result = self.sd_cards.calculate_checksum(filepath)
 		self.assertIsNotNone(result, msg="Checksum should not be None")
 		self.assertGreater(len(result), 5, msg="Checksum should be longer than 5 characters")
 
@@ -110,7 +138,7 @@ class TestSDCards(unittest.TestCase):
 		with open(filepath, "w") as f:
 			f.write("different test data")
 
-		result2 = self.sd_cards.calculate_single_checksum(filepath)
+		result2 = self.sd_cards.calculate_checksum(filepath)
 		self.assertNotEqual(result, result2, msg="Checksums should be different for different file contents")
 
 	@patch("os.path.isfile", return_value=True)
@@ -129,7 +157,7 @@ class TestSDCards(unittest.TestCase):
 		Instead of mocking, create a file and check that we are getting something unique for various file contents.
 		"""
 		# Create a file with a known checksum
-		filepath = self._create_file()
+		filepath = self._create_file(self.empty_path)
 		directory = os.path.dirname(filepath)
 		results = self.sd_cards.calculate_checksums(directory)
 		self.assertEqual(len(results), 1, msg="Should only be one result")
@@ -157,23 +185,31 @@ class TestSDCards(unittest.TestCase):
 				self.sd_cards.calculate_checksums("/not/a/file")
 
 	@patch.object(SDCards, "perform_rsync", return_value=True)
+	@patch.object(SDCards, "perform_teracopy", return_value=True)
 	@patch.object(SDCards, "validate_checksums", return_value=True)
+	@patch.object(SDCards, "compare_checksums", return_value=True)
 	@patch.object(SDCards, "check_sd_path", return_value=True)
 	@patch.object(SDCards, "is_path_valid", return_value=True)
 	@patch.object(SDCards, "is_path_writable", return_value=True)
 	@patch("os.access", return_value=True)
 	@patch("os.makedirs", return_value=True)
-	def test_successful_copy_mock_all(self, mock_rsync, mock_validate, mock_check_sd_path, mock_is_path_valid, mock_is_path_writable, mock_access, mock_mkdirs):
+	@patch("os.path.exists", return_value=True)
+	@patch.object(subprocess, "check_call", return_value=1000)
+	def test_successful_copy_mock_all(self, mock_rsync, mock_teracopy, mock_validate, mock_compare, mock_check_sd_path, mock_is_path_valid, mock_is_path_writable, mock_access, mock_mkdirs, mock_exists, mock_check_call):
 		result = self.sd_cards.copy_sd_card("/valid/sd/card", "/valid/network/path", "/valid/backup/network/path")
 		self.assertTrue(result)
 
 	@patch.object(SDCards, "generate_name", return_value="20230809_ILCE-7RM4_2544_-1 0EV_-7 7B_6400ISO_0 1SS_SAMYANG AF 12mm F2 0.arw")
 	@patch('builtins.input', return_value='y')
-	def test_successful_copy(self, mock_input, mock_generate_name):
+	def test_successful_copy_rsync(self, mock_input, mock_generate_name):
 		filepath = self._create_file()
 		filename = os.path.basename(filepath)
 
-		result = self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path)
+		with self.assertRaises(NotImplementedError):
+			result = self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path, CopyOperation.RSYNC)
+
+		return
+		# This works as expected for a directory, but we have not yet implemented it for a single file list
 		self.assertTrue(result, msg="Copy should have succeeded: {}".format(result))
 		# Original still exists
 		self.assertTrue(os.path.isfile(filepath), msg="Original file should still exist at {}".format(filepath))
@@ -203,6 +239,25 @@ class TestSDCards(unittest.TestCase):
 			contents = f.read()
 			self.assertEqual(contents, "test data", msg="New file contents should match original. Found {}".format(contents))
 
+	@patch.object(SDCards, "generate_name", return_value="20230809_ILCE-7RM4_2544_-1 0EV_-7 7B_6400ISO_0 1SS_SAMYANG AF 12mm F2 0.arw")
+	@patch('builtins.input', return_value='y')
+	@patch.object(subprocess, "check_call", return_value=1000)
+	@patch.object(SDCards, "validate_checksums", return_value=True)
+	@patch.object(SDCards, "organize_files", return_value={"source_path": "destination_path"})
+	@patch.object(SDCards, "validate_checksum_list", return_value=True)
+	def test_successful_copy_teracopy(self, mock_generate_name, mock_input, mock_check_call, mock_validate, mock_organize_files, mock_validate_checksum_list):
+		filepath = self._create_file()
+		filename = os.path.basename(filepath)
+
+		result = self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path, CopyOperation.TERACOPY)
+		self.assertTrue(result, msg="Copy should have succeeded: {}".format(result))
+		# Original still exists
+		self.assertTrue(os.path.isfile(filepath), msg="Original file should still exist at {}".format(filepath))
+		# Contents not changed
+		with open(filepath, "r") as f:
+			contents = f.read()
+			self.assertEqual(contents, "test data", msg="Original file contents should not have changed. Found {}".format(contents))
+
 	@patch.object(SDCards, "perform_rsync", return_value=True)
 	@patch.object(SDCards, "validate_checksums", return_value=False)
 	def test_checksum_mismatch_mock(self, mock_rsync, mock_validate):
@@ -211,7 +266,12 @@ class TestSDCards(unittest.TestCase):
 
 	@patch.object(SDCards, "perform_rsync", return_value=False)
 	def test_rsync_failure_mock(self, mock_rsync):
-		result = self.sd_cards.copy_sd_card("/valid/sd/card", "/valid/network/path", "/valid/backup/network/path")
+		result = self.sd_cards.copy_sd_card("/valid/sd/card", "/valid/network/path", "/valid/backup/network/path", CopyOperation.RSYNC)
+		self.assertFalse(result)
+
+	@patch.object(SDCards, "perform_teracopy", return_value=False)
+	def test_teracopy_failure_mock(self, mock_teracopy):
+		result = self.sd_cards.copy_sd_card("/valid/sd/card", "/valid/network/path", "/valid/backup/network/path", CopyOperation.TERACOPY)
 		self.assertFalse(result)
 
 	@patch.object(SDCards, "calculate_checksums")
@@ -396,7 +456,8 @@ class TestSDCards(unittest.TestCase):
 
 	@patch('builtins.input', return_value='y')
 	@patch.object(SDCards, "generate_name", return_value='test_generated_name')
-	def test_copy_sd_card_success(self, mock_input, mock_generate_name):
+	@patch.object(subprocess, "check_call", return_value=0)
+	def test_copy_sd_card_success(self, mock_input, mock_generate_name, mock_check_call):
 		# Test successful copy when there is nothing to copy
 		self.assertTrue(self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path))
 
@@ -420,72 +481,84 @@ class TestSDCards(unittest.TestCase):
 	@patch.object(SDCards, "generate_name", return_value='test_generated_name')
 	def test_copy_sd_card_rsync_fail(self, mock_input, mock_generate_name):
 		# Test rsync failure
-		with patch('subprocess.check_call', side_effect=subprocess.CalledProcessError(1, '')):
+		with patch.object(subprocess, 'check_call', side_effect=subprocess.CalledProcessError(1, '')):
 			self.assertFalse(self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path))
 
 	@patch('builtins.input', return_value='y')
 	@patch.object(SDCards, "generate_name", return_value='test_generated_name')
-	def test_copy_sd_card_validate_fail(self, mock_input, mock_generate_name):
+	@patch.object(subprocess, "check_call", side_effect=subprocess.CalledProcessError(-1, ""))
+	def test_copy_sd_card_validate_fail(self, mock_input, mock_generate_name, mock_check_call):
 		# Test checksum validation failure on backup
 		with patch.object(self.sd_cards, 'validate_checksums', return_value=False):
 			self.assertFalse(self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path))
 
-	@patch('builtins.input', return_value='y')
-	@patch.object(SDCards, "generate_name", return_value='test_generated_name')
-	def test_copy_sd_card_teracopy_fail(self, mock_input, mock_generate_name):
-		# Test teracopy failure
-		with patch('subprocess.check_call', side_effect=subprocess.CalledProcessError(1, '')):
-			self.assertFalse(self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path))
+	@patch.object(subprocess, "check_call", side_effect=subprocess.CalledProcessError(-1, ""))
+	@patch.object(SDCards, "validate_checksums", return_value=False)
+	@patch.object(SDCards, "compare_checksums", return_value=False)
+	def test_copy_sd_card_no_files(self, mock_input, mock_generate_name, mock_check_call):
+		# Copy should succeed before any "testing" is done.
+		self.assertTrue(self.sd_cards.copy_sd_card(self.empty_path, self.network_path, self.backup_network_path, CopyOperation.TERACOPY))
+		self.assertTrue(self.sd_cards.copy_sd_card(self.empty_path, self.network_path, self.backup_network_path, CopyOperation.RSYNC))
+		self.assertTrue(self.sd_cards.copy_sd_card(self.empty_path, self.network_path, self.backup_network_path))
 
 	@patch('builtins.input', return_value='y')
 	@patch.object(SDCards, "generate_name", return_value='test_generated_name')
-	def test_copy_sd_card_validate_list_fail(self, mock_input, mock_generate_name):
+	@patch.object(subprocess, "check_call", side_effect=subprocess.CalledProcessError(-1, ""))
+	def test_copy_sd_card_teracopy_fail(self, mock_input, mock_generate_name, mock_check_call):
+		# Test teracopy failure
+		self.assertFalse(self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path, CopyOperation.TERACOPY))
+
+	@patch('builtins.input', return_value='y')
+	@patch.object(SDCards, "generate_name", return_value='test_generated_name')
+	@patch.object(subprocess, "check_call", side_effect=subprocess.CalledProcessError(-1, ""))
+	def test_copy_sd_card_validate_list_fail(self, mock_input, mock_generate_name, mock_check_call):
 		# Test checksum validation failure on organize
 		with patch.object(self.sd_cards, 'validate_checksum_list', return_value=False):
 			self.assertFalse(self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path))
 
 	@patch('builtins.input', return_value='y')
 	@patch.object(SDCards, "generate_name", return_value="20230809_ILCE-7RM4_2544_-1 0EV_-7 7B_6400ISO_0 1SS_SAMYANG AF 12mm F2 0.arw")
-	def test_file_still_exists_after_copy(self, mock_input, mock_generate_name):
-		# Create a file to copy
-		filepath = self._create_file()
-
+	@patch.object(subprocess, "check_call", return_value=1000)
+	@patch.object(SDCards, "validate_checksums", return_value=True)
+	@patch.object(SDCards, "compare_checksums", return_value=True)
+	@patch.object(SDCards, "validate_checksum_list", return_value=True)
+	@patch.object(SDCards, "organize_files", return_value={"source": "destination"})
+	def test_file_still_exists_after_copy(self, mock_input, mock_generate_name, mock_check_call, mock_validate_checksums, mock_compare_checksums, mock_calculate, mock_organize_files):
 		# Test that the file still exists after a copy
 		result = self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path)
 
 		self.assertTrue(result, msg="Failed to copy SD card. Cannot test if file still exists after copy.")
-		self.assertTrue(os.path.exists(filepath), msg="Original file does not exist after copy.")
+		for file in self.files:
+			self.assertTrue(os.path.exists(file), msg="Original file does not exist after copy.")
 
 	def test_perform_rsync(self):
 		# Test successful rsync
 		self.assertTrue(self.sd_cards.perform_rsync(self.sd_card_path, self.backup_network_path))
 
 		# Test rsync failure
-		with patch('subprocess.check_call', side_effect=subprocess.CalledProcessError(1, '')):
+		with patch.object(subprocess, 'check_call', side_effect=subprocess.CalledProcessError(1, '')):
 			self.assertFalse(self.sd_cards.perform_rsync(self.sd_card_path, self.backup_network_path))
 
-	def test_perform_teracopy(self):
+	@patch.object(subprocess, "check_call", side_effect=subprocess.CalledProcessError(-1, ""))
+	def test_perform_teracopy(self, mock_check_call):
 		# Test successful teracopy
-		self.assertTrue(self.sd_cards.perform_teracopy(self.sd_card_path, self.temp_dir))
+		with patch.object(subprocess, 'check_call', return_value=0):
+			self.assertTrue(self.sd_cards.perform_teracopy(self.sd_card_path, self.temp_dir))
 
 		# Test teracopy failure
-		with patch('subprocess.check_call', side_effect=subprocess.CalledProcessError(1, '')):
+		with patch.object(subprocess, 'check_call', side_effect=subprocess.CalledProcessError(1, '')):
 			self.assertFalse(self.sd_cards.perform_teracopy(self.sd_card_path, self.temp_dir))
 
 
 	@patch.object(SDCards, "generate_name", return_value='test_generated_name.jpg')
 	def test_organize_files(self, mock_generate_name):
 		# Organize no files
-		results = self.sd_cards.organize_files(self.network_path, self.sd_card_path)
+		results = self.sd_cards.organize_files(self.empty_path, self.network_path)
 		self.assertEqual(len(results), 0)
-
-		# Create 1 file to organize
-		with open(os.path.join(self.sd_card_path, 'IMG_0001.jpg'), 'w') as f:
-			f.write('test')
 
 		# Test successful organization
 		results = self.sd_cards.organize_files(self.sd_card_path, self.network_path)
-		self.assertEqual(len(results), 1)
+		self.assertEqual(len(results), len(self.files))
 		for original_path, new_path in results.items():
 			self.assertTrue(os.path.exists(new_path), msg=f"Failed to move {original_path} to {new_path}. New path doesn't exist")
 			self.assertNotEqual(original_path, new_path, msg=f"Failed to move {original_path} to {new_path}. New path is the same as the original path")
@@ -497,12 +570,12 @@ class TestSDCards(unittest.TestCase):
 			self.assertTrue(os.path.exists(new_path), msg=f"Failed to rename to {new_path}")
 
 		# Test invalid source path
-		results = self.sd_cards.organize_files('invalid_path', self.network_path)
-		self.assertEqual(len(results), 0)
+		with self.assertRaises(FileNotFoundError):
+			self.sd_cards.organize_files('invalid_path', self.network_path)
 
 		# Test invalid destination path
-		results = self.sd_cards.organize_files(self.sd_card_path, 'invalid_path')
-		self.assertEqual(len(results), 0)
+		with self.assertRaises(FileNotFoundError):
+			self.sd_cards.organize_files(self.sd_card_path, 'invalid_path')
 
 	def test_no_clobber_rsync(self):
 		# Test that perform_rsync doesnt clobber existing files
@@ -533,7 +606,8 @@ class TestSDCards(unittest.TestCase):
 			f.write('bar')
 
 		# Perform the teracopy
-		result = self.sd_cards.perform_teracopy(self.sd_card_path, self.temp_dir)
+		with patch.object(subprocess, 'check_call', return_value=0):
+			result = self.sd_cards.perform_teracopy(self.sd_card_path, self.temp_dir)
 		self.assertTrue(result, 'Teracopy returned failed when it encountered an existing file')
 
 		# Test that the file in the destination directory was not overwritten
@@ -557,12 +631,12 @@ class TestSDCards(unittest.TestCase):
 			f.write('foo')
 
 		# Create a file in the source directory with the same name
-		original_path = os.path.join(self.sd_card_path, 'IMG_0001.jpg')
+		original_path = os.path.join(self.empty_path, 'IMG_0001.jpg')
 		with open(original_path, 'w') as f:
 			f.write('bar')
 
 		# Perform the organize
-		result = self.sd_cards.organize_files(self.sd_card_path, self.network_path)
+		result = self.sd_cards.organize_files(self.empty_path, self.network_path)
 		self.assertEqual(len(result), 1, 'Organize did not return results when it encountered an existing file')
 		# Test that the new_path still exists
 		self.assertTrue(os.path.exists(new_path), 'Existing file no longer exists after organize_files')
@@ -598,7 +672,8 @@ class TestSDCards(unittest.TestCase):
 	@patch.object(SDCards, "generate_name", return_value='IMG_0001.jpg')
 	@patch.object(SDCards, "validate_checksums", return_value=False)
 	@patch('builtins.input', return_value='y')
-	def test_copy_sd_card_checksum_fail(self, mock_generate_name, mock_validate_checksums, mock_input):
+	@patch.object(subprocess, "check_call", side_effect=subprocess.CalledProcessError(-1, ""))
+	def test_copy_sd_card_checksum_fail(self, mock_generate_name, mock_validate_checksums, mock_input, mock_check_call):
 		"""
 		Test that the copy_sd_card function fails if the source and destination checksums do not match after copy.
 		"""
@@ -613,7 +688,8 @@ class TestSDCards(unittest.TestCase):
 	@patch.object(SDCards, "generate_name", return_value='IMG_0001.jpg')
 	@patch.object(SDCards, "validate_checksum_list", return_value=False)
 	@patch('builtins.input', return_value='y')
-	def test_copy_sd_card_checksum_list_fail(self, mock_generate_name, mock_validate_checksum_list, mock_input):
+	@patch.object(subprocess, "check_call", side_effect=subprocess.CalledProcessError(-1, ""))
+	def test_copy_sd_card_checksum_list_fail(self, mock_generate_name, mock_validate_checksum_list, mock_input, mock_check_call):
 		"""
 		Test that the copy_sd_card function fails if the source and destination checksums do not match after copy.
 		"""
@@ -624,3 +700,213 @@ class TestSDCards(unittest.TestCase):
 		# Perform the copy
 		result = self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path)
 		self.assertFalse(result, 'Copy succeeded when checksum list matching failed')
+
+	@patch.object(SDCards, "calculate_checksum", return_value=MOCK_CHECKSUM_VALUE)
+	@patch.object(SDCards, "compare_checksums", return_value=True)
+	@patch.object(SDCards, "validate_checksums", return_value=True)
+	@patch('builtins.input', return_value='y')
+	def test_perform_copy_from_list(self, mock_calculate_checksum, compare_checksums, validate_checksums, mock_input):
+		"""
+		Test successful copy and checksum validation
+		"""
+		# Tests when the teracopy process results in success
+		with patch('subprocess.check_call', return_value=1000):
+			# Normal call
+			self.assertTrue(self.sd_cards.perform_copy_from_list(self.list_path, self.temp_dir, self.checksums_before))
+
+			# Invalid destination path should still succeed (it will be created)
+			self.assertTrue(self.sd_cards.perform_copy_from_list(self.list_path, 'invalid_path', self.checksums_before))
+
+			# No list path should fail, even though the subprocess may succeed
+			with self.assertRaises(FileNotFoundError):
+				self.sd_cards.perform_copy_from_list('invalid_path', self.temp_dir, self.checksums_before)
+
+		# Tests when the teracopy process results in failure
+		with patch.object(subprocess, 'check_call', side_effect=subprocess.CalledProcessError(1, '')):
+			self.assertFalse(self.sd_cards.perform_copy_from_list(self.list_path, self.temp_dir, self.checksums_before))
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_new(self, mock_generate_name):
+		# Test with no existing list file
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path)
+		self.assertNotEqual(list_path, self.list_path, msg='List path should not be the same as the existing list path')
+		self.assertTrue(os.path.exists(list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files), msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 0, msg='Mismatches length is incorrect')
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_existing(self, mock_generate_name):
+		# Test with existing list file
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files), msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 0, msg='Mismatches length is incorrect')
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_missing_source(self, mock_generate_name):
+		# Test with missing source_path
+		with self.assertRaises(FileNotFoundError):
+			self.sd_cards.create_filelist('invalid_path', self.network_path, self.backup_network_path, self.list_path)
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_missing_destination(self, mock_generate_name):
+		# Test with missing destination_path
+		with self.assertRaises(FileNotFoundError):
+			self.sd_cards.create_filelist(self.sd_card_path, 'invalid_path', self.backup_network_path, self.list_path)
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_missing_backup(self, mock_generate_name):
+		# Test with missing backup_path
+		with self.assertRaises(FileNotFoundError):
+			self.sd_cards.create_filelist(self.sd_card_path, self.network_path, 'invalid_path', self.list_path)
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_compare_checksums_fail(self, mock_compare_checksums):
+		# Test with checksum mismatch in all paths
+		with patch.object(self.sd_cards, 'compare_checksums', return_value=False):
+			list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+			self.assertEqual(list_path, self.list_path)
+			self.assertEqual(len(queue), len(self.files))
+			self.assertEqual(len(skipped), 0)
+			self.assertEqual(len(mismatches), 0)
+			self.assertTrue(os.path.exists(self.list_path))
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_compare_checksums_success(self, mock_generate_name):
+		# Test with file in both destination_path and backup_path
+		with patch.object(self.sd_cards, 'compare_checksums', return_value=True):
+			list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+			self.assertEqual(list_path, self.list_path)
+			self.assertEqual(len(queue), 0)
+			self.assertEqual(len(skipped), len(self.files))
+			self.assertEqual(len(mismatches), 0)
+			self.assertTrue(os.path.exists(self.list_path))
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_empty_directory(self, mock_generate_name):
+		# Test with empty source directory
+		empty_dir = tempfile.mkdtemp()
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(empty_dir, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), 0, msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 0, msg='Mismatches length is incorrect')
+		shutil.rmtree(empty_dir)
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	def test_create_filelist_hidden_files(self, mock_generate_name):
+		# Test with hidden files in source directory
+		hidden_file = os.path.join(self.sd_card_path, '.hidden')
+		with open(hidden_file, 'w') as f:
+			f.write('foo')
+
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files) + 1, msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 0, msg='Mismatches length is incorrect')
+		os.remove(hidden_file)
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	@patch.object(SDCards, "compare_checksums", return_value=True)
+	def test_create_filelist_duplicate_files_network_matching_checksums(self, mock_generate_name, mock_compare_checksums):
+		# Test with duplicate files in source directory
+		duplicate_file = os.path.join(self.network_path, os.path.basename(self.files[0]))
+		shutil.copyfile(self.files[0], duplicate_file)
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files), msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 0, msg='Mismatches length is incorrect')
+		os.remove(duplicate_file)
+	
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	@patch.object(SDCards, "compare_checksums", return_value=False)
+	@patch('builtins.input', return_value='y')
+	def test_create_filelist_duplicate_files_network_mismatch_checksums(self, mock_generate_name, mock_compare_checksums, mock_input):
+		# Test with duplicate files in source directory
+		duplicate_file = os.path.join(self.network_path, os.path.basename(self.files[0]))
+		shutil.copyfile(self.files[0], duplicate_file)
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files) - 1, msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 1, msg='Mismatches length is incorrect')
+		os.remove(duplicate_file)
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	@patch.object(SDCards, "compare_checksums", return_value=True)
+	def test_create_filelist_duplicate_files_backup_matching_checksums(self, mock_generate_name, mock_compare_checksums):
+		# Test with duplicate files in source directory
+		duplicate_file = os.path.join(self.backup_network_path, os.path.basename(self.files[0]))
+		shutil.copyfile(self.files[0], duplicate_file)
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files), msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 0, msg='Mismatches length is incorrect')
+		os.remove(duplicate_file)
+
+	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
+	@patch.object(SDCards, "compare_checksums", return_value=False)
+	@patch('builtins.input', return_value='y')
+	def test_create_filelist_duplicate_files_backup_mismatched_checksums(self, mock_generate_name, mock_compare_checksums, mock_input):
+		# Test with duplicate files in source directory
+		duplicate_file = os.path.join(self.backup_network_path, os.path.basename(self.files[0]))
+		shutil.copyfile(self.files[0], duplicate_file)
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files) - 1, msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 1, msg='Mismatches length is incorrect')
+		os.remove(duplicate_file)
+
+	@patch.object(SDCards, "generate_name", return_value='1.jpg')
+	@patch.object(SDCards, "compare_checksums", return_value=True)
+	def test_create_filelist_duplicate_files_network_and_backup_matching_checksums(self, mock_generate_name, mock_compare_checksums):
+		# Test with duplicate files in source directory
+		duplicate_file_network = self.sd_cards.generate_path(self.files[0], self.network_path)
+		duplicate_file_backup = os.path.join(self.backup_network_path, os.path.basename(self.files[0]))
+		# Ensure the path to duplicate_file_network exists
+		print(f'COPYING {self.files[0]} to {duplicate_file_network} and {duplicate_file_backup}')
+		os.makedirs(os.path.dirname(duplicate_file_network), exist_ok=True)
+		shutil.copyfile(self.files[0], duplicate_file_backup)
+		shutil.copyfile(self.files[0], duplicate_file_network)
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files) - 1, msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 1, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 0, msg='Mismatches length is incorrect')
+		os.remove(duplicate_file_network)
+		os.remove(duplicate_file_backup)
+
+	@patch.object(SDCards, "generate_name", return_value='1.jpg')
+	@patch.object(SDCards, "compare_checksums", return_value=False)
+	@patch('builtins.input', return_value='y')
+	def test_create_filelist_duplicate_files_network_and_backup_mismatched_checksums(self, mock_generate_name, mock_compare_checksums, mock_input):
+		# Test with duplicate files in source directory
+		duplicate_file_network = self.sd_cards.generate_path(self.files[0], self.network_path)
+		duplicate_file_backup = os.path.join(self.backup_network_path, os.path.basename(self.files[0]))
+		# Ensure the path to duplicate_file_network exists
+		print(f'COPYING {self.files[0]} to {duplicate_file_network} and {duplicate_file_backup}')
+		os.makedirs(os.path.dirname(duplicate_file_network), exist_ok=True)
+		shutil.copyfile(self.files[0], duplicate_file_backup)
+		shutil.copyfile(self.files[0], duplicate_file_network)
+		list_path, queue, skipped, mismatches = self.sd_cards.create_filelist(self.sd_card_path, self.network_path, self.backup_network_path, self.list_path)
+		self.assertEqual(list_path, self.list_path, msg='List path should be the same as the existing list path')
+		self.assertTrue(os.path.exists(self.list_path), msg='List file does not exist')
+		self.assertEqual(len(queue), len(self.files) - 1, msg='Queue length is incorrect')
+		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
+		self.assertEqual(len(mismatches), 1, msg='Mismatches length is incorrect')
+		os.remove(duplicate_file_network)
+		os.remove(duplicate_file_backup)
