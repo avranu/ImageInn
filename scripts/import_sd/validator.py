@@ -1,3 +1,22 @@
+"""
+	
+	Metadata:
+	
+		File: validator.py
+		Project: import_sd
+		Created Date: 11 Aug 2023
+		Author: Jess Mann
+		Email: jess.a.mann@gmail.com
+	
+		-----
+	
+		Last Modified: Sat Aug 12 2023
+		Modified By: Jess Mann
+	
+		-----
+	
+		Copyright (c) 2023 Jess Mann
+"""
 from __future__ import annotations
 import errno
 import hashlib
@@ -15,10 +34,6 @@ class Validator:
 		"""
 		Check if the given path exists and is a directory.
 		"""
-		if not os.path.exists(path):
-			logger.error(f'The path does not exist: {path}')
-			return False
-		
 		if not os.path.isdir(path):
 			logger.error(f'The path is not a directory: {path}')
 			return False
@@ -30,10 +45,6 @@ class Validator:
 		"""
 		Check if the given path exists and is a file.
 		"""
-		if not os.path.exists(path):
-			logger.error(f'The path does not exist: {path}')
-			return False
-		
 		if not os.path.isfile(path):
 			logger.error(f'The path is not a file: {path}')
 			return False
@@ -50,6 +61,23 @@ class Validator:
 			return False
 
 		return True
+	
+	@classmethod 
+	def ensure_dir(cls, path: str) -> bool:
+		"""
+		Ensure that the given path exists and is a directory. If it does not exist, create a new directory.
+
+		Args:
+			path (str): The path to ensure is a directory.
+
+		Returns:
+			bool: True if the path exists and is a directory, False otherwise.
+		"""
+		if not os.path.exists(path):
+			logger.info(f'Creating directory: {path}')
+			os.makedirs(path, exist_ok=True)
+		
+		return cls.is_dir(path)
 
 	@classmethod
 	def calculate_checksums(cls, base_path: str) -> dict[str, str]:
@@ -79,7 +107,7 @@ class Validator:
 		for root, _dirs, files in os.walk(base_path):
 			for file in files:
 				file_path = os.path.join(root, file)
-				if os.path.isfile(file_path) and os.access(file_path, os.R_OK):
+				if cls.is_file(file_path) and os.access(file_path, os.R_OK):
 					checksums[file_path] = cls.calculate_checksum(file_path)
 				else:
 					logger.error(f'File not accessible: {file_path}')
@@ -104,7 +132,7 @@ class Validator:
 			>>> calculate_checksum('/home/pi/test.txt')
 			'098f6bcd4621d373cade4e832627b4f6'
 		"""
-		if not os.path.isfile(file_path) or not os.access(file_path, os.R_OK):
+		if not cls.is_file(file_path) or not os.access(file_path, os.R_OK):
 			logger.error(f'File not accessible: {file_path}')
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), file_path)
 
@@ -117,7 +145,7 @@ class Validator:
 
 		result = hasher.hexdigest()
 
-		if result is None:
+		if not result:
 			logger.error('Failed to calculate checksum for file: {file_path}')
 			raise ValueError(f'Failed to calculate checksum for file: {file_path}')
 		
@@ -188,26 +216,14 @@ class Validator:
 
 		# Loop over each file that was copied
 		for source_file_path, destination_file_path in files.items():
-			if source_file_path is None or destination_file_path is None:
-				logger.critical(f'File path is None: {source_file_path} -> {destination_file_path}')
-				mismatches += 1
-				continue
-
 			# Get the checksum before copying
 			checksum_before = checksums_before.get(source_file_path)
-			if checksum_before is None:
-				logger.critical(f'Checksum not found for {source_file_path}')
+			if checksum_before is None or checksum_before != cls.calculate_checksum(destination_file_path):
+				logger.critical(f'Checksum not found, or mismatched, for {source_file_path}')
 				mismatches += 1
 				continue
 
-			# Get the checksum after copying
-			checksum_after = cls.calculate_checksum(destination_file_path)
-
-			if checksum_before == checksum_after:
-				logger.debug(f'Checksum match for {source_file_path}')
-			else:
-				logger.critical(f'Checksum mismatch for {source_file_path}: {checksum_before} != {checksum_after}')
-				mismatches += 1
+			logger.debug(f'Checksum match for {source_file_path}')
 
 		if mismatches:
 			logger.critical(f'Checksum list mismatch for {mismatches} files')

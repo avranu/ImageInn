@@ -1,3 +1,22 @@
+"""
+	
+	Metadata:
+	
+		File: sd.py
+		Project: import_sd
+		Created Date: 11 Aug 2023
+		Author: Jess Mann
+		Email: jess.a.mann@gmail.com
+	
+		-----
+	
+		Last Modified: Sun Aug 13 2023
+		Modified By: Jess Mann
+	
+		-----
+	
+		Copyright (c) 2023 Jess Mann
+"""
 from __future__ import annotations
 import argparse
 import datetime
@@ -17,6 +36,7 @@ from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
 from scripts.import_sd.folder import SDFolder
+from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +53,7 @@ class SDCard:
 	@path.setter
 	def path(self, value: str):
 		# Ensure a trailing slash
-		self._path = os.path.join(value, '')
+		self._path = os.path.join(os.path.normpath(value), '')
 
 	@classmethod
 	def get_media_dir(cls) -> str:
@@ -100,12 +120,12 @@ class SDCard:
 			>>> SDCards.sd_contains_photos('/media/SD_CARD')
 			True
 		"""
-		if not cls.is_path_valid(sd_path):
+		if not Validator.is_dir(sd_path):
 			if raise_errors:
 				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), sd_path)
 			return False
 		
-		return cls.is_path_valid(os.path.join(sd_path, 'DCIM'))
+		return Validator.is_dir(os.path.join(sd_path, 'DCIM'))
 		
 	@classmethod
 	def get_list(cls, media_path : Optional[str] = None) -> list[SDFolder]:
@@ -130,7 +150,7 @@ class SDCard:
 			media_path = cls.get_media_dir()
 
 		# Ensure the path exists
-		if not cls.ensure_path(media_path):
+		if not Validator.is_dir(media_path):
 			return []
 
 		sd_cards = []
@@ -166,7 +186,7 @@ class SDCard:
 				'num_dirs': 10
 			}
 		"""
-		return self.get_info_for(self.sd_path)
+		return self.get_info_for(self.path)
 
 	@classmethod
 	def get_info_for(cls, sd_card_path : Optional[str] = None) -> SDFolder:
@@ -199,7 +219,7 @@ class SDCard:
 			sd_card_path = cls.get_media_dir()
 
 		# Ensure the path exists
-		if not cls.ensure_path(sd_card_path):
+		if not Validator.is_dir(sd_card_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), sd_card_path)
 		
 		# Get the total size of the SD card
@@ -221,7 +241,6 @@ class SDCard:
 			num_dirs = num_dirs
 		)
 	
-	@classmethod
 	def determine_subpath(self, filepath : str) -> str:
 		"""
 		Takes a file path and turns it into just the subdirectories of the SD card (ignoring the root DCIM folder)
@@ -236,8 +255,11 @@ class SDCard:
 			>>> SDCards.determine_subpath('/media/pi/SD/DCIM/100CANON/IMG_0001.JPG')
 			'100CANON'
 		"""
-		# Remove self.path and /DCIM from the beginning, as well as the filename from the end
-		result = re.sub(r'^' + self.path + r'/DCIM/', '', os.path.dirname(filepath))
+		logger.critical('filepath: ' + str(filepath))
+		logger.critical('selfpath: ' + str(self.path))
+		# Remove "{self.path}/DCIM from the beginning, and {filename} from the end
+		prefix = os.path.join(self.path, 'DCIM', '')
+		result = re.sub(r'^' + prefix, '', os.path.dirname(filepath))
 
 		# Ensure trailing slash
 		return os.path.join(result, '')

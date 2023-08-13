@@ -1,14 +1,30 @@
+"""
+	
+	Metadata:
+	
+		File: workflow.py
+		Project: import_sd
+		Created Date: 11 Aug 2023
+		Author: Jess Mann
+		Email: jess.a.mann@gmail.com
+	
+		-----
+	
+		Last Modified: Sat Aug 12 2023
+		Modified By: Jess Mann
+	
+		-----
+	
+		Copyright (c) 2023 Jess Mann
+"""
 from __future__ import annotations
 import argparse
 import datetime
 from enum import Enum
 import errno
-import hashlib
-import math
 import os
 import re
 import sys
-import shutil
 import subprocess
 import logging
 import time
@@ -32,7 +48,7 @@ class Workflow:
 	_jpg_path: str
 	_backup_path: str
 	_sd_card : SDCard = None
-	_temp_path : str = None
+	_bucket_path : str = None
 	raw_extension : str
 
 	def __init__(self, raw_path : str, jpg_path : str, backup_path : str, raw_extension : str = 'arw', sd_card : Optional[str | SDCard] = None):
@@ -57,10 +73,10 @@ class Workflow:
 		self.raw_extension = raw_extension
 
 		# If no sd_path is provided, try to find it
-		if sd_card is None:
-			self.sd_path = SDCard.get_media_dir()
-		else:
+		if sd_card is not None:
 			self.sd_card = sd_card
+		else:
+			self.sd_card = SDCard.get_media_dir()
 
 	@property
 	def sd_card(self) -> SDCard:
@@ -104,8 +120,7 @@ class Workflow:
 		"""
 		if not Validator.is_dir(raw_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), raw_path)
-		# Ensure trailing slash
-		self._raw_path = os.path.join(raw_path, '')
+		self._raw_path = self._normalize_path(raw_path)
 
 	@property
 	def jpg_path(self) -> str:
@@ -124,8 +139,7 @@ class Workflow:
 		"""
 		if not Validator.is_dir(jpg_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), jpg_path)
-		# Ensure trailing slash
-		self._jpg_path = os.path.join(jpg_path, '')
+		self._jpg_path = self._normalize_path(jpg_path)
 
 	@property
 	def backup_path(self) -> str:
@@ -144,26 +158,37 @@ class Workflow:
 		"""
 		if not Validator.is_dir(backup_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), backup_path)
-		# Ensure trailing slash
-		self._backup_path = os.path.join(backup_path, '')
+		self._backup_path = self._normalize_path(backup_path)
 
 	@property
-	def temp_path(self) -> str:
+	def bucket_path(self) -> str:
 		"""
 		The path to the temporary directory to copy the SD card to.
 		"""
-		if not self._temp_path:
+		if not self._bucket_path:
 			# Create an "Import Bucket" folder in the raw_path
-			self._temp_path = os.path.join(self.raw_path, 'Import Bucket')
-			if not Validator.is_dir(self._temp_path):
-				os.makedirs(self._temp_path, exist_ok=True)
+			self._bucket_path = os.path.join(self.raw_path, 'Import Bucket')
+			if not Validator.is_dir(self._bucket_path):
+				os.makedirs(self._bucket_path, exist_ok=True)
 
-			if not Validator.is_writeable(self._temp_path):
-				logger.error(f'Unable to write to temporary storage location: {self._temp_path}')
-				raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), self._temp_path)
+			if not Validator.is_writeable(self._bucket_path):
+				logger.error(f'Unable to write to temporary storage location: {self._bucket_path}')
+				raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), self._bucket_path)
 
-		return self._temp_path
+		return self._bucket_path
+	
+	def _normalize_path(self, path: str) -> str:
+		"""
+		Normalize a path for the system, and ensure that it ends with a trailing slash (which is important for rsync)
 
+		Args:
+			path (str): The path to normalize.
+
+		Returns:
+			str: The normalized path.
+		"""
+		return os.path.join(os.path.normpath(path), '')
+		
 	def run(self, operation : CopyOperation = CopyOperation.TERACOPY) -> bool:
 		"""
 		Copy the SD card to several different network locations, and verify checksums after copy.
@@ -184,48 +209,45 @@ class Workflow:
 		errors : list[str] = []
 
 		# Check if paths are valid and writable
-		if not all(map(Validator.is_dir, [self.sd_path, self.raw_path, self.jpg_path, self.backup_path])):
+		if not all(map(Validator.is_dir, [self.sd_card.path, self.raw_path, self.jpg_path, self.backup_path])):
 			logger.error('One or more paths are invalid')
 			return False
 		if not all(map(Validator.is_writeable, [self.raw_path, self.jpg_path, self.backup_path])):
 			logger.error('One or more paths are not writable')
 			return False
 
-		# Calculate checksums before transferring anything
-		checksums_before = Validator.calculate_checksums(self.sd_path)
-
 		# Create a list of files that need to be copied
 		queue = self.queue_files()
-		# HEREE I left off here for the day.
-		(list_path, files_to_copy, skipped, mismatched) = self.create_filelist()
 
-		if files_to_copy:
-			# Perform the backup first
-			if not self.copy_from_list(list_path, checksums_before, operation):
-				errors.append(f'Copy operation failed to {self.backup_path}')
-			
-			# Perform the copy to the photography directory
-			if not self.copy_from_list(list_path, self.temp_path, checksums_before, operation):
-				errors.append(f'Copy operation failed to {self.temp_path}')
-				
-			# Organize the files that were created
-			results = self.organize_files(self.temp_path)
-			if not results:
-				logger.error('Failed to organize files, cannot continue')
-				logger.critical('The system state may be inconsistent or unexpected. Please verify all files are in the correct location.')
-				return False
+		# Copy files to each destination path
+		for destination, files in queue.get_queue():
+			# Write the queue to a file, so we have a path to pass teracopy
+			list_path = queue.write(destination)
 
-			# Map the temp_paths in results to the original sd_card paths
-			files = {}
-			for temp_file, network_file in results.items():
-				filename = os.path.basename(temp_file)
-				filepath = os.path.join(self.sd_path, filename)
-				files[filepath] = network_file
-			
-			# Validate checksums after teracopy
-			if not Validator.validate_checksum_list(checksums_before, files):
-				logger.critical('Checksum validation failed on operation %s', operation)
-				errors.append('Checksum validation failed on operation %s' % operation)
+			# Begin copying
+			result = self.copy_from_list(list_path, destination, queue.get_checksums(), operation)
+
+			if not result:
+				errors.append(f'Copy operation failed to {destination}')
+
+		# Organize files in the raw_path
+		results = self.organize_files(self.bucket_path)
+		if not results:
+			logger.error('Failed to organize files, cannot continue')
+			logger.critical('The system state may be inconsistent or unexpected. Please verify all files are in their correct locations.')
+			return False
+
+		# Map the temp_paths in results to the original sd_card paths
+		files = {}
+		for temp_file, network_file in results.items():
+			filename = os.path.basename(temp_file)
+			filepath = os.path.join(self.sd_card.path, filename)
+			files[filepath] = network_file
+		
+		# Validate checksums after teracopy
+		if not Validator.validate_checksum_list(queue.get_checksums(), files):
+			logger.critical('Checksum validation failed on operation %s', operation)
+			errors.append('Checksum validation failed on operation %s' % operation)
 
 		if len(errors) > 0:
 			logger.critical('Copy failed due to previous errors.')
@@ -389,52 +411,54 @@ class Workflow:
 		# Get a list of files that need to be copied
 		files = Queue()
 
-		for root, _, filenames in os.walk(self.sd_path):
+		for root, _, filenames in os.walk(self.sd_card.path):
 			for filename in filenames:
 				filepath = os.path.join(root, filename)
 				folder = SDCard.determine_subpath(filepath)
-				backup_path = os.path.join(self.backup_path, folder)
 				photo = Photo(filepath)
-				skip_count = 0
 			
 				# Add RAW extensions to the raw_path, jpg extensions to the jpg_path, and all files to the backup_path
 				if photo.extension == self.raw_extension:
-					full_path = Photo(os.path.join(self.raw_path, folder))
+					# Only append the RAW file if it doesn't exist (or mismatches) the FINAL location it will end up in, after it is organized.
+					final_path = self.generate_path(photo)
+					if not os.path.exists(final_path) or not photo.matches(final_path):
+						files.append_parts(self.bucket_path, folder, filename)
 				elif photo.is_jpg():
-					full_path = Photo(os.path.join(self.jpg_path, folder))
+					files.append_parts(self.jpg_path, folder, filename)
 				else:
 					logger.warning(f'Unknown file type {filename}')
 					continue
 
-				# Check if the file already exists in the destination
-				if full_path.exists():
-					if photo.matches(full_path):
-						logger.debug(f'{filepath} already exists in {full_path}')
-						skip_count += 1
-					else:
-						files.append(full_path, photo)
-						files.flag(photo, full_path)
-				else:
-					files.append(full_path, photo)
-
-				# Check if the file already exists in the backup
-				backup_file = Photo(os.path.join(backup_path, filename))
-				if backup_file.exists():
-					if photo.matches(backup_file):
-						logger.debug(f'{photo.path} already exists in {backup_file.path}')
-						skip_count += 1
-					else:
-						files.append(backup_file, photo)
-						files.flag(photo, backup_file)
-				else:
-					files.append(backup_file, photo)
-
-				# If the file is in all destinations, skip it
-				if skip_count >= 2:
-					files.skip(photo)
+				# Add ALL files to the backup path
+				files.append_parts(self.backup_path, folder, filename)
 
 		logger.info('Queueing %d files to copy', files.count())
 		return files
+	
+	def _check_photo(self, photo: Photo, destinations: list[Photo]) -> tuple[bool, list[Photo]]:
+		"""
+		Checks if a photo exists in a list of destinations, and if so, whether its checksum matches.
+
+		Args:
+			photo (Photo): The photo to check.
+			destinations (list[Photo]): The list of destinations to check.
+
+		Returns:
+			tuple[bool, list[Photo]]: 
+				(already_exists, mismatched_destinations)
+				A tuple of whether the photo exists in all destinations, and a list of destinations where its checksum does not match.
+
+		"""
+		exists = True
+		mismatched = []
+		for path in destinations:
+			if not path.exists():
+				exists = False
+				continue
+			if not photo.matches(path):
+				mismatched.append(path)
+		
+		return exists, mismatched
 	
 	def create_filelist(self, destination_path : str, list_path : Optional[str] = None) -> tuple[str, list[str], list[str], dict[str, str]]:
 		"""
@@ -485,13 +509,13 @@ class Workflow:
 		results = {}
 
 		# Verify the paths exist
-		if not all([os.path.exists(path) for path in [self.temp_path, self.raw_path]]):
-			logger.info('One or more of the paths provided does not exist: "%s", "%s"', self.temp_path, self.raw_path)
+		if not all([os.path.exists(path) for path in [self.bucket_path, self.raw_path]]):
+			logger.info('One or more of the paths provided does not exist: "%s", "%s"', self.bucket_path, self.raw_path)
 			raise FileNotFoundError('One or more of the paths provided does not exist.')
 
 		# Find all files in the source_path, including all subdirectories
 		files = []
-		for root, _, filenames in os.walk(self.temp_path):
+		for root, _, filenames in os.walk(self.bucket_path):
 			for filename in filenames:
 				files.append(os.path.join(root, filename))
 
@@ -569,7 +593,7 @@ class Workflow:
 
 		return f'{name}.{photo.extension}'
 	
-	def generate_path(self, photo : Photo | str) -> str:
+	def generate_path(self, photo : Photo | str) -> Photo:
 		"""
 		Figure out an appropriate path to copy the file, given its creation date. 
 		
@@ -580,6 +604,9 @@ class Workflow:
 		
 		Args:
 			photo (Photo | str): The photo to generate a path for. If a str, it is assumed to be the file path.
+
+		Raises:
+			ValueError: If the path is too long to fit in the filesystem.
 
 		Returns:
 			str: The generated path.
@@ -610,7 +637,7 @@ class Workflow:
 		# Generate the path again
 		path = f'{self.raw_path}/{photo.date:%Y}/{photo.date:%Y-%m-%d}/{filename}'
 
-		return path
+		return Photo(path)
 	
 	@classmethod
 	def ask_user_continue(cls, message : str = f"Errors were found:", errors : Optional[list] = None, continue_message : str = "Continue to the next step? [y/n]", throw_error : bool = True) -> bool:

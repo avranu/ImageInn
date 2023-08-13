@@ -1,9 +1,30 @@
+"""
+	
+	Metadata:
+	
+		File: queue.py
+		Project: import_sd
+		Created Date: 12 Aug 2023
+		Author: Jess Mann
+		Email: jess.a.mann@gmail.com
+	
+		-----
+	
+		Last Modified: Sun Aug 13 2023
+		Modified By: Jess Mann
+	
+		-----
+	
+		Copyright (c) 2023 Jess Mann
+"""
 from __future__ import annotations
 import os
 from typing import Optional
 from datetime import datetime
 from scripts.import_sd.photo import Photo
 import logging
+
+from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -35,22 +56,63 @@ class Queue:
 		self._mismatched = {}
 		self._checksums = {}
 	
-	def append(self, destination: str, photo: Photo) -> int:
+	def append(self, photo: Photo, destination: Photo) -> bool:
 		"""
-		Adds a photo to the queue.
+		Adds a photo to the queue, if possible. 
+
+		If the photo already exists at the destination, checksums are calculated. 
+		If checksums match, the photo is skipped. If checksums do not match, the photo is flagged as mismatched and copied with a new name.
 
 		Args:
-			destination (str): The destination directory.
 			photo (Photo): The photo to be copied.
+			destination (str): The destination path (including filename) it will be copied to.
+
+		Raises:
+			ValueError: If the photo and destination have different extensions.
 
 		Returns:
-			int: The number of photos in the queue for the destination directory.
+			bool: True if the photo was added to the queue, False if it was not.
 		"""
-		if destination not in self._queue:
-			self._queue[destination] = []
-		self._queue[destination].append(photo)
+		# Check that photo and destination have the same extension, otherwise throw an error
+		if photo.extension != destination.extension:
+			raise ValueError(f"Photo and destination have different extensions: {photo.extension} and {destination.extension}")
+		
+		# Calculate checksums for both files
+		checksums = self.calculate_checksums([photo, destination])
 
-		return len(self._queue[destination])
+		# Check if something already exists at the destination path
+		if destination.exists():
+			# If checksums are the same, do not append to queue
+			if checksums[photo] == checksums[destination]:
+				self.skip(photo)
+				return False
+			# If checksums are different, flag as mismatched and append to queue
+			self.flag(photo, destination)
+			logger.warning(f"Checksums do not match for {photo.path} and {destination.path}")
+
+		# Get the destination directory
+		destination_dir = os.path.dirname(destination.path)
+
+		# Append it to the queue
+		self._queue.setdefault(destination_dir, []).append(photo)
+
+		return True
+	
+	def append_parts(self, photo : Photo, *destination_parts : str) -> bool:
+		"""
+		Adds a photo to the queue, if possible, where the destination path is constructed from a list of path parts.
+
+		Args:
+			photo (Photo): The photo to be copied.
+			*destination_parts (str): The parts of the path to the destination photo.
+
+		Returns:
+			bool: True if the photo was added to the queue, False if it was not.
+		"""
+		# Join the parts into a single path
+		destination = os.path.join(*destination_parts)
+		destination_photo = Photo(destination)
+		return self.append(photo, destination_photo)
 	
 	def skip(self, photo: Photo) -> int:
 		"""
@@ -63,7 +125,6 @@ class Queue:
 			int: The number of photos in the skipped list.
 		"""
 		self._skipped.append(photo)
-
 		return len(self._skipped)
 
 	def flag(self, photo: Photo, existing: Photo) -> int:
@@ -80,7 +141,41 @@ class Queue:
 		self._mismatched[photo] = existing
 		return len(self._mismatched)
 	
-	def save_checksum(self, photo: Photo, checksum: str) -> None:
+	def calculate_checksum(self, photo : Photo) -> str:
+		"""
+		Calculates a checksum for the photo and saves it to the checksums list.
+		
+		Args:
+			photo (Photo): The photo to be copied.
+			
+		Returns:
+			str: The checksum of the photo.
+		"""
+		checksum = photo.checksum
+		self.append_checksum(photo, checksum)
+		return checksum
+	
+	def calculate_checksums(self, photos : list[Photo]) -> dict[str, str]:
+		"""
+		Calculates checksums for all photos and saves them to the checksums list.
+		
+		Args:
+			photos (list[Photo]): The photos to be copied.
+
+		Returns:
+			dict[str, str]: The checksums of the photos.
+		"""
+		checksums = {}
+		for photo in photos:
+			try:
+				result = self.calculate_checksum(photo)
+				checksums[photo] = result
+			except FileNotFoundError:
+				logger.debug(f"File not found, cannot calculate checksum: {photo.path}")
+
+		return checksums
+	
+	def append_checksum(self, photo: Photo, checksum: str) -> None:
 		"""
 		Saves the checksum for a photo.
 
@@ -168,27 +263,25 @@ class Queue:
 			case "skipped":
 				count = len(self._skipped)
 			case "mismatched":
-				count = len(self._mismatched.keys())
+				count = len(self._mismatched)
 			case "checksums":
-				count = len(self._checksums.keys())
+				count = len(self._checksums)
 			case "all":
-				count = len(self._skipped) + len(self._mismatched.keys()) + len(self._checksums.keys()) + self.count("queue")
+				count = len(self._skipped) + len(self._mismatched) + len(self._checksums) + self.count("queue")
 			case _:
-				count = 0
-				for destination in self._queue:
-					count += len(self._queue[destination])
+				return sum(len(photos) for photos in self._queue.values())
 
 		return count
 	
-	def write(self, destination_folder : str, output_path : Optional[str] = None) -> str:
+	def write(self, destination_folder: str, output_path: Optional[str] = None) -> str:
 		"""
 		Save a portion of the queue to a file (for the given destination), one photo path per line.
-		
+
 		This is used for tools like teracopy.
-		
+
 		Args:
-			desintation_folder (str): The path to the destination directory. Only photos destined to be copied to that directory will be saved.
-			output_path (str, optional): The path to save the queue to. Defaults to a file in the current directory named "copy_queue_{date}.txt"
+			desintation_folder (str): The path to the destination directory.
+			output_path (str, optional): The path to save the queue to.
 		
 		Returns:
 			str: The path the queue was saved to.
@@ -197,15 +290,12 @@ class Queue:
 			output_path = f"copy_queue_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
 		
 		# If the file already exists, log a warning
-		if os.path.exists(output_path):
-			# If the output_path doesn't end in txt, refuse to overwrite it
-			if not output_path.endswith(".txt"):
+		if os.path.exists(output_path) and not output_path.lower().endswith(".txt"):
 				raise FileExistsError(f"Queue file already exists: {output_path}. Refusing to overwrite because it isn't a text file.")
-			
-			logger.warning(f"Queue file already exists: {output_path}. Overwriting...")
 
+		photos_to_copy = self._queue.get(destination_folder, [])
 		with open(output_path, "w") as file:
-			for photo in self._queue[destination_folder]:
+			for photo in photos_to_copy:
 				file.write(f"{photo.path}\n")
 		
 		return output_path

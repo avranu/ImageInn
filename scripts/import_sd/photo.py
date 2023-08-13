@@ -1,3 +1,22 @@
+"""
+	
+	Metadata:
+	
+		File: photo.py
+		Project: import_sd
+		Created Date: 11 Aug 2023
+		Author: Jess Mann
+		Email: jess.a.mann@gmail.com
+	
+		-----
+	
+		Last Modified: Sun Aug 13 2023
+		Modified By: Jess Mann
+	
+		-----
+	
+		Copyright (c) 2023 Jess Mann
+"""
 from __future__ import annotations
 import datetime
 from enum import Enum
@@ -473,6 +492,21 @@ class Photo:
 
 		return self.path.lower().split('.')[-1]
 	
+	@property
+	def checksum(self) -> str:
+		"""
+		Get the checksum of this file.
+
+		Returns:
+			str: The checksum.
+
+		Examples:
+			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234.arw')
+			>>> photo.checksum
+			'8f3d1d8a'
+		"""
+		return Validator.calculate_checksum(self.path)
+	
 	def attr(self, key : ExifTag) -> str | float | int:
 		"""
 		Get the EXIF data from the given file.
@@ -561,7 +595,7 @@ class Photo:
 		if not self.exists() or not photo.exists():
 			return False
 		
-		return Validator.compare_checksums(self.path, photo.path)
+		return self.checksum == photo.checksum
 	
 	def __str__(self):
 		return self.path
