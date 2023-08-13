@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sat Aug 12 2023
+		Last Modified: Sun Aug 13 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -34,6 +34,7 @@ import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.operations import CopyOperation
 from scripts.import_sd.validator import Validator
+from scripts.import_sd.path import FilePath
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.queue import Queue
 from scripts.import_sd.sd import SDCard
@@ -414,7 +415,7 @@ class Workflow:
 		for root, _, filenames in os.walk(self.sd_card.path):
 			for filename in filenames:
 				filepath = os.path.join(root, filename)
-				folder = SDCard.determine_subpath(filepath)
+				folder = self.sd_card.determine_subpath(filepath)
 				photo = Photo(filepath)
 			
 				# Add RAW extensions to the raw_path, jpg extensions to the jpg_path, and all files to the backup_path
@@ -422,15 +423,15 @@ class Workflow:
 					# Only append the RAW file if it doesn't exist (or mismatches) the FINAL location it will end up in, after it is organized.
 					final_path = self.generate_path(photo)
 					if not os.path.exists(final_path) or not photo.matches(final_path):
-						files.append_parts(self.bucket_path, folder, filename)
+						files.append_parts(photo, [self.bucket_path, folder, filename])
 				elif photo.is_jpg():
-					files.append_parts(self.jpg_path, folder, filename)
+					files.append_parts(photo, [self.jpg_path, folder, filename])
 				else:
 					logger.warning(f'Unknown file type {filename}')
 					continue
 
 				# Add ALL files to the backup path
-				files.append_parts(self.backup_path, folder, filename)
+				files.append_parts(photo, [self.backup_path, folder, filename])
 
 		logger.info('Queueing %d files to copy', files.count())
 		return files
@@ -522,7 +523,7 @@ class Workflow:
 		# Organize files into folders by date, and rename them based on their attributes
 		for file_path in files:
 			# Generate the new file path
-			new_file_path = self.generate_path(file_path, self.raw_path)
+			new_file_path = self.generate_path(file_path)
 
 			# Create the directory if it doesn't exist
 			os.makedirs(os.path.dirname(new_file_path), exist_ok=True)
@@ -585,15 +586,19 @@ class Workflow:
 			# Generate the name
 			name = f'{photo.number}_{photo.exposure_bias}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS'
 		else:
+			if photo.date is None:
+				date = '00000000'
+			else:
+				date = f'{photo.date:%Y%m%d}'
 			# Generate the name
-			name = f'{photo.date:%Y%m%d}_{photo.camera}_{photo.number}_{photo.exposure_bias}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS_{photo.lens}'
+			name = f'{date}_{photo.camera}_{photo.number}_{photo.exposure_bias}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS_{photo.lens}'
 	
 		# Convert any decimal points to spaces
 		name = name.replace('.', ' ')
 
 		return f'{name}.{photo.extension}'
 	
-	def generate_path(self, photo : Photo | str) -> Photo:
+	def generate_path(self, photo : Photo | str) -> FilePath:
 		"""
 		Figure out an appropriate path to copy the file, given its creation date. 
 		
@@ -635,9 +640,15 @@ class Workflow:
 				filename = f'{filename[:buffer]}---.{photo.extension}'
 
 		# Generate the path again
-		path = f'{self.raw_path}/{photo.date:%Y}/{photo.date:%Y-%m-%d}/{filename}'
+		if photo.date is None:
+			year = '0000'
+			date = '0000-00-00'
+		else:
+			year = f'{photo.date:%Y}'
+			date = f'{photo.date:%Y-%m-%d}'
+		path = f'{self.raw_path}/{year}/{date}/{filename}'
 
-		return Photo(path)
+		return FilePath(path)
 	
 	@classmethod
 	def ask_user_continue(cls, message : str = f"Errors were found:", errors : Optional[list] = None, continue_message : str = "Continue to the next step? [y/n]", throw_error : bool = True) -> bool:

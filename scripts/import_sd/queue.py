@@ -21,9 +21,10 @@ from __future__ import annotations
 import os
 from typing import Optional
 from datetime import datetime
-from scripts.import_sd.photo import Photo
 import logging
 
+from scripts.import_sd.path import FilePath
+from scripts.import_sd.photo import Photo
 from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,8 @@ class Queue:
 	"""
 	_queue: dict[str, list[Photo]]
 	_skipped: list[Photo]
-	_mismatched: dict[Photo, Photo]
-	_checksums: dict[Photo, str]
+	_mismatched: dict[Photo, FilePath]
+	_checksums: dict[FilePath, str]
 
 	def __init__(self):
 		self._queue = {}
@@ -56,7 +57,7 @@ class Queue:
 		self._mismatched = {}
 		self._checksums = {}
 	
-	def append(self, photo: Photo, destination: Photo) -> bool:
+	def append(self, photo: Photo, destination: FilePath | str) -> bool:
 		"""
 		Adds a photo to the queue, if possible. 
 
@@ -65,7 +66,7 @@ class Queue:
 
 		Args:
 			photo (Photo): The photo to be copied.
-			destination (str): The destination path (including filename) it will be copied to.
+			destination (FilePath): The destination path (including filename) it will be copied to.
 
 		Raises:
 			ValueError: If the photo and destination have different extensions.
@@ -73,6 +74,9 @@ class Queue:
 		Returns:
 			bool: True if the photo was added to the queue, False if it was not.
 		"""
+		if not isinstance(destination, FilePath):
+			destination = FilePath(destination)
+
 		# Check that photo and destination have the same extension, otherwise throw an error
 		if photo.extension != destination.extension:
 			raise ValueError(f"Photo and destination have different extensions: {photo.extension} and {destination.extension}")
@@ -98,21 +102,20 @@ class Queue:
 
 		return True
 	
-	def append_parts(self, photo : Photo, *destination_parts : str) -> bool:
+	def append_parts(self, photo : Photo, destination_parts : list[str] | str) -> bool:
 		"""
 		Adds a photo to the queue, if possible, where the destination path is constructed from a list of path parts.
 
 		Args:
 			photo (Photo): The photo to be copied.
-			*destination_parts (str): The parts of the path to the destination photo.
+			destination_parts (list[str] | str): The parts of the path to the destination photo (or a single complete path).
 
 		Returns:
 			bool: True if the photo was added to the queue, False if it was not.
 		"""
 		# Join the parts into a single path
-		destination = os.path.join(*destination_parts)
-		destination_photo = Photo(destination)
-		return self.append(photo, destination_photo)
+		destination = FilePath(destination_parts)
+		return self.append(photo, destination)
 	
 	def skip(self, photo: Photo) -> int:
 		"""
@@ -127,7 +130,7 @@ class Queue:
 		self._skipped.append(photo)
 		return len(self._skipped)
 
-	def flag(self, photo: Photo, existing: Photo) -> int:
+	def flag(self, photo: Photo, existing: FilePath) -> int:
 		"""
 		Adds a photo to the mismatched list.
 
@@ -141,7 +144,7 @@ class Queue:
 		self._mismatched[photo] = existing
 		return len(self._mismatched)
 	
-	def calculate_checksum(self, photo : Photo) -> str:
+	def calculate_checksum(self, photo : FilePath) -> str:
 		"""
 		Calculates a checksum for the photo and saves it to the checksums list.
 		
@@ -155,7 +158,7 @@ class Queue:
 		self.append_checksum(photo, checksum)
 		return checksum
 	
-	def calculate_checksums(self, photos : list[Photo]) -> dict[str, str]:
+	def calculate_checksums(self, photos : list[FilePath]) -> dict[str, str]:
 		"""
 		Calculates checksums for all photos and saves them to the checksums list.
 		
@@ -175,7 +178,7 @@ class Queue:
 
 		return checksums
 	
-	def append_checksum(self, photo: Photo, checksum: str) -> None:
+	def append_checksum(self, photo: FilePath, checksum: str) -> None:
 		"""
 		Saves the checksum for a photo.
 
@@ -217,7 +220,7 @@ class Queue:
 		"""
 		return self._skipped
 	
-	def get_mismatched(self) -> dict[Photo, Photo]:
+	def get_mismatched(self) -> dict[Photo, FilePath]:
 		"""
 		Returns the mismatched list.
 
@@ -226,7 +229,7 @@ class Queue:
 		"""
 		return self._mismatched
 	
-	def get_checksums(self) -> dict[Photo, str]:
+	def get_checksums(self) -> dict[FilePath, str]:
 		"""
 		Returns the checksums.
 
@@ -235,7 +238,7 @@ class Queue:
 		"""
 		return self._checksums
 	
-	def get_checksum(self, photo: Photo) -> str | None:
+	def get_checksum(self, photo: FilePath) -> str | None:
 		"""
 		Returns the checksum for a photo.
 

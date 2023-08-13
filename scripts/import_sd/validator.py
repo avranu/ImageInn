@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sat Aug 12 2023
+		Last Modified: Sun Aug 13 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -34,33 +34,21 @@ class Validator:
 		"""
 		Check if the given path exists and is a directory.
 		"""
-		if not os.path.isdir(path):
-			logger.error(f'The path is not a directory: {path}')
-			return False
-
-		return True
+		return os.path.isdir(path)
 	
 	@classmethod
 	def is_file(cls, path: str) -> bool:
 		"""
 		Check if the given path exists and is a file.
 		"""
-		if not os.path.isfile(path):
-			logger.error(f'The path is not a file: {path}')
-			return False
-
-		return True
+		return os.path.isfile(path)
 
 	@classmethod
 	def is_writeable(cls, path: str) -> bool:
 		"""
 		Check if the given path is writable.
 		"""
-		if not os.access(path, os.W_OK):
-			logger.error(f'Cannot write to path: {path}')
-			return False
-
-		return True
+		return os.access(path, os.W_OK)
 	
 	@classmethod 
 	def ensure_dir(cls, path: str) -> bool:

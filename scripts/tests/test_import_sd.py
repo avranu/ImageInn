@@ -1,3 +1,22 @@
+"""
+	
+	Metadata:
+	
+		File: test_import_sd.py
+		Project: tests
+		Created Date: 08 Aug 2023
+		Author: Jess Mann
+		Email: jess.a.mann@gmail.com
+	
+		-----
+	
+		Last Modified: Sun Aug 13 2023
+		Modified By: Jess Mann
+	
+		-----
+	
+		Copyright (c) 2023 Jess Mann
+"""
 import datetime
 import logging
 import os
@@ -712,18 +731,18 @@ class TestSDCards(unittest.TestCase):
 		# Tests when the teracopy process results in success
 		with patch('subprocess.check_call', return_value=1000):
 			# Normal call
-			self.assertTrue(self.sd_cards.perform_copy_from_list(self.list_path, self.temp_dir, self.checksums_before))
+			self.assertTrue(self.workflow.perform_copy_from_list(self.list_path, self.temp_dir, self.checksums_before))
 
 			# Invalid destination path should still succeed (it will be created)
-			self.assertTrue(self.sd_cards.perform_copy_from_list(self.list_path, 'invalid_path', self.checksums_before))
+			self.assertTrue(self.workflow.perform_copy_from_list(self.list_path, 'invalid_path', self.checksums_before))
 
 			# No list path should fail, even though the subprocess may succeed
 			with self.assertRaises(FileNotFoundError):
-				self.sd_cards.perform_copy_from_list('invalid_path', self.temp_dir, self.checksums_before)
+				self.workflow.perform_copy_from_list('invalid_path', self.temp_dir, self.checksums_before)
 
 		# Tests when the teracopy process results in failure
 		with patch.object(subprocess, 'check_call', side_effect=subprocess.CalledProcessError(1, '')):
-			self.assertFalse(self.sd_cards.perform_copy_from_list(self.list_path, self.temp_dir, self.checksums_before))
+			self.assertFalse(self.workflow.perform_copy_from_list(self.list_path, self.temp_dir, self.checksums_before))
 
 	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
 	def test_create_filelist_new(self, mock_generate_name):

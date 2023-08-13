@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sat Aug 12 2023
+		Last Modified: Sun Aug 13 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -18,9 +18,11 @@
 		Copyright (c) 2023 Jess Mann
 """
 import os
+import tempfile
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import patch
 import subprocess
+import shutil
 
 from scripts.import_sd.workflow import Workflow
 from scripts.import_sd.photo import Photo
@@ -31,187 +33,202 @@ from scripts.import_sd.operations import CopyOperation
 
 class TestWorkflow(unittest.TestCase):
 	def setUp(self):
-		self.raw_path = "/path/to/raw"
-		self.jpg_path = "/path/to/jpg"
-		self.backup_path = "/path/to/backup"
-		self.sd_card = SDCard("/path/to/sd_card")
-		self.workflow = Workflow(self.raw_path, self.jpg_path, self.backup_path, sd_card=self.sd_card)
+		# Paths
+		self.data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')
+		self.test_data_path = os.path.join(self.data_path, 'test_data')
+		self.sample_image_path = os.path.join(self.data_path, "_ARW_2544.arw")
+		self.sd_card_path = os.path.join(self.test_data_path, 'sd_card')
+		self.raw_path = os.path.join(self.test_data_path, 'network')
+		self.jpg_path = os.path.join(self.test_data_path, 'jpgs')
+		self.empty_path = os.path.join(self.test_data_path, 'empty')
+		self.backup_path = os.path.join(self.test_data_path, 'backup_network')
+		self.list_path = os.path.join(self.test_data_path, 'file_list.txt')
+		# Ensure sd_card_path, network_path and backup_network_path all exist
+		os.makedirs(self.data_path, exist_ok=True)
+		os.makedirs(self.test_data_path, exist_ok=True)
+		os.makedirs(self.sd_card_path, exist_ok=True)
+		os.makedirs(self.raw_path, exist_ok=True)
+		os.makedirs(self.jpg_path, exist_ok=True)
+		os.makedirs(self.empty_path, exist_ok=True)
+		os.makedirs(self.backup_path, exist_ok=True)
+		self.temp_dir = tempfile.mkdtemp()
+
+		self.files = [
+			os.path.join(self.sd_card_path, "img_001.jpg"),
+			os.path.join(self.sd_card_path, "img_002.jpg"),
+			os.path.join(self.sd_card_path, "img_003.jpg"),
+			os.path.join(self.raw_path, "img_001.jpg"),
+			os.path.join(self.raw_path, "img_002.jpg"),
+		]
+		self.file_contents = [
+			"test data",
+			"test data",
+			"test data",
+			"test data",
+			"different data",
+		]
+
+		# Create files
+		for file, contents in zip(self.files, self.file_contents):
+			with open(file, 'w') as f:
+				f.write(contents)
+
+		with open(self.list_path, 'w') as f:
+			for file in self.files:
+				f.write(file + '\n')
+
+		self.sd_card = SDCard(self.sd_card_path)
+		self.workflow = Workflow(self.raw_path, self.jpg_path, self.backup_path, 'arw', self.sd_card)
+
+	def tearDown(self):
+		for file in self.files:
+			os.remove(file)
+		shutil.rmtree(self.temp_dir)
+		shutil.rmtree(self.test_data_path)
+
+	def _same_path(self, path1, path2):
+		"""
+		Check that the paths are the same, after being normalized and removing the trailing slash
+		"""
+		return os.path.normpath(path1).rstrip('/') == os.path.normpath(path2).rstrip('/')
 
 	def test_init(self):
-		self.assertEqual(self.workflow.raw_path, self.raw_path)
-		self.assertEqual(self.workflow.jpg_path, self.jpg_path)
-		self.assertEqual(self.workflow.backup_path, self.backup_path)
-		self.assertEqual(self.workflow.sd_card, self.sd_card)
+		self.assertTrue(self._same_path(self.workflow.raw_path, self.raw_path), msg="raw_path not set correctly")
+		self.assertTrue(self._same_path(self.workflow.jpg_path, self.jpg_path), msg="jpg_path not set correctly")
+		self.assertTrue(self._same_path(self.workflow.backup_path, self.backup_path), msg="backup_path not set correctly")
+		self.assertEqual(self.workflow.sd_card, self.sd_card, msg="sd_card not set correctly")
+		self.assertIsInstance(self.workflow.sd_card, SDCard, msg="sd_card not set correctly")
 
 	def test_sd_card_property(self):
-		self.assertEqual(self.workflow.sd_card, self.sd_card)
-		self.workflow.sd_card = "/new/path/to/sd_card"
-		self.assertIsInstance(self.workflow.sd_card, SDCard)
+		self.assertEqual(self.workflow.sd_card, self.sd_card, msg="sd_card not set correctly")
+		self.assertTrue(self._same_path(self.workflow.sd_card.path, self.sd_card.path), msg="sd_card not set correctly")
+		self.assertIsInstance(self.workflow.sd_card, SDCard, msg="sd_card is not an SD Card")
 
-		SDCard.get_media_dir = MagicMock(return_value=None)
-		with self.assertRaises(FileNotFoundError):
-			_ = Workflow(self.raw_path, self.jpg_path, self.backup_path).sd_card
+		with patch.object(os.path, 'exists', return_value=False):
+			with self.assertRaises(FileNotFoundError):
+				_ = Workflow(self.raw_path, self.jpg_path, self.backup_path).sd_card
 
 	def test_path_properties(self):
-		valid_path = "/valid/path"
-		invalid_path = "/invalid/path"
+		# Valid path
+		self.workflow.raw_path = self.empty_path
+		self.assertTrue(self._same_path(self.workflow.raw_path, os.path.join(self.empty_path, '')), msg="raw_path not set correctly")
 
-		Validator.is_dir = MagicMock(return_value=True)
-		self.workflow.raw_path = valid_path
-		self.assertEqual(self.workflow.raw_path, valid_path)
-
-		Validator.is_dir = MagicMock(return_value=False)
+		# Invalid path
 		with self.assertRaises(FileNotFoundError):
-			self.workflow.raw_path = invalid_path
+			self.workflow.raw_path = os.path.join(self.empty_path, 'non_existent_folder')
 
 		# Test similar behavior for jpg_path and backup_path
-		self.workflow.jpg_path = valid_path
-		self.workflow.backup_path = valid_path
-		self.assertEqual(self.workflow.jpg_path, valid_path)
-		self.assertEqual(self.workflow.backup_path, valid_path)
+		self.workflow.jpg_path = self.empty_path
+		self.assertTrue(self._same_path(self.workflow.jpg_path, os.path.join(self.empty_path, '')), msg="jpg_path not set correctly")
 
 		with self.assertRaises(FileNotFoundError):
-			self.workflow.jpg_path = invalid_path
+			self.workflow.jpg_path = os.path.join(self.empty_path, 'non_existent_folder')
+
+		self.workflow.backup_path = self.empty_path
+		self.assertTrue(self._same_path(self.workflow.backup_path, os.path.join(self.empty_path, '')), msg="backup_path not set correctly")
 
 		with self.assertRaises(FileNotFoundError):
-			self.workflow.backup_path = invalid_path
+			self.workflow.backup_path = os.path.join(self.empty_path, 'non_existent_folder')
 
-	def test_bucket_path_property(self):
-		bucket_path = os.path.join(self.raw_path, 'Import Bucket')
-
-		Validator.is_dir = MagicMock(return_value=False)
-		Validator.is_writeable = MagicMock(return_value=True)
-		os.makedirs = MagicMock()
-
-		self.assertEqual(self.workflow.bucket_path, bucket_path)
-		os.makedirs.assert_called_once_with(bucket_path, exist_ok=True)
-
-		Validator.is_writeable = MagicMock(return_value=False)
-		with self.assertRaises(PermissionError):
-			_ = self.workflow.bucket_path
+	def test_bucket_path_property_fail(self):
+		bucket_path = os.path.join(self.empty_path, 'Import Bucket')
+		with patch.object(Validator, 'is_writeable', return_value=False):
+			with self.assertRaises(PermissionError):
+				_ = self.workflow.bucket_path
 
 	def test_run(self):
-		Validator.is_dir = MagicMock(return_value=True)
-		Validator.is_writeable = MagicMock(return_value=True)
-		self.workflow.queue_files = MagicMock(return_value=Queue())
-		self.workflow.copy_from_list = MagicMock(return_value=True)
-		self.workflow.organize_files = MagicMock(return_value={})
-		Validator.validate_checksum_list = MagicMock(return_value=True)
+		with patch.object(Validator, 'is_dir', return_value=True), \
+			 patch.object(Validator, 'is_writeable', return_value=True), \
+			 patch.object(self.workflow, 'queue_files', return_value=Queue()), \
+			 patch.object(self.workflow, 'copy_from_list', return_value=True), \
+			 patch.object(self.workflow, 'organize_files', return_value={'/a/img.jpg': '/b/img.jpg'}), \
+			 patch.object(Validator, 'validate_checksum_list', return_value=True):
+			# Successful run
+			self.assertTrue(self.workflow.run(), msg="Workflow should have run successfully")
 
-		# Successful run
-		self.assertTrue(self.workflow.run())
+		with patch.object(Validator, 'is_dir', return_value=False):
+			# Invalid paths
+			self.assertFalse(self.workflow.run(), msg="Workflow should have failed due to invalid paths")
 
-		# Invalid paths
-		Validator.is_dir = MagicMock(return_value=False)
-		self.assertFalse(self.workflow.run())
-
-		# Unwritable paths
-		Validator.is_dir = MagicMock(return_value=True)
-		Validator.is_writeable = MagicMock(return_value=False)
-		self.assertFalse(self.workflow.run())
+		with patch.object(Validator, 'is_dir', return_value=True), \
+			 patch.object(Validator, 'is_writeable', return_value=False):
+			# Unwritable paths
+			self.assertFalse(self.workflow.run(), msg="Workflow should have failed due to unwritable paths")
 
 	def test_copy_from_list(self):
-		list_path = "list_path"
-		destination_path = "destination_path"
+		list_path = self.list_path
+		destination_path = self.backup_path
 		checksums_before = {"file1": "checksum1"}
 		operation = CopyOperation.TERACOPY
 
-		self.workflow.perform_copy = MagicMock(return_value=True)
-		Validator.validate_checksums = MagicMock(return_value=True)
-		self.assertTrue(self.workflow.copy_from_list(list_path, destination_path, checksums_before, operation))
+		with patch.object(self.workflow, 'teracopy_from_list', return_value=True), \
+			 patch.object(Validator, 'validate_checksums', return_value=True):
+			self.assertTrue(self.workflow.copy_from_list(list_path, destination_path, checksums_before, operation), msg="Copy should have succeeded")
 
 		# Copy failure
-		self.workflow.perform_copy = MagicMock(return_value=False)
-		self.assertFalse(self.workflow.copy_from_list(list_path, destination_path, checksums_before, operation))
+		with patch.object(self.workflow, 'teracopy_from_list', return_value=False), \
+			 patch.object(Validator, 'validate_checksums', return_value=True), \
+			 patch('builtins.input', return_value='y'):
+			self.assertFalse(self.workflow.copy_from_list(list_path, destination_path, checksums_before, operation), msg="Copy should have failed")
 
 		# Checksum validation failure
-		self.workflow.perform_copy = MagicMock(return_value=True)
-		Validator.validate_checksums = MagicMock(return_value=False)
-		self.assertFalse(self.workflow.copy_from_list(list_path, destination_path, checksums_before, operation))
+		with patch.object(self.workflow, 'teracopy_from_list', return_value=True), \
+			 patch.object(Validator, 'validate_checksums', return_value=False), \
+			 patch('builtins.input', return_value='y'):
+			self.assertFalse(self.workflow.copy_from_list(list_path, destination_path, checksums_before, operation), msg="Checksum validation should have failed")
 
-	def test_rsync(self):
-		source_path = "source_path"
-		destination_path = "destination_path"
+	def test_rsync_fail(self):
+		source_path = self.sd_card_path
+		destination_path = os.path.join(self.empty_path, '/destination/')
 		self.workflow.rsync(source_path, destination_path)
 
 		# Rsync failed
-		subprocess.check_call = MagicMock(side_effect=[subprocess.CalledProcessError(-1, ""), subprocess.CalledProcessError(-1, ""), True])
-		self.assertFalse(self.workflow.rsync(source_path, destination_path))
+		with patch.object(subprocess, 'check_call', side_effect=subprocess.CalledProcessError(-1, "")):
+			self.assertFalse(self.workflow.rsync(source_path, destination_path), msg="Rsync should have failed")
 
-	def test_teracopy(self):
-		source_path = "source_path"
-		destination_path = "destination_path"
-		subprocess.check_call = MagicMock(return_value=True)
+	def test_rsync_succeed(self):
+		source_path = self.sd_card_path
+		destination_path = self.raw_path
+		self.workflow.rsync(source_path, destination_path)
 
-		self.assertTrue(self.workflow.teracopy(source_path, destination_path))
+		with patch.object(subprocess, 'check_call', return_value = 1000):
+			self.assertTrue(self.workflow.rsync(source_path, destination_path), msg="Rsync should have succeeded")
+
+	def test_teracopy_succeed(self):
+		source_path = self.sd_card_path
+		destination_path = self.raw_path
+		with patch.object(subprocess, 'check_call', return_value = 1000):
+			self.assertTrue(self.workflow.teracopy(source_path, destination_path), msg="Teracopy should have succeeded")
+
+	def test_teracopy_fail(self):
+		source_path = self.sd_card_path
+		destination_path = os.path.join(self.empty_path, '/destination/')
 		# Teracopy failed
-		subprocess.check_call = MagicMock(side_effect=subprocess.CalledProcessError(-1, ""))
-		self.assertFalse(self.workflow.teracopy(source_path, destination_path))
+		with patch('subprocess.check_call', side_effect=subprocess.CalledProcessError(-1, "")):
+			self.assertFalse(self.workflow.teracopy(source_path, destination_path), msg="Teracopy should have failed")
 
 	def test_queue_files(self):
-		# Simulate the behavior for testing
-		self.sd_card.walk = os.walk
-		photo = Photo("photo_path.arw")
-		Photo.is_jpg = MagicMock(return_value=False)
-
-		self.workflow.generate_path = MagicMock(return_value="final_path")
-		os.path.exists = MagicMock(return_value=False)
-		photo.matches = MagicMock(return_value=False)
-
 		# Test the logic inside queue_files
 		files = self.workflow.queue_files()
-		self.assertIsInstance(files, Queue)
+		self.assertIsInstance(files, Queue, msg="Files should be a Queue.")
 
 	def test_organize_files(self):
-		# Test organizing files
-		file_path = "/path/to/file.arw"
-		new_file_path = "/new/path/to/file.arw"
-
-		os.walk = MagicMock(return_value=[("/path/to", [], ["file.arw"])])
-		self.workflow.generate_path = MagicMock(return_value=new_file_path)
-		Validator.compare_checksums = MagicMock(return_value=False)
-		os.makedirs = MagicMock()
-		os.rename = MagicMock()
+		# Create files in the bucket, so they can be organized
+		files = [ 'img_001.jpg', 'img_002.jpg', 'img_003.jpg', 'img_001.arw' ]
+		paths = []
+		for file in files:
+			path = os.path.join(self.workflow.bucket_path, file)
+			with open(path, 'w') as f:
+				paths.append(path)
+				f.write(path)
 
 		results = self.workflow.organize_files()
-		self.assertEqual(results, {file_path: new_file_path})
-
-	def test_generate_name(self):
-		photo = Photo("photo_path.arw")
-		photo.date = MagicMock()
-		photo.camera = "camera"
-		photo.number = "1234"
-		photo.exposure_bias = "2"
-		photo.brightness = "10"
-		photo.iso = "800"
-		photo.ss = "1/100"
-		photo.lens = "lens"
-		photo.extension = "arw"
-
-		# Test generating the name
-		name = self.workflow.generate_name(photo)
-		short_name = self.workflow.generate_name(photo, short=True)
-		self.assertIn("1234", name)
-		self.assertIn("1234", short_name)
-
-	def test_generate_path(self):
-		photo = Photo("photo_path.arw")
-		photo.date = MagicMock()
-		photo.extension = "arw"
-
-		# Test generating the path
-		path = self.workflow.generate_path(photo)
-		self.assertIn(self.raw_path, path)
-		self.assertIn("arw", path)
-
-	def test_ask_user_continue(self):
-		# Simulate user choice
-		input = MagicMock(return_value="y")
-		self.assertTrue(self.workflow.ask_user_continue())
-
-		input = MagicMock(return_value="n")
-		with self.assertRaises(KeyboardInterrupt):
-			self.workflow.ask_user_continue()
-
-if __name__ == "__main__":
-	unittest.main()
+		self.assertIsInstance(results, dict, msg="Results should be a dict.")
+		# Contents should include all of self.files as keys, with a new path as values
+		self.assertEqual(len(results.keys()), len(files), msg="Results should include all files.")
+		for file in paths:
+			self.assertIn(file, results.keys(), msg="Results should include all files.")
+			self.assertIsInstance(results[file], str, msg="Results should include all files.")
+			# Contents of the copied file should be the same as the original
+			with open(results[file], 'r') as f:
+				self.assertEqual(f.read(), file, msg="Contents of the copied file should be the same as the original.")

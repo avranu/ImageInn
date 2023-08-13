@@ -28,21 +28,15 @@ from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from scripts.import_sd.exif import ExifTag
 from scripts.import_sd.validator import Validator
+from scripts.import_sd.path import FilePath
 
 logger = logging.getLogger(__name__)
 
-class Photo:
+class Photo(FilePath):
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
 	"""
 	_path: str
-
-	def __init__(self, path : str):
-		"""
-		Args:
-			path (str): The path to the photo.
-		"""
-		self.path = path
 
 	@property
 	def path(self) -> str:
@@ -54,7 +48,7 @@ class Photo:
 	@path.setter
 	def path(self, value : str):
 		"""
-		The path to the photo.
+		The path to the photo, which must already exist.
 		"""
 		if not os.path.exists(value):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), value)
@@ -62,10 +56,10 @@ class Photo:
 		if not os.path.isfile(value):
 			raise ValueError('Path must be a file')
 		
-		self._path = value
+		self._path = os.path.normpath(value)
 	
 	@property
-	def aperture(self) -> float:
+	def aperture(self) -> float | None:
 		"""
 		Get the aperture from the EXIF data of the given file.
 
@@ -77,12 +71,14 @@ class Photo:
 			>>> photo.aperture
 			'2.8'
 		"""
-		result = self.attr(self.path, ExifTag.APERTURE)
+		result = self.attr(ExifTag.APERTURE)
+		if not result:
+			return None
 		# Round up, always
 		return round(result, 2)
 	
 	@property
-	def brightness(self) -> float:
+	def brightness(self) -> float | None:
 		"""
 		Get the brightness value from the EXIF data of the given file.
 
@@ -94,13 +90,15 @@ class Photo:
 			>>> photo.brightness
 			'-8.27'
 		"""
-		result = self.attr(self.path, ExifTag.BRIGHTNESS)
+		result = self.attr(ExifTag.BRIGHTNESS)
+		if not result:
+			return None
 
 		# Round up the 2nd decimal place. Always round up, never down. 
 		return round(result, 2)
 	
 	@property
-	def camera(self) -> str:
+	def camera(self) -> str | None:
 		"""
 		Get the camera model from the EXIF data of the given file.
 
@@ -112,7 +110,7 @@ class Photo:
 			>>> photo.camera
 			'a7r4'
 		"""
-		return self.attr(self.path, ExifTag.CAMERA)
+		return self.attr(ExifTag.CAMERA)
 	
 	@property
 	def date(self) -> datetime:
@@ -127,11 +125,13 @@ class Photo:
 			>>> photo.date
 			'2020-01-01 12:00:00'
 		"""
-		value = self.attr(self.path, ExifTag.DATE)
+		value = self.attr(ExifTag.DATE)
+		if not value:
+			return None
 		return datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
 	
 	@property
-	def dimensions(self) -> Dict[str, int]:
+	def dimensions(self) -> Dict[str, int] | None:
 		"""
 		Get the dimensions from the EXIF data of the given file.
 
@@ -143,14 +143,16 @@ class Photo:
 			>>> photo.dimensions
 			{'height': 4000, 'width': 6000}
 		"""
-		value = self.attr(self.path, ExifTag.DIMENSIONS)
+		value = self.attr(ExifTag.DIMENSIONS)
+		if not value:
+			return None
 		return {
 			'height': value[0],
 			'width': value[1]
 		}
 
 	@property
-	def exposure_bias(self) -> float:
+	def exposure_bias(self) -> float | None:
 		"""
 		Get the exposure bias from the EXIF data of the given file.
 
@@ -162,13 +164,15 @@ class Photo:
 			>>> photo.exposure_bias
 			'-2 7'
 		"""
-		result = self.attr(self.path, ExifTag.EXPOSURE_BIAS)
+		result = self.attr(ExifTag.EXPOSURE_BIAS)
+		if not result:
+			return None
 		# Round up the 2nd decimal place, always
 		return round(result, 2)
 	
 
 	@property
-	def exposure_mode(self) -> str:
+	def exposure_mode(self) -> str | None:
 		"""
 		Get the exposure mode from the EXIF data of the given file.
 
@@ -179,10 +183,10 @@ class Photo:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
 
 		"""
-		return self.attr(self.path, ExifTag.EXPOSURE_MODE)
+		return self.attr(ExifTag.EXPOSURE_MODE)
 
 	@property
-	def exposure_program(self) -> str:
+	def exposure_program(self) -> str | None:
 		"""
 		Get the exposure program from the EXIF data of the given file.
 
@@ -193,10 +197,10 @@ class Photo:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
 
 		"""
-		return self.attr(self.path, ExifTag.EXPOSURE_PROGRAM)
+		return self.attr(ExifTag.EXPOSURE_PROGRAM)
 
 	@property
-	def exposure_time(self) -> float:
+	def exposure_time(self) -> float | None:
 		"""
 		Get the exposure time from the EXIF data of the given file.
 
@@ -208,12 +212,14 @@ class Photo:
 			>>> photo.exposure_time
 			'0.0125'
 		"""
-		result = self.attr(self.path, ExifTag.EXPOSURE_TIME)
+		result = self.attr(ExifTag.EXPOSURE_TIME)
+		if not result:
+			return None
 		# Round up the 10th decimal place, always
 		return round(result, 10)
 	
 	@property
-	def f(self) -> float:
+	def f(self) -> float | None:
 		"""
 		Get the f-number from the EXIF data of the given file.
 
@@ -225,12 +231,14 @@ class Photo:
 			>>> photo.f_number
 			'2.8'
 		"""
-		result = self.attr(self.path, ExifTag.F)
+		result = self.attr(ExifTag.F)
+		if not result:
+			return None
 		# Round up, always
 		return round(result, 2)
 
 	@property
-	def flash(self) -> bool:
+	def flash(self) -> bool | None:
 		"""
 		Get the flash status from the EXIF data of the given file.
 
@@ -241,10 +249,10 @@ class Photo:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
 			True
 		"""
-		return self.attr(self.path, ExifTag.FLASH)
+		return self.attr(ExifTag.FLASH)
 	
 	@property
-	def focal_length(self) -> float:
+	def focal_length(self) -> float | None:
 		"""
 		Get the focal length from the EXIF data of the given file.
 
@@ -256,12 +264,14 @@ class Photo:
 			>>> photo.focal_length
 			'2.8'
 		"""
-		result = self.attr(self.path, ExifTag.FOCAL_LENGTH)
+		result = self.attr(ExifTag.FOCAL_LENGTH)
+		if not result:
+			return None
 		# Round up, always
 		return round(result, 2)
 	
 	@property
-	def height(self) -> int:
+	def height(self) -> int | None:
 		"""
 		Get the height from the EXIF data of the given file.
 
@@ -273,10 +283,10 @@ class Photo:
 			>>> photo.height
 			4000
 		"""
-		return self.attr(self.path, ExifTag.HEIGHT)
+		return self.attr(ExifTag.HEIGHT)
 
 	@property
-	def iso(self) -> int:
+	def iso(self) -> int | None:
 		"""
 		Get the ISO from the EXIF data of the given file.
 
@@ -288,10 +298,10 @@ class Photo:
 			>>> photo.iso
 			'100'
 		"""
-		return self.attr(self.path, ExifTag.ISO)
+		return self.attr(ExifTag.ISO)
 	
 	@property
-	def landscape(self) -> bool:
+	def landscape(self) -> bool | None:
 		"""
 		Get the landscape status from the EXIF data of the given file.
 
@@ -305,7 +315,7 @@ class Photo:
 		return self.orientation == 'Landscape'
 	
 	@property
-	def portrait(self) -> bool:
+	def portrait(self) -> bool | None:
 		"""
 		Get the portrait status from the EXIF data of the given file.
 
@@ -319,7 +329,7 @@ class Photo:
 		return self.orientation == 'Portrait'
 
 	@property
-	def lens(self) -> str:
+	def lens(self) -> str | None:
 		"""
 		Get the lens from the EXIF data of the given file.
 
@@ -331,20 +341,20 @@ class Photo:
 			>>> photo.lens
 			'FE 35mm F1.8'
 		"""
-		return self.attr(self.path, ExifTag.LENS)
+		return self.attr(ExifTag.LENS)
 	
 	@property
-	def metering_mode(self) -> str:
+	def metering_mode(self) -> str | None:
 		"""
 		Get the metering mode from the EXIF data of the given file.
 
 		Returns:
 			str: The metering mode.
 		"""
-		return self.attr(self.path, ExifTag.METERING_MODE)
+		return self.attr(ExifTag.METERING_MODE)
 	
 	@property
-	def megapixels(self) -> float:
+	def megapixels(self) -> float | None:
 		"""
 		Get the megapixels from the EXIF data of the given file.
 
@@ -356,10 +366,10 @@ class Photo:
 			>>> photo.megapixels
 			'24.2'
 		"""
-		return self.attr(self.path, ExifTag.MEGAPIXELS)
+		return self.attr(ExifTag.MEGAPIXELS)
 	
 	@property
-	def orientation(self) -> str:
+	def orientation(self) -> str | None:
 		"""
 		Get the orientation from the EXIF data of the given file.
 
@@ -369,10 +379,10 @@ class Photo:
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
 		"""
-		return self.attr(self.path, ExifTag.ORIENTATION)
+		return self.attr(ExifTag.ORIENTATION)
 
 	@property
-	def ss(self) -> float:
+	def ss(self) -> float | None:
 		"""
 		Get the shutter speed from the EXIF data of the given file.
 
@@ -384,32 +394,34 @@ class Photo:
 			>>> photo.shutter_speed
 			'0.0125'
 		"""
-		result = self.attr(self.path, ExifTag.SS)
+		result = self.attr(ExifTag.SS)
+		if not result:
+			return None
 		# Round up the 10th decimal place, always
 		return round(result, 10)
 
 	@property
-	def size(self) -> int:
+	def size(self) -> int | None:
 		"""
 		Get the size from the EXIF data of the given file.
 
 		Returns:
 			int: The size.
 		"""
-		return self.attr(self.path, ExifTag.SIZE)
+		return self.attr(ExifTag.SIZE)
 	
 	@property
-	def temperature(self) -> str:
+	def temperature(self) -> str | None:
 		"""
 		Get the temperature from the EXIF data of the given file.
 
 		Returns:
 			str: The temperature.
 		"""
-		return self.attr(self.path, ExifTag.TEMPERATURE)
+		return self.attr(ExifTag.TEMPERATURE)
 	
 	@property
-	def wb(self) -> str:
+	def wb(self) -> str | None:
 		"""
 		Get the white balance from the EXIF data of the given file.
 
@@ -419,20 +431,20 @@ class Photo:
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
 		"""
-		return self.attr(self.path, ExifTag.WB)
+		return self.attr(ExifTag.WB)
 	
 	@property
-	def wb_mode(self) -> str:
+	def wb_mode(self) -> str | None:
 		"""
 		Get the white balance mode from the EXIF data of the given file.
 
 		Returns:
 			str: The white balance mode.
 		"""
-		return self.attr(self.path, ExifTag.WB_MODE)
+		return self.attr(ExifTag.WB_MODE)
 	
 	@property
-	def width(self) -> int:
+	def width(self) -> int | None:
 		"""
 		Get the width from the EXIF data of the given file.
 
@@ -444,16 +456,17 @@ class Photo:
 			>>> photo.width
 			6000
 		"""
-		return self.attr(self.path, ExifTag.WIDTH)
+		return self.attr(ExifTag.WIDTH)
 	
-	def resolution(self) -> str:
+	@property
+	def resolution(self) -> str | None:
 		"""
 		Get the resolution from the EXIF data of the given file.
 
 		Returns:
 			str: The resolution.
 		"""
-		return self.attr(self.path, ExifTag.RESOLUTION)
+		return self.attr(ExifTag.RESOLUTION)
 	
 	@property
 	def number(self) -> str:
@@ -507,7 +520,7 @@ class Photo:
 		"""
 		return Validator.calculate_checksum(self.path)
 	
-	def attr(self, key : ExifTag) -> str | float | int:
+	def attr(self, key : ExifTag) -> str | float | int | None:
 		"""
 		Get the EXIF data from the given file.
 
@@ -521,31 +534,35 @@ class Photo:
 			>>> get_exif_data(ExifTag.EXPOSURE_TIME)
 			{'EXIF ExposureTime': (1, 100)}
 		"""
-		with open(self.path, 'rb') as image_file:
-			tags = exifread.process_file(image_file, details=False)
+		try:
+			with open(self.path, 'rb') as image_file:
+				tags = exifread.process_file(image_file, details=False)
 
-		# Convert from ASCII and Signed Ratio to string and float
-		# address problems such as "AssertionError: (0x0110) ASCII=ILCE-7RM4 @ 340 != 'ILCE-7MR4'"
-		value = tags[key]
-		if isinstance(value, exifread.utils.Ratio):
-			return value.decimal()
-		if isinstance(value, exifread.classes.IfdTag):
-			# If field type is an int, return an int
-			if value.field_type in [3, 4, 8, 9]:
-				return int(value.values[0])
-			# If field type is a float, return a float
-			if value.field_type in [11, 12]:
-				return float(value.values[0])
-			# If field type is a ratio or signed ratio, perform the division and reeturn a float
-			if value.field_type in [5, 10]:
-				return value.values[0].num / value.values[0].den
-			return value.printable
-		if isinstance(value, bytes):
-			return value.decode('utf-8')
-		if value is None:
+			# Convert from ASCII and Signed Ratio to string and float
+			# address problems such as "AssertionError: (0x0110) ASCII=ILCE-7RM4 @ 340 != 'ILCE-7MR4'"
+			value = tags[key]
+			if isinstance(value, exifread.utils.Ratio):
+				return value.decimal()
+			if isinstance(value, exifread.classes.IfdTag):
+				# If field type is an int, return an int
+				if value.field_type in [3, 4, 8, 9]:
+					return int(value.values[0])
+				# If field type is a float, return a float
+				if value.field_type in [11, 12]:
+					return float(value.values[0])
+				# If field type is a ratio or signed ratio, perform the division and reeturn a float
+				if value.field_type in [5, 10]:
+					return value.values[0].num / value.values[0].den
+				return value.printable
+			if isinstance(value, bytes):
+				return value.decode('utf-8')
+			if value is None:
+				return None
+		
+			return exifread.utils.make_string(value)
+		except KeyError:
+			logger.warning('Unable to find attribute %s in %s', key, self.path)
 			return None
-    
-		return exifread.utils.make_string(value)
 	
 	def is_jpg(self) -> bool:
 		"""
@@ -560,42 +577,6 @@ class Photo:
 			True
 		"""
 		return self.extension == 'jpg' or self.extension == 'jpeg'
-	
-	def exists(self) -> bool:
-		"""
-		Checks if the given file exists.
-
-		Returns:
-			bool: True if the file exists, False otherwise.
-
-		Examples:
-			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
-			>>> photo.exists()
-			True
-		"""
-		return os.path.exists(self.path)
-	
-	def matches(self, photo : Photo) -> bool:
-		"""
-		Compares the given photo to this photo.
-
-		Args:
-			photo (Photo): The photo to compare to.
-
-		Returns:
-			bool: True if the photo checksums are equal, False otherwise.
-
-		Examples:
-			>>> photo1 = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
-			>>> photo2 = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
-			>>> photo1.compare(photo2)
-			True
-		"""
-		# Both must exist
-		if not self.exists() or not photo.exists():
-			return False
-		
-		return self.checksum == photo.checksum
 	
 	def __str__(self):
 		return self.path
