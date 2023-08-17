@@ -1,3 +1,22 @@
+"""
+	
+	Metadata:
+	
+		File: exif.py
+		Project: import_sd
+		Created Date: 17 Aug 2023
+		Author: Jess Mann
+		Email: jess.a.mann@gmail.com
+	
+		-----
+	
+		Last Modified: Thu Aug 17 2023
+		Modified By: Jess Mann
+	
+		-----
+	
+		Copyright (c) 2023 Jess Mann
+"""
 from __future__ import annotations
 from enum import Enum
 
@@ -13,6 +32,7 @@ class ExifTag(str, Enum):
 	EXPOSURE_MODE = 'EXIF ExposureMode'
 	EXPOSURE_PROGRAM = 'EXIF ExposureProgram'
 	EXPOSURE_TIME = 'EXIF ExposureTime'
+	EXPOSURE_VALUE = 'EXIF ExposureValue'
 	F = 'EXIF FNumber'
 	F_NUMBER = 'EXIF FNumber'
 	FLASH = 'EXIF Flash'

@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Thu Aug 17 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -51,8 +51,9 @@ class Workflow:
 	_sd_card : SDCard = None
 	_bucket_path : str = None
 	raw_extension : str
+	dry_run : bool = False
 
-	def __init__(self, raw_path : str, jpg_path : str, backup_path : str, raw_extension : str = 'arw', sd_card : Optional[str | SDCard] = None):
+	def __init__(self, raw_path : str, jpg_path : str, backup_path : str, raw_extension : str = 'arw', sd_card : Optional[str | SDCard] = None, dry_run : bool = False):
 		"""
 		Args:
 			raw_path (str): 
@@ -67,11 +68,14 @@ class Workflow:
 				The file extension of the raw files to copy. Defaults to 'arw'.
 			sd_card (str | None): 
 				The SDCard (or a path to an SD card) to copy. Defaults to attempting to find the SD card automatically.
+			dry_run (bool):
+				Whether or not to actually copy files. Defaults to False.
 		"""
 		self.raw_path = raw_path
 		self.jpg_path = jpg_path
 		self.backup_path = backup_path
 		self.raw_extension = raw_extension
+		self.dry_run = dry_run
 
 		# If no sd_path is provided, try to find it
 		if sd_card is not None:
@@ -287,6 +291,9 @@ class Workflow:
 			raise ValueError('Invalid copy operation specified')
 
 		# Perform the backup first
+		if self.dry_run:
+			raise NotImplementedError('Dry run is not yet implemented for file lists')
+		
 		if not perform_copy(list_path, destination_path):
 			logger.critical('Perform copy failed for %s', destination_path)
 			# Ask user if they want to continue
@@ -552,7 +559,10 @@ class Workflow:
 					continue
 
 			# Rename the file
-			os.rename(file_path, new_file_path)
+			if not self.dry_run:
+				os.rename(file_path, new_file_path)
+			else:
+				logger.info(f'Would rename {file_path} ----> {new_file_path}')
 			results[file_path] = new_file_path
 
 		return results
@@ -561,8 +571,43 @@ class Workflow:
 		"""
 		Rename files in the directory to the new naming scheme. 
 		"""
+		# Old format is: 20230805-a7r4-1935--7-10 EV-8.27B-ISO 800-SAMYANG AF 12mm F2.0.arw
+		# New format is from self.generate_name()
+
+		results = {}
+
+		old_format_regex = re.compile(r'^\d{8}-\w+-(\d{3,}|unknown)-(\d+( \d+))?--?\d+( \d+)?--?\d+([. ]\d+)? EV--?\d+([. ]\d+)B-ISO \d+-.*\.arw$')
+
+		# Verify the paths exist
+		if not all([os.path.exists(path) for path in [self.raw_path]]):
+			logger.info('One or more of the paths provided does not exist: "%s"', self.raw_path)
+			raise FileNotFoundError('Raw path does not exist.')
+
+		# Find all files in the source_path that match the expected naming scheme
+		for root, _, filenames in os.walk(self.raw_path):
+			for filename in filenames:
+				matches = old_format_regex.match(filename, re.IGNORECASE)
+				if matches:
+					path = os.path.join(root, filename)
+					# Determine the photo number from the old name
+					number = matches.group(1)
+					new_name = self.generate_name(path, properties={'number': number})
+					results[path] = os.path.join(root, new_name)
+
+					# Do not clobber existing files
+					if os.path.exists(new_name):
+						logger.warning('File already exists, skipping... %s', new_name)
+						continue
+
+					# Rename the file
+					if not self.dry_run:
+						os.rename(path, new_name)
+					else:
+						logger.info('Would have renamed %s ---> %s', path, new_name)
+
+		return results
 	
-	def generate_name(self, photo : Photo | str, short : bool = False) -> str:
+	def generate_name(self, photo : Photo | str, short : bool = False, properties : Optional[dict[str, Any]] = None) -> str:
 		"""
 		Generate a name for the photo we are copying. 
 		
@@ -572,7 +617,12 @@ class Workflow:
 		The filename number suffix comes from the last 4 digits of the filename (e.g. JAM_1234.jpg -> 1234).
 
 		Args:
-			photo (Photo | str): The photo to generate a name for. If a str, it is assumed to be the file path.
+			photo (Photo | str): 
+				The photo to generate a name for. If a str, it is assumed to be the file path.
+			short (bool, optional): 
+				Whether to generate a short name. Defaults to False.
+			properties (Optional[dict[str, Any]], optional): 
+				The properties of the photo. Defaults to None, where the properties are determined from the photo.
 
 		Returns:
 			str: The generated name.
@@ -583,25 +633,47 @@ class Workflow:
 			'20230805_a7r4-1234_-2 7_10EV_8.27B_800ISO_SAMYANG AF 12mm F2.0.arw'
 			>>> generate_name('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234.arw', short=True)
 			'1234_-2 7_10EV_8.27B.arw'
-		"""
+			>>> generate_name('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234.arw', properties={'number': 5678})
+			'20230805_a7r4-5678_-2 7_10EV_8.27B_800ISO_SAMYANG AF 12mm F2.0.arw'
+			"""
 		if isinstance(photo, str):
-			photo = Photo(photo)
+			# If properties['number'] is set, pass it to the constructor
+			if properties is not None and 'number' in properties:
+				photo = Photo(photo, number=properties['number'])
+			else:
+				photo = Photo(photo)
+
+		# Merge properties from the param and the photo, prioritizing the param
+		props = { 
+			'num': properties.get('number', photo.number),
+			'eb': properties.get('exposure_bias', photo.exposure_bias),
+			'ev': properties.get('exposure_value', photo.exposure_value),
+			'b': properties.get('brightness', photo.brightness),
+			'iso': properties.get('iso', photo.iso),
+			'ss': properties.get('ss', photo.ss),
+			'lens': properties.get('lens', photo.lens),
+			'ext': properties.get('extension', photo.extension),
+			'date': properties.get('date', photo.date),
+			'camera': properties.get('camera', photo.camera)
+		}
 
 		if short is True:
 			# Generate the name
-			name = f'{photo.number}_{photo.exposure_bias}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS'
+			#name = f'{props['number']}_{photo.exposure_bias}EB_{photo.exposure_value}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS'
+			name = f'{props["num"]}_{props["eb"]}EB_{props["ev"]}EV_{props["b"]}B_{props["iso"]}ISO_{props["ss"]}SS'
 		else:
-			if photo.date is None:
+			if not props['date']:
 				date = '00000000'
 			else:
-				date = f'{photo.date:%Y%m%d}'
+				date = f"{props['date']:%Y%m%d}"
 			# Generate the name
-			name = f'{date}_{photo.camera}_{photo.number}_{photo.exposure_bias}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS_{photo.lens}'
-	
+			#name = f'{date}_{photo.camera}_{photo.number}_{photo.exposure_bias}EB_{photo.exposure_value}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS_{photo.lens}'
+			name = f'{date}_{props["camera"]}_{props["num"]}_{props["eb"]}EB_{props["ev"]}EV_{props["b"]}B_{props["iso"]}ISO_{props["ss"]}SS_{props["lens"]}'
+
 		# Convert any decimal points to spaces
 		name = name.replace('.', ' ')
 
-		return f'{name}.{photo.extension}'
+		return f"{name}.{props['ext']}"
 	
 	def generate_path(self, photo : Photo | str) -> FilePath:
 		"""
@@ -695,17 +767,18 @@ def main():
 	# Parse command line arguments
 	parser = argparse.ArgumentParser(description='Copy the SD card to a network location.')
 	parser.add_argument('--sd-path', '-s', type=str, help='The path to the SD card to copy.')
-	parser.add_argument('--raw-path', '-r', default="P:/", type=str, help='The path to the network location to copy RAWs from the SD card to.')
+	parser.add_argument('--raw-path', '-r', default="R:/", type=str, help='The path to the network location to copy RAWs from the SD card to.')
 	parser.add_argument('--jpg-path', '-j', default="P:/jpgs/", type=str, help='The path to the network location to copy JPGs from the SD card to.')
 	parser.add_argument('--extension', '-e', default="arw", type=str, help='The extension to use for RAW files.')
 	parser.add_argument('--backup-path', '-b', default="S:/SD Backup/", type=str, help='The path to the backup network location to copy the SD card to.')
+	parser.add_argument('--dry-run', action='store_true', help='Whether to do a dry run, where no files are actually changed.')
 	args = parser.parse_args()
 
 	# Set up logging
 	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler()])
 
 	# Copy the SD card
-	workflow = Workflow(args.raw_path, args.jpg_path, args.backup_path, args.extension, args.sd_path)
+	workflow = Workflow(args.raw_path, args.jpg_path, args.backup_path, args.extension, args.sd_path, args.dry_run)
 	result = workflow.run()
 
 	# Exit with the appropriate code

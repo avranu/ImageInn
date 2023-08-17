@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Thu Aug 17 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -36,7 +36,19 @@ class Photo(FilePath):
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
 	"""
-	_path: str
+	_path : str
+	_number : int
+
+	def __init__(self, path : str, number : Optional[int] = None):
+		"""
+		Initialise the photo object.
+
+		Args:
+			path (str): The path to the photo.
+			number (int, optional): The number of the photo. Defaults to None.
+		"""
+		super().__init__(path)
+		self._number = number
 
 	@property
 	def path(self) -> str:
@@ -165,6 +177,25 @@ class Photo(FilePath):
 			'-2 7'
 		"""
 		result = self.attr(ExifTag.EXPOSURE_BIAS)
+		if not result:
+			return None
+		# Round up the 2nd decimal place, always
+		return round(result, 2)
+	
+	@property
+	def exposure_value(self) -> float | None:
+		"""
+		Get the exposure value from the EXIF data of the given file.
+
+		Returns:
+			str: The exposure value.
+
+		Examples:
+			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
+			>>> photo.exposure_value
+			'-8.27'
+		"""
+		result = self.attr(ExifTag.EXPOSURE_VALUE)
 		if not result:
 			return None
 		# Round up the 2nd decimal place, always
@@ -471,20 +502,38 @@ class Photo(FilePath):
 	@property
 	def number(self) -> str:
 		"""
-		Get the filename number suffix from the given file. The number suffix is any number of digits at the end of the filename.
+		Get the photo number. If it is not set manually, it will be the filename number suffix.
+
+		The number suffix is any number of digits at the end of the filename.
 
 		Returns:
 			str: The filename number suffix.
 
 		Examples:
+			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234_1.arw', number='5678')
+			>>> photo.number
+			'5678'
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234.arw')
-			>>> photo.number_suffix
+			>>> photo.number
 			'1234'
 		"""
+		if self._number is not None:
+			return self._number
+		
 		matches = re.search(r'(\d+)(\.[a-zA-Z]{1,5})?$', self.path)
 		if matches is None:
 			return None
 		return int(matches.group(1))
+	
+	@number.setter
+	def number(self, value: int):
+		"""
+		Set the photo number.
+
+		Args:
+			value (int): The photo number.
+		"""
+		self._number = value
 	
 	@property
 	def extension(self) -> str:
