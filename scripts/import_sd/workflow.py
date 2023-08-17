@@ -52,8 +52,9 @@ class Workflow:
 	_bucket_path : str = None
 	raw_extension : str
 	dry_run : bool = False
+	action : str
 
-	def __init__(self, raw_path : str, jpg_path : str, backup_path : str, raw_extension : str = 'arw', sd_card : Optional[str | SDCard] = None, dry_run : bool = False):
+	def __init__(self, raw_path : str, jpg_path : str, backup_path : str, raw_extension : str = 'arw', sd_card : Optional[str | SDCard] = None, action : str = 'import', dry_run : bool = False):
 		"""
 		Args:
 			raw_path (str): 
@@ -76,6 +77,7 @@ class Workflow:
 		self.backup_path = backup_path
 		self.raw_extension = raw_extension
 		self.dry_run = dry_run
+		self.action = action
 
 		# If no sd_path is provided, try to find it
 		if sd_card is not None:
@@ -210,53 +212,61 @@ class Workflow:
 			>>> workflow.run()
 			True
 		"""
-		logger.info('Copying sd card...')
-		errors : list[str] = []
+		match self.action:
+			case 'rename':
+				self.update_format()
+			case 'import':
+				logger.info('Copying sd card...')
+				errors : list[str] = []
 
-		# Check if paths are valid and writable
-		if not all(map(Validator.is_dir, [self.sd_card.path, self.raw_path, self.jpg_path, self.backup_path])):
-			logger.error('One or more paths are invalid')
-			return False
-		if not all(map(Validator.is_writeable, [self.raw_path, self.jpg_path, self.backup_path])):
-			logger.error('One or more paths are not writable')
-			return False
+				# Check if paths are valid and writable
+				if not all(map(Validator.is_dir, [self.sd_card.path, self.raw_path, self.jpg_path, self.backup_path])):
+					logger.error('One or more paths are invalid')
+					return False
+				if not all(map(Validator.is_writeable, [self.raw_path, self.jpg_path, self.backup_path])):
+					logger.error('One or more paths are not writable')
+					return False
 
-		# Create a list of files that need to be copied
-		queue = self.queue_files()
+				# Create a list of files that need to be copied
+				queue = self.queue_files()
 
-		# Copy files to each destination path
-		for destination, files in queue.get_queue():
-			# Write the queue to a file, so we have a path to pass teracopy
-			list_path = queue.write(destination)
+				# Copy files to each destination path
+				for destination, files in queue.get_queue():
+					# Write the queue to a file, so we have a path to pass teracopy
+					list_path = queue.write(destination)
 
-			# Begin copying
-			result = self.copy_from_list(list_path, destination, queue.get_checksums(), operation)
+					# Begin copying
+					result = self.copy_from_list(list_path, destination, queue.get_checksums(), operation)
 
-			if not result:
-				errors.append(f'Copy operation failed to {destination}')
+					if not result:
+						errors.append(f'Copy operation failed to {destination}')
 
-		# Organize files in the raw_path
-		results = self.organize_files(self.bucket_path)
-		if not results:
-			logger.error('Failed to organize files, cannot continue')
-			logger.critical('The system state may be inconsistent or unexpected. Please verify all files are in their correct locations.')
-			return False
+				# Organize files in the raw_path
+				results = self.organize_files(self.bucket_path)
+				if not results:
+					logger.error('Failed to organize files, cannot continue')
+					logger.critical('The system state may be inconsistent or unexpected. Please verify all files are in their correct locations.')
+					return False
 
-		# Map the temp_paths in results to the original sd_card paths
-		files = {}
-		for temp_file, network_file in results.items():
-			filename = os.path.basename(temp_file)
-			filepath = os.path.join(self.sd_card.path, filename)
-			files[filepath] = network_file
-		
-		# Validate checksums after teracopy
-		if not Validator.validate_checksum_list(queue.get_checksums(), files):
-			logger.critical('Checksum validation failed on operation %s', operation)
-			errors.append('Checksum validation failed on operation %s' % operation)
+				# Map the temp_paths in results to the original sd_card paths
+				files = {}
+				for temp_file, network_file in results.items():
+					filename = os.path.basename(temp_file)
+					filepath = os.path.join(self.sd_card.path, filename)
+					files[filepath] = network_file
+				
+				# Validate checksums after teracopy
+				if not Validator.validate_checksum_list(queue.get_checksums(), files):
+					logger.critical('Checksum validation failed on operation %s', operation)
+					errors.append('Checksum validation failed on operation %s' % operation)
 
-		if len(errors) > 0:
-			logger.critical('Copy failed due to previous errors.')
-			return False
+				if len(errors) > 0:
+					logger.critical('Copy failed due to previous errors.')
+					return False
+				
+			case _:
+				logger.error('Unknown action: %s', self.action)
+				return False	
 
 		return True
 	
@@ -576,7 +586,7 @@ class Workflow:
 
 		results = {}
 
-		old_format_regex = re.compile(r'^\d{8}-\w+-(\d{3,}|unknown)-(\d+( \d+))?--?\d+( \d+)?--?\d+([. ]\d+)? EV--?\d+([. ]\d+)B-ISO \d+-.*\.arw$')
+		old_format_regex = re.compile(r'^\d{8}-\w+-(\d{3,}|unknown)-.*B-ISO \d+-.*\.arw$', re.IGNORECASE)
 
 		# Verify the paths exist
 		if not all([os.path.exists(path) for path in [self.raw_path]]):
@@ -584,15 +594,18 @@ class Workflow:
 			raise FileNotFoundError('Raw path does not exist.')
 
 		# Find all files in the source_path that match the expected naming scheme
+		count = 0
 		for root, _, filenames in os.walk(self.raw_path):
 			for filename in filenames:
-				matches = old_format_regex.match(filename, re.IGNORECASE)
+				matches = old_format_regex.match(filename)
 				if matches:
-					path = os.path.join(root, filename)
+					old_path = os.path.join(root, filename)
 					# Determine the photo number from the old name
 					number = matches.group(1)
-					new_name = self.generate_name(path, properties={'number': number})
-					results[path] = os.path.join(root, new_name)
+					new_name = self.generate_name(old_path, properties={'number': number})
+					new_path = os.path.join(root, new_name)
+					results[old_path] = new_path
+					logger.debug('QUEUE: %s -> %s', old_path, new_path)
 
 					# Do not clobber existing files
 					if os.path.exists(new_name):
@@ -600,11 +613,13 @@ class Workflow:
 						continue
 
 					# Rename the file
+					count += 1
 					if not self.dry_run:
-						os.rename(path, new_name)
+						os.rename(old_path, new_path)
 					else:
-						logger.info('Would have renamed %s ---> %s', path, new_name)
+						logger.info('Would have renamed %s ---> %s', filename, new_name)
 
+		logger.info('Renamed %d files', count)
 		return results
 	
 	def generate_name(self, photo : Photo | str, short : bool = False, properties : Optional[dict[str, Any]] = None) -> str:
@@ -639,7 +654,7 @@ class Workflow:
 		if isinstance(photo, str):
 			# If properties['number'] is set, pass it to the constructor
 			if properties is not None and 'number' in properties:
-				photo = Photo(photo, number=properties['number'])
+				photo = Photo(photo)
 			else:
 				photo = Photo(photo)
 
@@ -766,19 +781,20 @@ def main():
 	"""
 	# Parse command line arguments
 	parser = argparse.ArgumentParser(description='Copy the SD card to a network location.')
-	parser.add_argument('--sd-path', '-s', type=str, help='The path to the SD card to copy.')
+	parser.add_argument('--sd-path', '-s', default=None, type=str, help='The path to the SD card to copy.')
 	parser.add_argument('--raw-path', '-r', default="R:/", type=str, help='The path to the network location to copy RAWs from the SD card to.')
 	parser.add_argument('--jpg-path', '-j', default="P:/jpgs/", type=str, help='The path to the network location to copy JPGs from the SD card to.')
 	parser.add_argument('--extension', '-e', default="arw", type=str, help='The extension to use for RAW files.')
 	parser.add_argument('--backup-path', '-b', default="S:/SD Backup/", type=str, help='The path to the backup network location to copy the SD card to.')
 	parser.add_argument('--dry-run', action='store_true', help='Whether to do a dry run, where no files are actually changed.')
+	parser.add_argument('--action', '-a', default='import', help='What action to take. IMPORT, RENAME.')
 	args = parser.parse_args()
 
 	# Set up logging
 	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler()])
 
 	# Copy the SD card
-	workflow = Workflow(args.raw_path, args.jpg_path, args.backup_path, args.extension, args.sd_path, args.dry_run)
+	workflow = Workflow(args.raw_path, args.jpg_path, args.backup_path, args.extension, args.sd_path, args.action, args.dry_run)
 	result = workflow.run()
 
 	# Exit with the appropriate code

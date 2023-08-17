@@ -22,6 +22,7 @@ import datetime
 from enum import Enum
 import errno
 import math
+import math
 import os
 import re
 import logging
@@ -200,7 +201,12 @@ class Photo(FilePath):
 		shutter_speed = self.ss
 		iso = self.iso
 		if not aperture or not shutter_speed or not iso:
+		aperture = self.aperture
+		shutter_speed = self.ss
+		iso = self.iso
+		if not aperture or not shutter_speed or not iso:
 			return None
+		
 		return round(math.log2((aperture ** 2) / shutter_speed * iso), 2)
 	
 	@property
@@ -612,6 +618,7 @@ class Photo(FilePath):
 			return exifread.utils.make_string(value)
 		except KeyError:
 			logger.warning('Unable to find attribute %s in %s', key, self.path)
+			logger.warning('Tags are %s', tags)
 			return None
 	
 	def is_jpg(self) -> bool:
