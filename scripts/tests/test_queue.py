@@ -23,10 +23,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.import_sd.path import FilePath
-from scripts.import_sd.photo import Photo
-from scripts.import_sd.queue import Queue
-from scripts.import_sd.validator import Validator
+from .path import FilePath
+from .photo import Photo
+from .queue import Queue
+from .validator import Validator
 
 class TestQueue(unittest.TestCase):
 	def setUp(self):

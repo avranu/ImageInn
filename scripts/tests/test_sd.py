@@ -23,7 +23,7 @@ import tempfile
 import os
 import shutil
 
-from scripts.import_sd.sd import SDCard
+from .sd import SDCard
 
 class TestSDCard(unittest.TestCase):
 

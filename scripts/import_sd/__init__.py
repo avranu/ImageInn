@@ -17,13 +17,13 @@
 	
 		Copyright (c) 2023 Jess Mann
 """
-from scripts.import_sd.config import *
-from scripts.import_sd.exif import ExifTag
-from scripts.import_sd.folder import SDFolder
-from scripts.import_sd.operations import CopyOperation
-from scripts.import_sd.validator import Validator
-from scripts.import_sd.sd import SDCard
-from scripts.import_sd.path import FilePath
-from scripts.import_sd.photo import Photo
-from scripts.import_sd.queue import Queue
-from scripts.import_sd.workflow import Workflow
+from .config import *
+from .exif import ExifTag
+from .folder import SDFolder
+from .operations import CopyOperation
+from .validator import Validator
+from .sd import SDCard
+from .path import FilePath
+from .photo import Photo
+from .queue import Queue
+from .workflow import Workflow

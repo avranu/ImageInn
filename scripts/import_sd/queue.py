@@ -23,9 +23,9 @@ from typing import Optional
 from datetime import datetime
 import logging
 
-from scripts.import_sd.path import FilePath
-from scripts.import_sd.photo import Photo
-from scripts.import_sd.validator import Validator
+from .path import FilePath
+from .photo import Photo
+from .validator import Validator
 
 logger = logging.getLogger(__name__)
 

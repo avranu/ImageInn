@@ -31,13 +31,13 @@ import time
 from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
-from scripts.import_sd.config import MAX_RETRIES
-from scripts.import_sd.operations import CopyOperation
-from scripts.import_sd.validator import Validator
-from scripts.import_sd.path import FilePath
-from scripts.import_sd.photo import Photo
-from scripts.import_sd.queue import Queue
-from scripts.import_sd.sd import SDCard
+from .config import MAX_RETRIES
+from .operations import CopyOperation
+from .validator import Validator
+from .path import FilePath
+from .photo import Photo
+from .queue import Queue
+from .sd import SDCard
 
 logger = logging.getLogger(__name__)
 

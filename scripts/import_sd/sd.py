@@ -35,8 +35,8 @@ from typing import Any, Dict, Optional, TypedDict
 
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
-from scripts.import_sd.folder import SDFolder
-from scripts.import_sd.validator import Validator
+from .folder import SDFolder
+from .validator import Validator
 
 logger = logging.getLogger(__name__)
 

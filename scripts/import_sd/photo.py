@@ -26,9 +26,9 @@ import re
 import logging
 from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
-from scripts.import_sd.exif import ExifTag
-from scripts.import_sd.validator import Validator
-from scripts.import_sd.path import FilePath
+from .exif import ExifTag
+from .validator import Validator
+from .path import FilePath
 
 logger = logging.getLogger(__name__)
 
