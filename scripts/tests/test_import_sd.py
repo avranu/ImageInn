@@ -25,7 +25,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch, MagicMock, mock_open
-from .import SDCards, CopyOperation
+from scripts.import_sd import SDCards, CopyOperation
 
 MOCK_CHECKSUM_VALUE = "mock_valid_checksum"
 logging.basicConfig(level=logging.DEBUG)

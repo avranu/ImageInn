@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Sat Aug 12 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -22,12 +22,12 @@ import tempfile
 import shutil
 import os
 
-from .workflow import Workflow
-from .photo import Photo
-from .validator import Validator
-from .sd import SDCard
-from .queue import Queue
-from .operations import CopyOperation
+from scripts.import_sd.workflow import Workflow
+from scripts.import_sd.photo import Photo
+from scripts.import_sd.validator import Validator
+from scripts.import_sd.sd import SDCard
+from scripts.import_sd.queue import Queue
+from scripts.import_sd.operations import CopyOperation
 
 class TestValidator(unittest.TestCase):
 

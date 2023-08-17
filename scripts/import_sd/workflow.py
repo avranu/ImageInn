@@ -626,7 +626,7 @@ class Workflow:
 		# Get the new filename
 		filename = self.generate_name(photo)
 
-		#        MAX   Path                 Extension           ---.  Date (2023/2023-01-05/)
+		#		MAX   Path				 Extension		   ---.  Date (2023/2023-01-05/)
 		buffer = 254 - len(self.raw_path) - len(photo.extension) - 4 - 16
 		if buffer < 1:
 			# No room for even a truncated filename

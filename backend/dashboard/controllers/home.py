@@ -17,8 +17,8 @@ from __future__ import annotations
 from djangofoundry.controllers import ListController
 
 class IndexController(ListController):
-    template_name = 'dashboard/homepage.html'
-    context_object_name = 'case_list'
+	template_name = 'dashboard/homepage.html'
+	context_object_name = 'case_list'
 
-    def get_queryset(self):
-        return {}
+	def get_queryset(self):
+		return {}

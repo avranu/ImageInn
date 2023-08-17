@@ -4,16 +4,16 @@ from djangofoundry import models
 import os
 
 class FileInfo(models.Model):
-    path = models.TextField(unique=True)
-    created = models.InsertedNowField()
-    updated = models.UpdatedNowField()
+	path = models.TextField(unique=True)
+	created = models.InsertedNowField()
+	updated = models.UpdatedNowField()
 
-    # RELATIONSHIPS
-    # checksums : FileChecksum
+	# RELATIONSHIPS
+	# checksums : FileChecksum
 
-    def exists(self):
-        return os.path.exists(self.path)
+	def exists(self):
+		return os.path.exists(self.path)
 
-    class Meta(models.Model.Meta):
-        db_table = 'dashboard_file_info'
-        ordering = ['path']
+	class Meta(models.Model.Meta):
+		db_table = 'dashboard_file_info'
+		ordering = ['path']

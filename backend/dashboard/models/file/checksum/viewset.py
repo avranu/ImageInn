@@ -4,5 +4,5 @@ from .model import FileChecksum
 from .serializer import Serializer
 
 class ViewSet(models.ViewSet):
-    queryset = FileChecksum.objects.all()
-    serializer_class = Serializer
+	queryset = FileChecksum.objects.all()
+	serializer_class = Serializer
