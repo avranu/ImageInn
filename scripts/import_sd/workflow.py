@@ -557,6 +557,11 @@ class Workflow:
 
 		return results
 	
+	def update_format(self) -> dict[str, str]:
+		"""
+		Rename files in the directory to the new naming scheme. 
+		"""
+	
 	def generate_name(self, photo : Photo | str, short : bool = False) -> str:
 		"""
 		Generate a name for the photo we are copying. 
