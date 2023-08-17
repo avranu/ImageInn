@@ -201,10 +201,6 @@ class Photo(FilePath):
 		shutter_speed = self.ss
 		iso = self.iso
 		if not aperture or not shutter_speed or not iso:
-		aperture = self.aperture
-		shutter_speed = self.ss
-		iso = self.iso
-		if not aperture or not shutter_speed or not iso:
 			return None
 		
 		return round(math.log2((aperture ** 2) / shutter_speed * iso), 2)
