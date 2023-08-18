@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import rawpy
 import imageio
+import subprocess
 
 class HDRProcessor:
     def __init__(self, image_paths):
@@ -18,13 +19,9 @@ class HDRProcessor:
         alignMTB = cv2.createAlignMTB()
         alignMTB.process(self.images, self.images)
 
-    def create_hdr_image(self):
-        merge_debvec = cv2.createMergeDebevec()
-        self.hdr_debvec = merge_debvec.process(self.images)
-
-    def tone_map(self):
-        tonemap1 = cv2.createTonemapDurand(gamma=2.2)
-        self.res_debvec = tonemap1.process(self.hdr_debvec.copy())
+    def create_hdr_image_with_deghosting(self, output_path):
+        command = ['hdrmerge', '-o', output_path] + self.image_paths
+        subprocess.run(command, check=True)
 
     def save_image(self, path):
         res_8bit = np.clip(self.res_debvec*255, 0, 255).astype('uint8')
@@ -32,9 +29,7 @@ class HDRProcessor:
 
     def process(self, output_path):
         self.align_images()
-        self.create_hdr_image()
-        self.tone_map()
-        self.save_image(output_path)
+        self.create_hdr_image_with_deghosting(output_path)
 
 if __name__ == "__main__":
     image_paths = ['path_to_image1', 'path_to_image2', 'path_to_image3']  # Add paths to your images here
