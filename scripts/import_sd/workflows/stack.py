@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Fri Aug 18 2023
+		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -43,7 +43,7 @@ class StackWorkflow(Workflow):
 
 	def __init__(self, base_path : str, raw_extension : str = 'arw', dry_run : bool = False):
 		self.base_path = base_path
-		self.raw_extension = raw_extension
+		self.raw_extension = raw_extension.lower()
 		self.dry_run = dry_run
 
 	def run(self) -> bool:
@@ -65,7 +65,7 @@ class StackWorkflow(Workflow):
 			StackCollection: The collection of stacks.
 		"""
 		logger.info('Stacking photos in %s', self.base_path)
-		
+
 		# Get the list of photos
 		photos = self.get_photos()
 

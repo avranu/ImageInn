@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Fri Aug 18 2023
+		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -71,6 +71,7 @@ class StackCollection:
 
 		if result:
 			logger.debug(f'Photo was added to stack: Stack size is now {len(self.photos)}')
+			return
 
 		self.finish_stack()
 		self.photos.add_photo(photo)

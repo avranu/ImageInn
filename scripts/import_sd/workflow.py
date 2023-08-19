@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Fri Aug 18 2023
+		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -94,7 +94,7 @@ class Workflow:
 		photos = []
 		for root, _dirs, files in os.walk(directory, followlinks=True):
 			for file in files:
-				if file.endswith(self.raw_extension):
+				if self.raw_extension and file.lower().endswith(self.raw_extension):
 					photos.append(Photo(os.path.join(root, file)))
 
 		return photos

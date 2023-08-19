@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Thu Aug 17 2023
+		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -26,6 +26,7 @@ import math
 import os
 import re
 import logging
+from decimal import Decimal
 from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from .exif import ExifTag
@@ -73,12 +74,12 @@ class Photo(FilePath):
 		self._path = os.path.normpath(value)
 	
 	@property
-	def aperture(self) -> float | None:
+	def aperture(self) -> Decimal | None:
 		"""
 		Get the aperture from the EXIF data of the given file.
 
 		Returns:
-			float: The aperture (as a float, not a ratio)
+			Decimal: The aperture (as a Decimal, not a ratio)
 
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
@@ -92,7 +93,7 @@ class Photo(FilePath):
 		return round(result, 2)
 	
 	@property
-	def brightness(self) -> float | None:
+	def brightness(self) -> Decimal | None:
 		"""
 		Get the brightness value from the EXIF data of the given file.
 
@@ -166,7 +167,7 @@ class Photo(FilePath):
 		}
 
 	@property
-	def exposure_bias(self) -> float | None:
+	def exposure_bias(self) -> Decimal | None:
 		"""
 		Get the exposure bias from the EXIF data of the given file.
 
@@ -181,16 +182,17 @@ class Photo(FilePath):
 		result = self.attr(ExifTag.EXPOSURE_BIAS)
 		if not result:
 			return None
+
 		# Round up the 2nd decimal place, always
 		return round(result, 2)
 	
 	@property
-	def exposure_value(self) -> float | None:
+	def exposure_value(self) -> Decimal | None:
 		"""
 		Calculate the exposure value using EXIF data from the photo
 
 		Returns:
-			float: The exposure value.
+			Decimal: The exposure value.
 
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
@@ -203,7 +205,9 @@ class Photo(FilePath):
 		if not aperture or not shutter_speed or not iso:
 			return None
 		
-		return round(math.log2((aperture ** 2) / shutter_speed * iso), 2)
+		result = math.log2((aperture ** 2) / shutter_speed * iso)
+		result = Decimal(result)
+		return round(result, 2)
 	
 	@property
 	def exposure_mode(self) -> str | None:
@@ -234,12 +238,12 @@ class Photo(FilePath):
 		return self.attr(ExifTag.EXPOSURE_PROGRAM)
 
 	@property
-	def exposure_time(self) -> float | None:
+	def exposure_time(self) -> Decimal | None:
 		"""
 		Get the exposure time from the EXIF data of the given file.
 
 		Returns:
-			float: The exposure time (as a float, not a ratio)
+			Decimal: The exposure time (as a Decimal, not a ratio)
 
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
@@ -253,12 +257,12 @@ class Photo(FilePath):
 		return round(result, 10)
 	
 	@property
-	def f(self) -> float | None:
+	def f(self) -> Decimal | None:
 		"""
 		Get the f-number from the EXIF data of the given file.
 
 		Returns:
-			float: The f-number (as a float, not a ratio)
+			Decimal: The f-number (as a Decimal, not a ratio)
 
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
@@ -286,12 +290,12 @@ class Photo(FilePath):
 		return self.attr(ExifTag.FLASH)
 	
 	@property
-	def focal_length(self) -> float | None:
+	def focal_length(self) -> Decimal | None:
 		"""
 		Get the focal length from the EXIF data of the given file.
 
 		Returns:
-			float: The focal length (as a float, not a ratio)
+			Decimal: The focal length (as a Decimal, not a ratio)
 
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
@@ -388,12 +392,12 @@ class Photo(FilePath):
 		return self.attr(ExifTag.METERING_MODE)
 	
 	@property
-	def megapixels(self) -> float | None:
+	def megapixels(self) -> Decimal | None:
 		"""
 		Get the megapixels from the EXIF data of the given file.
 
 		Returns:
-			float: The megapixels.
+			Decimal: The megapixels.
 
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
@@ -416,12 +420,12 @@ class Photo(FilePath):
 		return self.attr(ExifTag.ORIENTATION)
 
 	@property
-	def ss(self) -> float | None:
+	def ss(self) -> Decimal | None:
 		"""
 		Get the shutter speed from the EXIF data of the given file.
 
 		Returns:
-			float: The shutter speed (as a float, not a ratio)
+			Decimal: The shutter speed (as a Decimal, not a ratio)
 
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
@@ -429,8 +433,10 @@ class Photo(FilePath):
 			'0.0125'
 		"""
 		result = self.attr(ExifTag.SS)
+
 		if not result:
 			return None
+		
 		# Round up the 10th decimal place, always
 		return round(result, 10)
 
@@ -577,7 +583,7 @@ class Photo(FilePath):
 		"""
 		return Validator.calculate_checksum(self.path)
 	
-	def attr(self, key : ExifTag) -> str | float | int | None:
+	def attr(self, key : ExifTag) -> str | Decimal | int | None:
 		"""
 		Get the EXIF data from the given file.
 
@@ -585,7 +591,7 @@ class Photo(FilePath):
 			key (str): The key to get the EXIF data for.
 
 		Returns:
-			str | float | int: The EXIF data.
+			str | Decimal | int: The EXIF data.
 
 		Examples:
 			>>> get_exif_data(ExifTag.EXPOSURE_TIME)
@@ -595,24 +601,28 @@ class Photo(FilePath):
 			with open(self.path, 'rb') as image_file:
 				tags = exifread.process_file(image_file, details=False)
 
-			# Convert from ASCII and Signed Ratio to string and float
+			# Convert from ASCII and Signed Ratio to string and Decimal
 			# address problems such as "AssertionError: (0x0110) ASCII=ILCE-7RM4 @ 340 != 'ILCE-7MR4'"
 			value = tags[key]
 			if isinstance(value, exifread.utils.Ratio):
-				return value.decimal()
+				return Decimal(value.decimal())
 			if isinstance(value, exifread.classes.IfdTag):
 				# If field type is an int, return an int
 				if value.field_type in [3, 4, 8, 9]:
 					return int(value.values[0])
-				# If field type is a float, return a float
+				# If field type is a Decimal, return a Decimal
 				if value.field_type in [11, 12]:
-					return float(value.values[0])
-				# If field type is a ratio or signed ratio, perform the division and reeturn a float
+					return Decimal(value.values[0])
+				# If field type is a ratio or signed ratio, perform the division and reeturn a Decimal
 				if value.field_type in [5, 10]:
-					return value.values[0].num / value.values[0].den
+					return Decimal(value.values[0].num) / Decimal(value.values[0].den)
 				return value.printable
 			if isinstance(value, bytes):
-				return value.decode('utf-8')
+				result = value.decode('utf-8')
+				if isinstance(result, float):
+					return Decimal(result)
+				return result
+			
 			if value is None:
 				return None
 		
