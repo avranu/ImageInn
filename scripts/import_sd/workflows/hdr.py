@@ -29,15 +29,10 @@ import logging
 import time
 from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
+from tqdm import tqdm
 
-from scripts.import_sd.config import MAX_RETRIES
-from scripts.import_sd.operations import CopyOperation
-from scripts.import_sd.validator import Validator
-from scripts.import_sd.path import FilePath
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.photostack import PhotoStack
-from scripts.import_sd.queue import Queue
-from scripts.import_sd.sd import SDCard
 from scripts.import_sd.workflow import Workflow
 from scripts.import_sd.stackcollection import StackCollection
 
@@ -52,6 +47,27 @@ class HDRWorkflow(Workflow):
 		self.raw_extension = raw_extension
 		self.dry_run = dry_run
 
+	@property
+	def hdr_path(self) -> str:
+		"""
+		The path to the HDR directory.
+		"""
+		return os.path.join(self.base_path, 'hdr')
+
+	@property
+	def tiff_path(self) -> str:
+		"""
+		The path to the tiff directory.
+		"""
+		return os.path.join(self.hdr_path, 'tiff')
+	
+	@property
+	def aligned_path(self) -> str:
+		"""
+		The path to the aligned directory.
+		"""
+		return os.path.join(self.hdr_path, 'aligned')
+
 	def run(self) -> bool:
 		"""
 		Run the workflow.
@@ -59,10 +75,15 @@ class HDRWorkflow(Workflow):
 		Returns:
 			bool: Whether the workflow was successful.
 		"""
-		result = self.process_brackets()
+		try:
+			result = self.process_brackets()
+		finally:
+			# Clean up empty directories
+			for directory in [self.tiff_path, self.aligned_path]:
+				self.rmdir(directory)
 
 		if result:
-			logger.info('HDR wworkflow completed successfully.')
+			logger.info('HDR workflow completed successfully. %d HDRs created.', len(result))
 			return True
 		
 		logger.error('HDR workflow failed.')
@@ -84,18 +105,16 @@ class HDRWorkflow(Workflow):
 		"""
 		Convert an ARW file to a TIFF file.
 		"""
-		logger.info('Converting %d files to TIFF...', len(files))
+		logger.debug('Converting %d files to TIFF...', len(files))
 
 		# Create tiff directory
-		tiff_dir = os.path.join(self.base_path, 'hdr', 'tiff')
-
-		self.mkdir(tiff_dir)
+		self.mkdir(self.tiff_path)
 
 		tiff_files = []
-		for arw in files:
+		for arw in tqdm(files, desc="Converting RAW to TIFF...", ncols=100): 
 			# Create a tiff filename
 			tiff_name = arw.filename.replace('.arw', '.tif')
-			tiff_path = os.path.join(tiff_dir, tiff_name)
+			tiff_path = os.path.join(self.tiff_path, tiff_name)
 
 			# Darktable-cli doesn't like backslashes for the tiff path
 			if exe == 'darktable-cli':
@@ -137,30 +156,29 @@ class HDRWorkflow(Workflow):
 		if not photos:
 			raise ValueError('No photos provided')
 		
-		
-		logger.info('Aligning images...')
+		logger.debug('Aligning images...')
+
 		# Create the output directory
-		output_dir = os.path.join(self.base_path, 'hdr', 'aligned')
-		self.mkdir(output_dir)
+		self.mkdir(self.aligned_path)
 
 		# Convert RAW to tiff
 		tiff_files = self.convert_to_tiff(photos)
+		aligned_photos = []
 
 		try:
 			# Create the command
-			command = ['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
+			command = ['align_image_stack', '-a', os.path.join(self.aligned_path, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
 			for tiff in tiff_files:
 				command.append(tiff.path)
 			self.subprocess(command)
 
 			# Create the photos
-			aligned_photos = []
-			for idx, photo in enumerate(photos):
+			for idx, photo in tqdm(enumerate(photos), desc="Aligning Images...", ncols=100):
 				# Create the path.
-				output_path = os.path.join(output_dir, f'aligned_{idx:04}.tif')
+				output_path = os.path.join(self.aligned_path, f'aligned_{idx:04}.tif')
 				# Create a new file named {photo.filename}_aligned.{ext}
 				filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
-				aligned_path = os.path.join(output_dir, filename)
+				aligned_path = os.path.join(self.aligned_path, filename)
 				self.rename(output_path, aligned_path)
 
 				# Copy EXIF data using ExifTool
@@ -170,8 +188,6 @@ class HDRWorkflow(Workflow):
 				# Add the photo to the list
 				aligned_photo = self.get_photo(aligned_path)
 				aligned_photos.append(aligned_photo)
-
-			return aligned_photos
 		
 		finally:
 			# Delete the tiff files
@@ -182,6 +198,9 @@ class HDRWorkflow(Workflow):
 				
 				logger.debug('Deleting %s', tiff.path)
 				self.delete(tiff.path)
+				self.delete(tiff.path + '_original')
+
+		return aligned_photos
 	
 	def create_hdr(self, photos : list[Photo] | PhotoStack) -> Photo:
 		"""
@@ -200,15 +219,14 @@ class HDRWorkflow(Workflow):
 		if not photos:
 			raise ValueError('No photos provided')
 		
-		logger.info('Creating HDR...')
-		# Create the output directory
-		output_dir = os.path.join(self.base_path, 'hdr')
+		logger.debug('Creating HDR...')
 
-		self.mkdir(output_dir)
+		# Create the output directory
+		self.mkdir(self.hdr_path)
 
 		# Create the command. Name the file after the first photo
 		filename = self.name_hdr(photos)
-		filepath = os.path.join(output_dir, filename)
+		filepath = os.path.join(self.hdr_path, filename)
 		command = ['enfuse', '-o', filepath, '-v']
 		for photo in photos:
 			command.append(photo.path)
@@ -244,7 +262,7 @@ class HDRWorkflow(Workflow):
 				hdr = self.create_hdr(images)
 			finally:
 				# Clean up the aligned images
-				for image in images:
+				for image in tqdm(images, desc="Cleaning up aligned images...", ncols=100):
 					# Ensure the filename ends with _aligned.tif
 					# This is unnecessary, but we're going to be completely safe
 					if not image.filename.endswith('_aligned.tif'):
@@ -278,11 +296,15 @@ class HDRWorkflow(Workflow):
 			logger.info('No brackets found in %s', self.base_path)
 			return []
 
+		logger.debug('Found %d brackets, containing %d photos.', len(brackets), sum([len(bracket) for bracket in brackets]))
+
 		# Process each bracket
 		hdrs = []
-		for bracket in brackets:
+		for bracket in tqdm(brackets, desc="Processing brackets...", ncols=100):
 			hdr = self.process_bracket(bracket)
 			hdrs.append(hdr)
+
+		logger.debug('Created %d HDR images', len(hdrs))
 
 		return hdrs
 

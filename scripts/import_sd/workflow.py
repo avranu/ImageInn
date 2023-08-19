@@ -380,20 +380,30 @@ class Workflow:
 		else:
 			os.remove(path)
 
-	def rmdir(self, path : FilePath) -> None:
+	def rmdir(self, path : FilePath) -> bool:
 		"""
 		Delete a directory.
 		
 		Args:
 			path (FilePath): The path to delete.
 
+		Returns:
+			bool: Whether the directory was deleted.
+
 		Raises:
 			OSError: If the directory is not empty.
 		"""
+
+		if os.listdir(path):
+			logger.info('Directory "%s" is not empty, so was not deleted.', path)
+			return False
+		
 		if self.dry_run:
 			logger.info('Would delete directory "%s"', path)
 		else:
 			os.rmdir(path)
+
+		return True
 	
 	def get_photo(self, path : str) -> Photo:
 		"""
