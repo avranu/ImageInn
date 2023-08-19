@@ -315,7 +315,7 @@ class HDRWorkflow(Workflow):
 			hdrpath = self.handle_conflict(hdrpath)
 			if hdrpath is None:
 				logger.debug('Skipping bracket, because HDR already exists "%s"', hdrpath)
-				return hdrpath
+				return self.get_photo(hdrpath)
 
 		images = self.align_images(photos)
 
@@ -385,14 +385,14 @@ class HDRWorkflow(Workflow):
 
 		return stack_collection.get_stacks()
 	
-	def handle_conflict(self, path : FilePath) -> FilePath | None:
+	def handle_conflict(self, path : Photo) -> FilePath | None:
 		"""
 		Handle a collision, where a temporary photo is being written to a location where a file already exists.
 
 		The behavior of this operation will depend on the value of {self.onconflict}.
 		
 		Args:
-			path (FilePath): The path to the file that already exists.
+			path (Photo): The path to the file that already exists.
 
 		Returns:
 			FilePath: The new path to write to. None if the file should be skipped.
@@ -406,22 +406,26 @@ class HDRWorkflow(Workflow):
 			case OnConflict.SKIP:
 				logger.debug('Skipping %s', path)
 				return None
+			
 			case OnConflict.OVERWRITE:
 				logger.debug('Overwriting %s', path)
 				# Remove the offending file
 				self.delete(path)
 				return path
+			
 			case OnConflict.RENAME:
 				logger.debug('Renaming %s', path)
 				newpath = path
 				for i in range(1, 100):
 					newpath = path.filename.replace(f'.{path.extension}', f'_{i:02d}.{path.extension}')
 					if not os.path.exists(newpath):
-						return newpath
+						return FilePath(newpath)
 				raise RuntimeError('Unable to find a new filename for %s', path)
+			
 			case OnConflict.FAIL:
 				logger.debug('Failing on conflict %s', path)
 				raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), path)
+			
 			case _:
 				raise ValueError(f'Unknown onconflict value {self.onconflict}')
 	

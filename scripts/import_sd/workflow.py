@@ -393,6 +393,9 @@ class Workflow:
 		Raises:
 			OSError: If the directory is not empty.
 		"""
+		# If it doesn't exist, we're good to go
+		if not os.path.exists(path):
+			return True
 
 		if os.listdir(path):
 			logger.info('Directory "%s" is not empty, so was not deleted.', path)

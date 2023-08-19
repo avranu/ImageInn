@@ -36,9 +36,6 @@ from scripts.import_sd.workflow import Workflow
 logger = logging.getLogger(__name__)
 
 class RenameWorkflow(Workflow):
-	"""
-	Allows us to interact with sd cards mounted to the server this code is running on.
-	"""
 	_base_path: str
 	raw_extension : str
 	dry_run : bool = False
@@ -86,7 +83,8 @@ class RenameWorkflow(Workflow):
 
 		results = {}
 
-		old_format_regex = re.compile(r'^\d{8}-\w+-(\d{3,}|unknown)-.*B-ISO \d+-.*\.arw$', re.IGNORECASE)
+		#old_format_regex = re.compile(r'^\d{8}-\w+-(\d{3,}|unknown)-.*B-ISO \d+-.*\.arw$', re.IGNORECASE)
+		old_format_regex = re.compile(r'^_JAM_\d{4}.arw$', re.IGNORECASE)
 
 		# Verify the paths exist
 		if not all([os.path.exists(path) for path in [self.base_path]]):
@@ -114,10 +112,7 @@ class RenameWorkflow(Workflow):
 
 					# Rename the file
 					count += 1
-					if not self.dry_run:
-						os.rename(old_path, new_path)
-					else:
-						logger.info('Would have renamed %s ---> %s', filename, new_name)
+					self.rename(old_path, new_path)
 
 		logger.info('Renamed %d files', count)
 		return results
