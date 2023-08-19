@@ -137,8 +137,8 @@ class PhotoStack:
 			return False
 		
 		# The exposure_value OR exposure_bias must be different than the current photo (unless they are none)
-		if all(photo.exposure_value == last.exposure_value, photo.exposure_bias == last.exposure_bias) and \
-		   any(photo.exposure_value is not None, photo.exposure_bias is not None):
+		if all([photo.exposure_value == last.exposure_value, photo.exposure_bias == last.exposure_bias]) and \
+		   any([photo.exposure_value is not None, photo.exposure_bias is not None]):
 			logger.debug("Photo %s exposure value and bias matches (B%s/%s, V%s/%s), so not added", photo.number, photo.exposure_bias, photos[-1].exposure_bias, photo.exposure_value, photos[-1].exposure_value)
 			return False
 		
