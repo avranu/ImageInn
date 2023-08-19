@@ -109,6 +109,9 @@ class HDRWorkflow(Workflow):
 			if not os.path.exists(tiff_path):
 				logger.error('Could not find %s after conversion from %s using %s', tiff_path, arw.path, exe)
 				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tiff_path)
+			
+			# Copy EXIF data using ExifTool
+			self.subprocess(['exiftool', '-TagsFromFile', arw.path, '-all', tiff_path])
 
 			# Add the tiff file to the list
 			tiff_files.append(Photo(tiff_path))
