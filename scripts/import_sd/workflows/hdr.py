@@ -67,8 +67,20 @@ class HDRWorkflow(Workflow):
 		
 		logger.error('HDR workflow failed.')
 		return False
-
+	
 	def convert_to_tiff(self, files : list[Photo]) -> list[Photo]:
+		"""
+		Convert an ARW file to a TIFF file.
+		"""
+		# ImageMagick
+		tiff_files = self._subprocess_tif('convert', files)
+
+		# Darktable
+		#tiff_files = self._subprocess_tif('darktable-cli', files)
+
+		return tiff_files
+	
+	def _subprocess_tif(self, exe : str, files : list[Photo]) -> list[Photo]:
 		"""
 		Convert an ARW file to a TIFF file.
 		"""
@@ -86,11 +98,11 @@ class HDRWorkflow(Workflow):
 			tiff_path = os.path.join(tiff_dir, tiff_name)
 
 			# Use darktable-cli to convert the file
-			self.subprocess(['darktable-cli', arw.path, tiff_path])
+			self.subprocess([exe, arw.path, tiff_path])
 
 			# Check that it exists
 			if not os.path.exists(tiff_path):
-				logger.error('Could not find %s after conversion from %s', tiff_path, arw.path)
+				logger.error('Could not find %s after conversion from %s using %s', tiff_path, arw.path, exe)
 				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tiff_path)
 
 			# Add the tiff file to the list

@@ -360,7 +360,8 @@ class Workflow:
 			
 		if output.stderr:
 			logger.error('Command failed: "%s"', command)
-			logger.error(output.stderr)
+			logger.error('Error message: %s', output.stderr)
+			logger.error('Output: %s', output.stdout)
 			if check:
 				raise subprocess.CalledProcessError(output.returncode, command, output.stderr)
 			
