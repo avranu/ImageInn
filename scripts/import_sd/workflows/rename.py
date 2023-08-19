@@ -84,7 +84,7 @@ class RenameWorkflow(Workflow):
 		results = {}
 
 		#old_format_regex = re.compile(r'^\d{8}-\w+-(\d{3,}|unknown)-.*B-ISO \d+-.*\.arw$', re.IGNORECASE)
-		old_format_regex = re.compile(r'^_JAM_\d{4}.arw$', re.IGNORECASE)
+		old_format_regex = re.compile(r'^_JAM_(\d{4}).arw$', re.IGNORECASE)
 
 		# Verify the paths exist
 		if not all([os.path.exists(path) for path in [self.base_path]]):
