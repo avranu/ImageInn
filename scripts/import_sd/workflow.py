@@ -24,6 +24,7 @@ from enum import Enum
 import errno
 import os
 import logging
+import subprocess
 import sys
 from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
@@ -31,7 +32,7 @@ import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.validator import Validator
 from scripts.import_sd.path import FilePath
-from scripts.import_sd.photo import Photo
+from scripts.import_sd.photo import Photo, FakePhoto
 from scripts.import_sd.sd import SDCard
 
 logger = logging.getLogger(__name__)
@@ -289,6 +290,124 @@ class Workflow:
 			if throw_error:
 				raise KeyboardInterrupt('User decided to abort. Prompt was "%s"', message)
 			return False
+		
+	def mkdir(self, path : FilePath, exist_ok : bool = True) -> None:
+		"""
+		Create a directory, if it doesn't already exist.
+		
+		Args:
+			path (FilePath): The path to create.
+		"""
+		if not os.path.exists(path):
+			if self.dry_run:
+				logger.info('Would create directory "%s"', path)
+			else:
+				os.makedirs(path, exist_ok=exist_ok)
+
+	def rename(self, path : FilePath, destination : FilePath) -> None:
+		"""
+		Rename a file, if it doesn't already exist.
+		
+		Args:
+			path (FilePath): The source path.
+			destination (FilePath): The destination path.
+		"""
+		if not os.path.exists(destination):
+			if self.dry_run:
+				logger.info('Would rename "%s" to "%s"', path, destination)
+			else:
+				os.rename(path, destination)
+
+	def subprocess(self, command : str, cwd : FilePath = None, check : bool = True) -> str:
+		"""
+		Run a subprocess, printing the command and output to the user.
+		
+		Args:
+			command (str): 
+				The command to run.
+			cwd (FilePath, optional): 
+				The working directory to run the command in. Defaults to None.
+			check (bool, optional): 
+				Whether to raise an exception if the command fails. Defaults to True.
+
+		Returns:
+			str: The output of the command.
+
+		Raises:
+			subprocess.CalledProcessError: 
+				If the command fails, and check is True.
+				Otherwise, the error is logged, and the error message is returned when an exception is encountered.
+		"""
+		if self.dry_run:
+			logger.info('Would run command "%s"', command)
+			return 'Dry run. Command skipped.'
+		
+		try:
+			# Run the command
+			output = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True, check=check)
+		except subprocess.CalledProcessError as e:
+			logger.error('Command failed: "%s"', command)
+			logger.error(e.stderr)
+
+			if check:
+				raise e
+			else:
+				return e.stderr
+		
+		if output.stdout:
+			logger.debug(output.stdout)
+			
+		if output.stderr:
+			logger.error('Command failed: "%s"', command)
+			logger.error(output.stderr)
+			if check:
+				raise subprocess.CalledProcessError(output.returncode, command, output.stderr)
+			
+		# Return the output
+		return output.stdout or output.stderr
+	
+	def delete(self, path : FilePath) -> None:
+		"""
+		Delete a file.
+		
+		Args:
+			path (FilePath): The path to delete.
+		"""
+		if self.dry_run:
+			logger.info('Would delete "%s"', path)
+		else:
+			os.remove(path)
+
+	def rmdir(self, path : FilePath) -> None:
+		"""
+		Delete a directory.
+		
+		Args:
+			path (FilePath): The path to delete.
+
+		Raises:
+			OSError: If the directory is not empty.
+		"""
+		if self.dry_run:
+			logger.info('Would delete directory "%s"', path)
+		else:
+			os.rmdir(path)
+	
+	def get_photo(self, path : str) -> Photo:
+		"""
+		Turn a path into a Photo object.
+		
+		If dry_run, this will return a FakePhoto object instead.
+
+		Args:
+			path (str): The path to the photo.
+
+		Returns:
+			Photo: The photo.
+		"""
+		if self.dry_run:
+			return FakePhoto(path)
+		return Photo(path)
 
 def main():
 	"""

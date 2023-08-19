@@ -54,16 +54,49 @@ class HDRWorkflow(Workflow):
 		self.dry_run = dry_run
 
 	def run(self) -> bool:
-		self.process_brackets()
+		"""
+		Run the workflow.
 
-	def convert_to_tiff(self, arw_files):
+		Returns:
+			bool: Whether the workflow was successful.
+		"""
+		result = self.process_brackets()
+
+		if result:
+			logger.info('HDR wworkflow completed successfully.')
+			return True
+		
+		logger.error('HDR workflow failed.')
+		return False
+
+	def convert_to_tiff(self, files : list[Photo]) -> list[Photo]:
+		"""
+		Convert an ARW file to a TIFF file.
+		"""
+		logger.info('Converting %d files to TIFF...', len(files))
+
+		# Create tiff directory
+		tiff_dir = os.path.join(self.base_path, 'hdr', 'tiff')
+
+		self.mkdir(tiff_dir)
+
 		tiff_files = []
-		for arw_file in arw_files:
-			tiff_file = arw_file.replace('.arw', '.tif')
-			command = ['darktable-cli', arw_file, tiff_file]
-			if not self.dry_run:
-				subprocess.run(command, check=True)
-			tiff_files.append(tiff_file)
+		for arw in files:
+			# Create a tiff filename
+			tiff_name = arw.filename.replace('.arw', '.tiff')
+			tiff_path = os.path.join(tiff_dir, tiff_name)
+
+			# Use darktable-cli to convert the file
+			self.subprocess(['darktable-cli', arw.path, tiff_path])
+
+			# Check that it exists
+			if not os.path.exists(tiff_path):
+				logger.error('Could not find %s after conversion from %s', tiff_path, arw.path)
+				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tiff_path)
+
+			# Add the tiff file to the list
+			tiff_files.append(Photo(tiff_path))
+
 		return tiff_files
 	
 	def align_images(self, photos : list[Photo] | PhotoStack) -> list[Photo]:
@@ -87,24 +120,14 @@ class HDRWorkflow(Workflow):
 		logger.info('Aligning images...')
 		# Create the output directory
 		output_dir = os.path.join(self.base_path, 'hdr', 'aligned')
-		if self.dry_run:
-			logger.info(f'Would create directory {output_dir}')
-		else:
-			os.makedirs(output_dir, exist_ok=True)
+		self.mkdir(output_dir)
 
 		# Convert RAW to tiff
 		arw_files = [photo.path for photo in photos]
 		tiff_files = self.convert_to_tiff(arw_files)
 
 		# Create the command
-		command = ['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3'] + tiff_files
-
-		# Run the command
-		logger.debug(f'Running command: {command}')
-		if self.dry_run:
-			logger.info(f'Would run: {command}')
-		else:
-			subprocess.run(command, check=True)
+		self.subprocess(['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3'] + tiff_files)
 
 		# Create the photos
 		aligned_photos = []
@@ -114,16 +137,11 @@ class HDRWorkflow(Workflow):
 			# Create a new file named {photo.filename}_aligned.{ext}
 			filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
 			aligned_path = os.path.join(output_dir, filename)
-			if self.dry_run:
-				logger.info(f'Would rename {output_path} to {aligned_path}')
-			else:
-				os.rename(output_path, aligned_path)
+			self.rename(output_path, aligned_path)
 
 			# Add the photo to the list
-			if self.dry_run:
-				logger.info(f'Would create Photo object for {aligned_path}')
-			else:
-				aligned_photos.append(Photo(aligned_path))
+			aligned_photo = self.get_photo(aligned_path)
+			aligned_photos.append(aligned_photo)
 
 		return aligned_photos
 	
@@ -148,10 +166,7 @@ class HDRWorkflow(Workflow):
 		# Create the output directory
 		output_dir = os.path.join(self.base_path, 'hdr')
 
-		if self.dry_run:
-			logger.info(f'Would create directory {output_dir}')
-		else:
-			os.makedirs(output_dir, exist_ok=True)
+		self.mkdir(output_dir)
 
 		# Create the command. Name the file after the first photo
 		filename = self.name_hdr(photos)
@@ -161,21 +176,14 @@ class HDRWorkflow(Workflow):
 			command.append(photo.path)
 
 		# Run the command
-		logger.debug(f'Running command: {command}')
-		if self.dry_run:
-			logger.info(f'Would run: {command}')
-		else:
-			subprocess.run(command, check=True)
+		self.subprocess(command)
 
 		# Ensure the file was created
 		if not self.dry_run and not os.path.exists(filepath):
 			logger.error('Unable to create HDR image at %s', filepath)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filepath)
-
-		if self.dry_run:
-			logger.info(f'Would create Photo object for {filepath}')
-			return None
-		return Photo(filepath)
+		
+		return self.get_photo(filepath)
 	
 	def process_bracket(self, photos : list[Photo] | PhotoStack) -> Photo:
 		"""
@@ -202,18 +210,12 @@ class HDRWorkflow(Workflow):
 				logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. Path: %s', image.path)
 				raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. Path: {image.path}')
 			
-			if self.dry_run:
-				logger.info(f'Would remove {image.path}')
-			else:
-				os.remove(image.path)
+			self.delete(image.path)
 
 		# Remove the aligned images directory, only if it is completely empty
 		try:
 			directory = os.path.join(self.base_path, 'hdr', 'aligned')
-			if self.dry_run:
-				logger.info(f'Would remove directory {directory}')
-			else:
-				os.rmdir(directory)
+			self.rmdir(directory)
 		except OSError as e:
 			if e.errno != errno.ENOTEMPTY:
 				raise e

@@ -120,6 +120,10 @@ class Photo(FilePath):
 		return round(result, 2)
 	
 	@property
+	def b(self) -> Decimal | None:
+		return self.brightness
+	
+	@property
 	def camera(self) -> str | None:
 		"""
 		Get the camera model from the EXIF data of the given file.
@@ -194,6 +198,10 @@ class Photo(FilePath):
 		return round(result, 2)
 	
 	@property
+	def eb(self) -> Decimal | None:
+		return self.exposure_bias
+	
+	@property
 	def exposure_value(self) -> Decimal | None:
 		"""
 		Calculate the exposure value using EXIF data from the photo
@@ -215,6 +223,10 @@ class Photo(FilePath):
 		result = math.log2((aperture ** 2) / shutter_speed * iso)
 		result = Decimal(result)
 		return round(result, 2)
+	
+	@property
+	def ev(self) -> Decimal | None:
+		return self.exposure_value
 	
 	@property
 	def exposure_mode(self) -> str | None:
@@ -655,3 +667,125 @@ class Photo(FilePath):
 	
 	def __str__(self):
 		return self.path
+	
+
+class FakePhoto(Photo):
+	"""
+	This is used to mock a photo for testing purposes and dry runs.
+	"""
+
+	@property
+	def path(self) -> str:
+		"""
+		The path to the photo.
+		"""
+		return self._path
+
+	@path.setter
+	def path(self, value: str):
+		"""
+		The path to the photo, which NORMALLY must already exist. For a fake photo, it does not need to exist.
+		"""
+		self._path = os.path.normpath(value)
+
+	@property
+	def ss(self) -> Decimal:
+		"""
+		The FAKE shutter speed of the photo.
+		"""
+		return Decimal(0.01)
+	
+	@property
+	def iso(self) -> int:
+		"""
+		The FAKE ISO of the photo.
+		"""
+		return 100
+	
+	@property
+	def aperture(self) -> Decimal:
+		"""
+		The FAKE aperture of the photo.
+		"""
+		return Decimal(2.8)
+	
+	@property
+	def date(self) -> datetime:
+		"""
+		The FAKE date of the photo.
+		"""
+		return datetime.datetime.now()
+	
+	@property
+	def exposure_bias(self) -> Decimal:
+		"""
+		The FAKE exposure bias of the photo.
+		"""
+		return Decimal(0)
+	
+	@property
+	def focal_length(self) -> Decimal:
+		"""
+		The FAKE focal length of the photo.
+		"""
+		return 35
+	
+	@property
+	def wb(self) -> str:
+		"""
+		The FAKE white balance of the photo.
+		"""
+		return 'Auto'
+	
+	@property
+	def lens(self) -> str:
+		"""
+		The FAKE lens of the photo.
+		"""
+		return 'FE 35mm F1.8'
+	
+	@property
+	def camera(self) -> str:
+		"""
+		The FAKE camera model of the photo.
+		"""
+		return 'ILCE-7RM4'
+	
+	@property
+	def brightness(self) -> Decimal:
+		"""
+		The FAKE brightness of the photo.
+		"""
+		return Decimal(0)
+	
+	@property
+	def exposure_time(self) -> Decimal:
+		"""
+		The FAKE exposure time of the photo.
+		"""
+		return Decimal(0.5)
+	
+	@property
+	def f(self) -> Decimal:
+		"""
+		The FAKE f-stop of the photo.
+		"""
+		return Decimal(2.8)
+
+	def attr(self, key : ExifTag) -> str:
+		"""
+		Get fake EXIF data.
+
+		Args:
+			key (str): The key to get the EXIF data for.
+
+		Returns:
+			str | Decimal | int: The EXIF data.
+
+		Examples:
+			>>> get_exif_data(ExifTag.EXPOSURE_TIME)
+			{'EXIF ExposureTime': (1, 100)}
+		"""
+		return 'fake'
+	
+	
