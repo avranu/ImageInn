@@ -484,7 +484,7 @@ def main():
 	parser.add_argument('--extension', '-e', 	type = str, default = "arw",	help = 'The extension to use for RAW files.')
 	parser.add_argument('--onconflict', '-c', 	type = str, 
 		     									default = OnConflict.OVERWRITE, 
-		     									choices = OnConflict,			help = '''How to handle temporary files that already exist.
+		     									choices = OnConflict.values(),	help = '''How to handle temporary files that already exist.
 																						  This will not alter original RAW files. Only files that this process
 																						  created in a previous run.''')
 	parser.add_argument('--dry-run', 			action = 'store_true', 			help = 'Whether to do a dry run, where no files are actually changed.')
