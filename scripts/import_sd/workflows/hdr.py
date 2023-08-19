@@ -103,6 +103,7 @@ class HDRWorkflow(Workflow):
 				tiff_path = tiff_path.replace('\\', '/')
 
 			# Use darktable-cli to convert the file
+			logger.debug('Creating tiff file %s from %s using %s', tiff_path, arw.path, exe)
 			self.subprocess([exe, arw.path, tiff_path], check=False)
 
 			# Check that it exists
@@ -111,6 +112,7 @@ class HDRWorkflow(Workflow):
 				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tiff_path)
 			
 			# Copy EXIF data using ExifTool
+			logger.debug('Copying exif data from %s to %s', arw.path, tiff_path)
 			self.subprocess(['exiftool', '-TagsFromFile', arw.path, '-all', tiff_path])
 
 			# Add the tiff file to the list
@@ -144,24 +146,39 @@ class HDRWorkflow(Workflow):
 		# Convert RAW to tiff
 		tiff_files = self.convert_to_tiff(photos)
 
-		# Create the command
-		self.subprocess(['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3'] + tiff_files)
+		try:
+			# Create the command
+			self.subprocess(['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3'] + tiff_files)
 
-		# Create the photos
-		aligned_photos = []
-		for idx, photo in enumerate(photos):
-			# Create the path.
-			output_path = os.path.join(output_dir, f'aligned_{idx:04}.tif')
-			# Create a new file named {photo.filename}_aligned.{ext}
-			filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
-			aligned_path = os.path.join(output_dir, filename)
-			self.rename(output_path, aligned_path)
+			# Create the photos
+			aligned_photos = []
+			for idx, photo in enumerate(photos):
+				# Create the path.
+				output_path = os.path.join(output_dir, f'aligned_{idx:04}.tif')
+				# Create a new file named {photo.filename}_aligned.{ext}
+				filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
+				aligned_path = os.path.join(output_dir, filename)
+				self.rename(output_path, aligned_path)
 
-			# Add the photo to the list
-			aligned_photo = self.get_photo(aligned_path)
-			aligned_photos.append(aligned_photo)
+				# Copy EXIF data using ExifTool
+				logger.debug('Copying exif data from %s to %s', photo.path, aligned_path)
+				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', aligned_path])
 
-		return aligned_photos
+				# Add the photo to the list
+				aligned_photo = self.get_photo(aligned_path)
+				aligned_photos.append(aligned_photo)
+
+			return aligned_photos
+		
+		finally:
+			# Delete the tiff files
+			for tiff in tiff_files:
+				# Ensure they end in .tif. This is technically unnecessary, but provides an extra layer of safety deleting files.
+				if not tiff.path.endswith('.tif'):
+					raise ValueError(f'Deleting tiff file {tiff.path}, but it does not end in .tif')
+				
+				logger.debug('Deleting %s', tiff.path)
+				self.delete(tiff.path)
 	
 	def create_hdr(self, photos : list[Photo] | PhotoStack) -> Photo:
 		"""
@@ -217,26 +234,30 @@ class HDRWorkflow(Workflow):
 			ValueError: If no photos are provided.
 			FileNotFoundError: If the HDR image is not created.
 		"""
-		images = self.align_images(photos)
-		hdr = self.create_hdr(images)
-		
-		# Clean up the aligned images
-		for image in images:
-			# Ensure the filename ends with _aligned.tif
-			# This is unnecessary, but we're going to be completely safe
-			if not image.filename.endswith('_aligned.tif'):
-				logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. Path: %s', image.path)
-				raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. Path: {image.path}')
-			
-			self.delete(image.path)
-
-		# Remove the aligned images directory, only if it is completely empty
 		try:
-			directory = os.path.join(self.base_path, 'hdr', 'aligned')
-			self.rmdir(directory)
-		except OSError as e:
-			if e.errno != errno.ENOTEMPTY:
-				raise e
+			images = self.align_images(photos)
+
+			try:
+				hdr = self.create_hdr(images)
+			finally:
+				# Clean up the aligned images
+				for image in images:
+					# Ensure the filename ends with _aligned.tif
+					# This is unnecessary, but we're going to be completely safe
+					if not image.filename.endswith('_aligned.tif'):
+						logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. Path: %s', image.path)
+						raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. Path: {image.path}')
+					
+					self.delete(image.path)
+
+		finally:
+			# Remove the aligned images directory, only if it is completely empty
+			try:
+				directory = os.path.join(self.base_path, 'hdr', 'aligned')
+				self.rmdir(directory)
+			except OSError as e:
+				if e.errno != errno.ENOTEMPTY:
+					raise e
 
 		return hdr
 	
