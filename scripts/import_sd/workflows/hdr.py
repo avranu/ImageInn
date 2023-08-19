@@ -122,8 +122,7 @@ class HDRWorkflow(Workflow):
 		self.mkdir(output_dir)
 
 		# Convert RAW to tiff
-		arw_files = [photo.path for photo in photos]
-		tiff_files = self.convert_to_tiff(arw_files)
+		tiff_files = self.convert_to_tiff(photos)
 
 		# Create the command
 		self.subprocess(['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3'] + tiff_files)
