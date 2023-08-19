@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -64,6 +64,13 @@ class FilePath(str):
 		Set the path
 		"""
 		self._path = os.path.normpath(value)
+
+	@property
+	def filename(self):
+		"""
+		The filename of the file.
+		"""
+		return os.path.basename(self.path)
 
 	@property
 	def extension(self) -> str:

@@ -20,7 +20,6 @@
 from __future__ import annotations
 import argparse
 import datetime
-from enum import Enum
 import errno
 import os
 import re
@@ -31,6 +30,8 @@ from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from tqdm import tqdm
 
+from scripts.lib.choices import Choices
+from scripts.import_sd.path import FilePath
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.photostack import PhotoStack
 from scripts.import_sd.workflow import Workflow
@@ -38,14 +39,34 @@ from scripts.import_sd.stackcollection import StackCollection
 
 logger = logging.getLogger(__name__)
 
-class HDRWorkflow(Workflow):
-	raw_extension : str
-	dry_run : bool = False
+class OnConflict(Choices):
+	"""
+	Enum for the different ways to handle conflicts.
+	"""
+	OVERWRITE = 'overwrite'
+	RENAME = 'rename'
+	SKIP = 'skip'
+	FAIL = 'fail'
 
-	def __init__(self, base_path : str, raw_extension : str = 'arw', dry_run : bool = False):
-		self.base_path = base_path
-		self.raw_extension = raw_extension
-		self.dry_run = dry_run
+class HDRWorkflow(Workflow):
+	"""
+	Workflow for creating HDR photos from brakets found within imported photos.
+
+	Args:
+		base_path (str): The base path to the imported photos.
+		raw_extension (str): The extension of the raw files.
+		overwrite_temporary_files (bool): Whether to overwrite temporary files.
+		dry_run (bool): Whether to run the workflow in dry run mode
+	"""
+	raw_extension : str
+	dry_run : bool
+	onconflict : OnConflict
+
+	def __init__(self, base_path : str, raw_extension : str = 'arw', onconflict : OnConflict = OnConflict.OVERWRITE, dry_run : bool = False):
+		self.base_path 		= base_path
+		self.raw_extension 	= raw_extension
+		self.dry_run 		= dry_run
+		self.onconflict 	= onconflict
 
 	@property
 	def hdr_path(self) -> str:
@@ -92,6 +113,16 @@ class HDRWorkflow(Workflow):
 	def convert_to_tiff(self, files : list[Photo]) -> list[Photo]:
 		"""
 		Convert an ARW file to a TIFF file.
+
+		Args:
+			files (list[Photo]): The list of files to convert.
+
+		Returns:
+			list[Photo]: The list of converted files.
+
+		Raises:
+			FileNotFoundError: If the converted file cannot be found.
+			FileFoundError: If self.onconflict is set to "fail" and the tif image already exists.
 		"""
 		# ImageMagick
 		#tiff_files = self._subprocess_tif('convert', files)
@@ -120,6 +151,13 @@ class HDRWorkflow(Workflow):
 			if exe == 'darktable-cli':
 				logger.debug('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
 				tiff_path = tiff_path.replace('\\', '/')
+
+			# Check if the file already exists
+			if os.path.exists(tiff_path):
+				tiff_path = self.handle_conflict(tiff_path)
+				if tiff_path is None:
+					logger.debug('Skipping existing file "%s"', arw.path)
+					continue
 
 			# Use darktable-cli to convert the file
 			logger.debug('Creating tiff file %s from %s using %s', tiff_path, arw.path, exe)
@@ -152,6 +190,7 @@ class HDRWorkflow(Workflow):
 		Raises:
 			ValueError: If no photos are provided.
 			FileNotFoundError: If the aligned photos are not created.
+			FileFoundError: If self.onconflict is set to "fail" and the aligned image already exists.
 		"""
 		if not photos:
 			raise ValueError('No photos provided')
@@ -166,6 +205,7 @@ class HDRWorkflow(Workflow):
 		aligned_photos = []
 
 		try:
+			# TODO conflicts
 			# Create the command
 			command = ['align_image_stack', '-a', os.path.join(self.aligned_path, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
 			for tiff in tiff_files:
@@ -215,6 +255,7 @@ class HDRWorkflow(Workflow):
 		Raises:
 			ValueError: If no photos are provided.
 			FileNotFoundError: If the HDR image is not created.
+			FileFoundError: If self.onconflict is set to "fail" and the HDR image already exists.
 		"""
 		if not photos:
 			raise ValueError('No photos provided')
@@ -224,9 +265,17 @@ class HDRWorkflow(Workflow):
 		# Create the output directory
 		self.mkdir(self.hdr_path)
 
-		# Create the command. Name the file after the first photo
+		# Name the file after the first photo
 		filename = self.name_hdr(photos)
 		filepath = os.path.join(self.hdr_path, filename)
+
+		# Handle conflicts
+		filepath = self.handle_conflict(filepath)
+		if filepath is None:
+			logger.debug('Skipping existing file "%s"', filepath)
+			return None
+
+		# Create the command
 		command = ['enfuse', '-o', filepath, '-v']
 		for photo in photos:
 			command.append(photo.path)
@@ -323,6 +372,46 @@ class HDRWorkflow(Workflow):
 
 		return stack_collection.get_stacks()
 	
+	def handle_conflict(self, path : FilePath) -> FilePath | None:
+		"""
+		Handle a collision, where a temporary photo is being written to a location where a file already exists.
+
+		The behavior of this operation will depend on the value of {self.onconflict}.
+		
+		Args:
+			path (FilePath): The path to the file that already exists.
+
+		Returns:
+			FilePath: The new path to write to. None if the file should be skipped.
+
+		Raises:
+			ValueError: If {self.onconflict} is not a valid value.
+			FileExistsError: If {self.onconflict} is set to OnConflict.FAIL.
+			RuntimeError: If a filename to use cannot be found.
+		"""
+		match self.onconflict:
+			case OnConflict.SKIP:
+				logger.debug('Skipping %s', path)
+				return None
+			case OnConflict.OVERWRITE:
+				logger.debug('Overwriting %s', path)
+				# Remove the offending file
+				self.delete(path)
+				return path
+			case OnConflict.RENAME:
+				logger.debug('Renaming %s', path)
+				newpath = path
+				for i in range(1, 100):
+					newpath = path.filename.replace(f'.{path.extension}', f'_{i:02d}.{path.extension}')
+					if not os.path.exists(newpath):
+						return newpath
+				raise RuntimeError('Unable to find a new filename for %s', path)
+			case OnConflict.FAIL:
+				logger.debug('Failing on conflict %s', path)
+				raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), path)
+			case _:
+				raise ValueError(f'Unknown onconflict value {self.onconflict}')
+	
 	def name_hdr(self, photos : list[Photo], output_dir : str = '', short : bool = False) -> str:
 		"""
 		Create a new name for an HDR image based on a list of brackets that will be combined.
@@ -373,14 +462,21 @@ def main():
 	"""
 	# Parse command line arguments
 	parser = argparse.ArgumentParser(
-		description='Run the HDR workflow.',
-		prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}'
+		description	= 'Run the HDR workflow.',
+		prog		= f'{os.path.basename(sys.argv[0])} {sys.argv[1]}'
 	)
 	# Ignore the first argument, which is the script name
-	parser.add_argument('ignored', nargs='?', help=argparse.SUPPRESS)
-	parser.add_argument('path', type=str, help='The path to the directory that contains the photos.')
-	parser.add_argument('--extension', '-e', default="arw", type=str, help='The extension to use for RAW files.')
-	parser.add_argument('--dry-run', action='store_true', help='Whether to do a dry run, where no files are actually changed.')
+	parser.add_argument('ignored', 				nargs = '?', 					help = argparse.SUPPRESS)
+	parser.add_argument('path', 				type = str, 				 	help = 'The path to the directory that contains the photos.')
+	parser.add_argument('--extension', '-e', 	type = str, default = "arw",	help = 'The extension to use for RAW files.')
+	parser.add_argument('--onconflict', '-c', 	type = str, 
+		     									default = OnConflict.OVERWRITE, 
+		     									choices = OnConflict,			help = '''How to handle temporary files that already exist.
+																						  This will not alter original RAW files. Only files that this process
+																						  created in a previous run.''')
+	parser.add_argument('--dry-run', 			action = 'store_true', 			help = 'Whether to do a dry run, where no files are actually changed.')
+
+	# Parse the arguments passed in from the user
 	args = parser.parse_args()
 
 	# Set up logging
@@ -388,7 +484,7 @@ def main():
 	logger.setLevel(logging.INFO)
 
 	# Copy the SD card
-	workflow = HDRWorkflow(args.path, args.extension, args.dry_run)
+	workflow = HDRWorkflow(args.path, args.extension, args.onconflict, args.dry_run)
 	result = workflow.run()
 
 	# Exit with the appropriate code
