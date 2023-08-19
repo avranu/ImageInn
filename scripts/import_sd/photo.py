@@ -503,7 +503,7 @@ class Photo(FilePath):
 		return self.attr(ExifTag.RESOLUTION)
 	
 	@property
-	def number(self) -> str:
+	def number(self) -> int:
 		"""
 		Get the photo number. If it is not set manually, it will be the filename number suffix.
 
@@ -515,17 +515,22 @@ class Photo(FilePath):
 		Examples:
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234_1.arw', number='5678')
 			>>> photo.number
-			'5678'
+			5678
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234.arw')
 			>>> photo.number
-			'1234'
+			1234
 		"""
-		if self._number is not None:
+		if self._number:
 			return self._number
 		
-		matches = re.search(r'(\d+)(\.[a-zA-Z]{1,5})?$', self.path)
-		if matches is None:
-			return None
+		# Start with the standard RAW format from a DSLR
+		matches = re.search(r'^_?[a-z0-9]+_(\d+)(\.[a-zA-Z]{1,5})?$', os.path.basename(self.path))
+		if not matches:
+			# Try our custom format
+			matches = re.search(r'^\d{8}[_-][a-z0-9]+[_-](\d+)', os.path.basename(self.path))
+			if not matches:
+				return None
+			
 		return int(matches.group(1))
 	
 	@number.setter

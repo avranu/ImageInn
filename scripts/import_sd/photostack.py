@@ -18,10 +18,13 @@
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
+import datetime
 from math import fabs as abs
 from typing import Dict
+import logging
 from scripts.import_sd.photo import Photo
 
+logger = logging.getLogger(__name__)
 class PhotoStack:
 	"""
 	Represents a stack of photos.
@@ -74,7 +77,7 @@ class PhotoStack:
 		Returns:
 			list[Photo]: The photos in the stack.
 		"""
-		return self._photos.values()
+		return list(self._photos.values())
 
 	def calculate_gap(self, photo : Photo) -> tuple[float, float]:
 		"""
@@ -86,16 +89,17 @@ class PhotoStack:
 		Returns:
 			(float, float): The gap between the photos, as a tuple of (bias, exposure).
 		"""
-		if len(self._photos) <= 0:
+		photos = self.get_photos()
+		if len(photos) <= 0:
 			return None, None
 		
 		bias, exposure = None, None
 		
-		if self._photos[-1].exposure_bias is not None and photo.exposure_bias is not None:
-			bias = abs(self._photos[-1].exposure_bias - photo.exposure_bias)
+		if photos[-1].exposure_bias is not None and photo.exposure_bias is not None:
+			bias = abs(photos[-1].exposure_bias - photo.exposure_bias)
 
-		if self._photos[-1].exposure_value is not None and photo.exposure_value is not None:
-			exposure = abs(self._photos[-1].exposure_value - photo.exposure_value)
+		if photos[-1].exposure_value is not None and photo.exposure_value is not None:
+			exposure = abs(photos[-1].exposure_value - photo.exposure_value)
 
 		return bias, exposure
 
@@ -109,37 +113,48 @@ class PhotoStack:
 		Returns:
 			bool: True if the photo matches the gap, False otherwise.
 		"""
+		photos = self.get_photos()
 		# For no photos, the photo is considered matching
-		if len(self._photos) <= 0:
+		if len(photos) <= 0:
+			logger.critical("No photos in stack, photo %s matches", photo.number)
 			return True
 		
 		current_bias, current_value = self.get_gap()
 		new_bias, new_value = self.calculate_gap(photo)
 
 		# Match attributes, such as camera model, lens, etc
-		if photo.lens != self._photos[-1].lens:
+		if photo.lens != photos[-1].lens:
+			logger.critical("Photo %s lens %s does not match %s", photo.number, photo.lens, photos[-1].lens)
 			return False
-		if photo.camera != self._photos[-1].camera:
+		if photo.camera != photos[-1].camera:
+			logger.critical("Photo %s camera %s does not match %s", photo.number, photo.camera, photos[-1].camera)
 			return False
 		
 		# Photo was taken within 1 second of the last photo (after accounting for shutter speed TODO)
-		if photo.date - self._photos[-1].date > 1 + photo.ss + self._photos[-1].ss:
+		diff : datetime.timedelta = photo.date - photos[-1].date 
+		if diff.total_seconds() > 1 + photo.ss + photos[-1].ss:
+			logger.critical("Photo %s date %s does not match %s", photo.number, photo.date, photos[-1].date)
 			return False
 		
 		# The photo.exposure_value must be different than the current photo
-		if photo.exposure_value is not None and photo.exposure_value == self._photos[-1].exposure_value:
+		if photo.exposure_value is not None and photo.exposure_value == photos[-1].exposure_value:
+			logger.critical("Photo %s exposure value %s does not match %s", photo.number, photo.exposure_value, photos[-1].exposure_value)
 			return False
-		if photo.exposure_bias is not None and photo.exposure_bias == self._photos[-1].exposure_bias:
+		if photo.exposure_bias is not None and photo.exposure_bias == photos[-1].exposure_bias:
+			logger.critical("Photo %s exposure bias %s does not match %s", photo.number, photo.exposure_bias, photos[-1].exposure_bias)
 			return False
 
 		if len(self._photos) == 1:
+			logger.critical("Photo %s matches %s", photo.number, photos[-1].number)
 			# If all the above conditions are met, we can add a 2nd photo to a 1 photo stack.
 			return True
 
 		# For bigger stacks, we have a gap to compare to.
 		if current_bias == new_bias and current_value == new_value:
+			logger.critical("Photo %s matches %s", photo.number, photos[-1].number)
 			return True
 		
+		logger.critical("Photo %s does not match %s", photo.number, photos[-1].number)
 		return False
 	
 	def __len__(self):

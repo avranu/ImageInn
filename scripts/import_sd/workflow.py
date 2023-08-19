@@ -90,13 +90,10 @@ class Workflow:
 		"""
 		if directory is None:
 			directory = self.base_path
-		logger.critical('Trying to find photos in %s', directory)
 
 		photos = []
 		for root, _dirs, files in os.walk(directory, followlinks=True):
-			logger.critical('root: %s', root)
 			for file in files:
-				logger.critical('file: %s', file)
 				if file.endswith(self.raw_extension):
 					photos.append(Photo(os.path.join(root, file)))
 
