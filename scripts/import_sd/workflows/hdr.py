@@ -55,6 +55,16 @@ class HDRWorkflow(Workflow):
 
 	def run(self) -> bool:
 		self.process_brackets()
+
+	def convert_to_tiff(self, arw_files):
+		tiff_files = []
+		for arw_file in arw_files:
+			tiff_file = arw_file.replace('.arw', '.tif')
+			command = ['darktable-cli', arw_file, tiff_file]
+			if not self.dry_run:
+				subprocess.run(command, check=True)
+			tiff_files.append(tiff_file)
+		return tiff_files
 	
 	def align_images(self, photos : list[Photo] | PhotoStack) -> list[Photo]:
 		"""
@@ -73,6 +83,7 @@ class HDRWorkflow(Workflow):
 		if not photos:
 			raise ValueError('No photos provided')
 		
+		
 		logger.info('Aligning images...')
 		# Create the output directory
 		output_dir = os.path.join(self.base_path, 'hdr', 'aligned')
@@ -81,10 +92,12 @@ class HDRWorkflow(Workflow):
 		else:
 			os.makedirs(output_dir, exist_ok=True)
 
+		# Convert RAW to tiff
+		arw_files = [photo.path for photo in photos]
+		tiff_files = self.convert_to_tiff(arw_files)
+
 		# Create the command
-		command = ['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3']
-		for photo in photos:
-			command.append(photo.path)
+		command = ['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3'] + tiff_files
 
 		# Run the command
 		logger.debug(f'Running command: {command}')
