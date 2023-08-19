@@ -99,7 +99,7 @@ class HDRWorkflow(Workflow):
 
 			# Darktable-cli doesn't like backslashes for the tiff path
 			if exe == 'darktable-cli':
-				logger.warning('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
+				logger.debug('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
 				tiff_path = tiff_path.replace('\\', '/')
 
 			# Use darktable-cli to convert the file
@@ -148,7 +148,10 @@ class HDRWorkflow(Workflow):
 
 		try:
 			# Create the command
-			self.subprocess(['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3'] + tiff_files)
+			command = ['align_image_stack', '-a', os.path.join(output_dir, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
+			for tiff in tiff_files:
+				command.append(tiff.path)
+			self.subprocess(command)
 
 			# Create the photos
 			aligned_photos = []
