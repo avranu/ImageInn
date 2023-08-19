@@ -242,7 +242,7 @@ class HDRWorkflow(Workflow):
 
 		return aligned_photos
 	
-	def create_hdr(self, photos : list[Photo] | PhotoStack) -> Photo:
+	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[Photo] = None) -> Photo:
 		"""
 		Use enfuse to create the HDR image.
 
@@ -266,7 +266,8 @@ class HDRWorkflow(Workflow):
 		self.mkdir(self.hdr_path)
 
 		# Name the file after the first photo
-		filename = self.name_hdr(photos)
+		if filename is None:
+			filename = self.name_hdr(photos)
 		filepath = os.path.join(self.hdr_path, filename)
 
 		# Handle conflicts
@@ -304,10 +305,19 @@ class HDRWorkflow(Workflow):
 			ValueError: If no photos are provided.
 			FileNotFoundError: If the HDR image is not created.
 		"""
+		# Determine the final HDR name, so we can figure out if it already exists and handle conflicts early.
+		hdrname = self.name_hdr(photos)
+		hdrpath = os.path.join(self.hdr_path, hdrname)
+		if os.path.exists(hdrpath):
+			hdrpath = self.handle_conflict(hdrpath)
+			if hdrpath is None:
+				logger.debug('Skipping bracket, because HDR already exists "%s"', hdrpath)
+				return hdrpath
+
 		images = self.align_images(photos)
 
 		try:
-			hdr = self.create_hdr(images)
+			hdr = self.create_hdr(images, hdrpath)
 		finally:
 			# Clean up the aligned images
 			for image in tqdm(images, desc="Cleaning up aligned images...", ncols=100):
