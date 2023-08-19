@@ -425,7 +425,7 @@ class HDRWorkflow(Workflow):
 			case _:
 				raise ValueError(f'Unknown onconflict value {self.onconflict}')
 	
-	def name_hdr(self, photos : list[Photo], output_dir : str = '', short : bool = False) -> str:
+	def name_hdr(self, photos : list[Photo], output_dir : Optional[str] = None, short : bool = False) -> str:
 		"""
 		Create a new name for an HDR image based on a list of brackets that will be combined.
 
@@ -442,6 +442,9 @@ class HDRWorkflow(Workflow):
 		"""
 		if not photos:
 			raise ValueError('No photos provided')
+		
+		if not output_dir:
+			output_dir = self.hdr_path
 		
 		# Get the highest ISO
 		iso = max([p.iso for p in photos])
@@ -461,7 +464,7 @@ class HDRWorkflow(Workflow):
 		else:
 			filename = f'{first.date.strftime("%Y%m%d")}_{first.camera}_{first.number}_x{len(photos)}_{brightness}B_{ev}EV_{iso}ISO_{ss}SS_{first.lens}_hdr.tif'
 		
-		if short is False and output_dir:
+		if short is False:
 			path = os.path.join(output_dir, filename)
 			if len(path) > 255:
 				logger.info('Filename is too long, shortening it: %s', path)
