@@ -126,21 +126,20 @@ class PhotoStack:
 		
 		current_bias, current_value = self.get_gap()
 		new_bias, new_value = self.calculate_gap(photo)
+		last = photos[-1]
 
 		# Match attributes, such as camera model, lens, etc
-		if photo.lens != photos[-1].lens:
+		if photo.lens != last.lens:
 			logger.debug("Photo %s lens %s does not match %s", photo.number, photo.lens, photos[-1].lens)
 			return False
-		if photo.camera != photos[-1].camera:
+		if photo.camera != last.camera:
 			logger.debug("Photo %s camera %s does not match %s", photo.number, photo.camera, photos[-1].camera)
 			return False
 		
-		# The photo.exposure_value must be different than the current photo
-		if photo.exposure_value is not None and photo.exposure_value == photos[-1].exposure_value:
-			logger.debug("Photo %s exposure value %s matches %s, so not added", photo.number, photo.exposure_value, photos[-1].exposure_value)
-			return False
-		if photo.exposure_bias is not None and photo.exposure_bias == photos[-1].exposure_bias:
-			logger.debug("Photo %s exposure bias %s matches %s, so not added", photo.number, photo.exposure_bias, photos[-1].exposure_bias)
+		# The exposure_value OR exposure_bias must be different than the current photo (unless they are none)
+		if all(photo.exposure_value == last.exposure_value, photo.exposure_bias == last.exposure_bias) and \
+		   any(photo.exposure_value is not None, photo.exposure_bias is not None):
+			logger.debug("Photo %s exposure value and bias matches (B%s/%s, V%s/%s), so not added", photo.number, photo.exposure_bias, photos[-1].exposure_bias, photo.exposure_value, photos[-1].exposure_value)
 			return False
 		
 		# Photo was taken within 5 seconds of the last photo (after accounting for shutter speed TODO)

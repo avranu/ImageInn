@@ -444,8 +444,8 @@ class Photo(FilePath):
 		if not result:
 			return None
 		
-		# Round up the 10th decimal place, always
-		return round(result, 10)
+		# Round up the 4th decimal place, always
+		return round(result, 4)
 
 	@property
 	def size(self) -> int | None:
