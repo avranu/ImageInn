@@ -73,10 +73,10 @@ class HDRWorkflow(Workflow):
 		Convert an ARW file to a TIFF file.
 		"""
 		# ImageMagick
-		tiff_files = self._subprocess_tif('convert', files)
+		#tiff_files = self._subprocess_tif('convert', files)
 
 		# Darktable
-		#tiff_files = self._subprocess_tif('darktable-cli', files)
+		tiff_files = self._subprocess_tif('darktable-cli', files)
 
 		return tiff_files
 	
@@ -94,11 +94,16 @@ class HDRWorkflow(Workflow):
 		tiff_files = []
 		for arw in files:
 			# Create a tiff filename
-			tiff_name = arw.filename.replace('.arw', '.tiff')
+			tiff_name = arw.filename.replace('.arw', '.tif')
 			tiff_path = os.path.join(tiff_dir, tiff_name)
 
+			# Darktable-cli doesn't like backslashes for the tiff path
+			if exe == 'darktable-cli':
+				logger.warning('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
+				tiff_path = tiff_path.replace('\\', '/')
+
 			# Use darktable-cli to convert the file
-			self.subprocess([exe, arw.path, tiff_path])
+			self.subprocess([exe, arw.path, tiff_path], check=False)
 
 			# Check that it exists
 			if not os.path.exists(tiff_path):

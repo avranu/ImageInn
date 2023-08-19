@@ -16,6 +16,10 @@ package-lock.json
 *py.diff
 tmp/
 
+# Log files
+.aider*
+hugin
+
 # Outdated, deprecated, etc
 **/_deprecated*
 
@@ -34,6 +38,3 @@ notes/
 *.sqlite3-journal
 *db.sqlite3
 pgsql
-
-# Config files
-.aider*
