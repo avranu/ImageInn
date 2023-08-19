@@ -206,7 +206,7 @@ class HDRWorkflow(Workflow):
 		# Create the command. Name the file after the first photo
 		filename = self.name_hdr(photos)
 		filepath = os.path.join(output_dir, filename)
-		command = ['enfuse', '-o', filepath, '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin', '-t', '0.3']
+		command = ['enfuse', '-o', filepath, '-v']
 		for photo in photos:
 			command.append(photo.path)
 
