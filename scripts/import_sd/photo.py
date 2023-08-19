@@ -549,10 +549,10 @@ class Photo(FilePath):
 			return self._number
 		
 		# Start with the standard RAW format from a DSLR
-		matches = re.search(r'^_?[a-z0-9]+_(\d+)(\.[a-zA-Z]{1,5})?$', os.path.basename(self.path))
+		matches = re.search(r'^_?[a-z0-9]+_(\d+)(\.[a-zA-Z]{1,5})?$', os.path.basename(self.path), re.IGNORECASE)
 		if not matches:
 			# Try our custom format
-			matches = re.search(r'^\d{8}[_-][a-z0-9]+[_-](\d+)', os.path.basename(self.path))
+			matches = re.search(r'^\d{8}_[a-z0-9-]+_(\d+)', os.path.basename(self.path), re.IGNORECASE)
 			if not matches:
 				return None
 			
