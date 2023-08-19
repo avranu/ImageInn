@@ -255,30 +255,21 @@ class HDRWorkflow(Workflow):
 			ValueError: If no photos are provided.
 			FileNotFoundError: If the HDR image is not created.
 		"""
+		images = self.align_images(photos)
+
 		try:
-			images = self.align_images(photos)
-
-			try:
-				hdr = self.create_hdr(images)
-			finally:
-				# Clean up the aligned images
-				for image in tqdm(images, desc="Cleaning up aligned images...", ncols=100):
-					# Ensure the filename ends with _aligned.tif
-					# This is unnecessary, but we're going to be completely safe
-					if not image.filename.endswith('_aligned.tif'):
-						logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. Path: %s', image.path)
-						raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. Path: {image.path}')
-					
-					self.delete(image.path)
-
+			hdr = self.create_hdr(images)
 		finally:
-			# Remove the aligned images directory, only if it is completely empty
-			try:
-				directory = os.path.join(self.base_path, 'hdr', 'aligned')
-				self.rmdir(directory)
-			except OSError as e:
-				if e.errno != errno.ENOTEMPTY:
-					raise e
+			# Clean up the aligned images
+			for image in tqdm(images, desc="Cleaning up aligned images...", ncols=100):
+				# Ensure the filename ends with _aligned.tif
+				# This is unnecessary, but we're going to be completely safe
+				if not image.filename.endswith('_aligned.tif'):
+					logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. Path: %s', image.path)
+					raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. Path: {image.path}')
+				
+				self.delete(image.path)
+				self.delete(image.path + '_original')
 
 		return hdr
 	
