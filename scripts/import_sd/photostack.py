@@ -71,7 +71,7 @@ class PhotoStack:
 			# Calculate a new gap
 			self._bias_gap, self._value_gap = self.calculate_gap(photo)
 			self._photos[photo.number] = photo
-			logger.debug('Added photo %s to stack. Stack size is now %s', photo.number, len(self._photos))
+			logger.critical('Added photo %s to stack. Stack size is now %s', photo.number, len(self._photos))
 			return True
 		return False
 
@@ -118,11 +118,12 @@ class PhotoStack:
 		Returns:
 			bool: True if the photo matches the gap, False otherwise.
 		"""
-		photos = self.get_photos()
 		# For no photos, the photo is considered matching
 		if len(self._photos) <= 0:
-			logger.debug("No photos in stack, photo %s matches", photo.number)
+			logger.critical("No photos in stack, photo %s matches", photo.number)
 			return True
+		
+		photos = self.get_photos()
 		
 		current_bias, current_value = self.get_gap()
 		new_bias, new_value = self.calculate_gap(photo)
@@ -130,36 +131,36 @@ class PhotoStack:
 
 		# Match attributes, such as camera model, lens, etc
 		if photo.lens != last.lens:
-			logger.debug("Photo %s lens %s does not match %s", photo.number, photo.lens, photos[-1].lens)
+			logger.critical("Photo %s lens %s does not match %s", photo.number, photo.lens, photos[-1].lens)
 			return False
 		if photo.camera != last.camera:
-			logger.debug("Photo %s camera %s does not match %s", photo.number, photo.camera, photos[-1].camera)
+			logger.critical("Photo %s camera %s does not match %s", photo.number, photo.camera, photos[-1].camera)
 			return False
 		
 		# The exposure_value OR exposure_bias must be different than the current photo (unless they are none)
 		if all([photo.exposure_value == last.exposure_value, photo.exposure_bias == last.exposure_bias]) and \
 		   any([photo.exposure_value is not None, photo.exposure_bias is not None]):
-			logger.debug("Photo %s exposure value and bias matches (B%s/%s, V%s/%s), so not added", photo.number, photo.exposure_bias, photos[-1].exposure_bias, photo.exposure_value, photos[-1].exposure_value)
+			logger.critical("Photo %s exposure value and bias matches (B%s/%s, V%s/%s), so not added", photo.number, photo.exposure_bias, photos[-1].exposure_bias, photo.exposure_value, photos[-1].exposure_value)
 			return False
 		
 		# Photo was taken within 5 seconds of the last photo (after accounting for shutter speed TODO)
 		diff : datetime.timedelta = photo.date - photos[-1].date 
 		if diff.total_seconds() > 5 + photo.ss + photos[-1].ss:
-			logger.debug("Photo %s date %s does not match %s", photo.number, photo.date, photos[-1].date)
+			logger.critical("Photo %s date %s does not match %s", photo.number, photo.date, photos[-1].date)
 			return False
 
 		if len(self._photos) == 1:
-			logger.debug("Photo %s matches %s", photo.number, photos[-1].number)
+			logger.critical("Photo %s matches %s", photo.number, photos[-1].number)
 			# If all the above conditions are met, we can add a 2nd photo to a 1 photo stack.
 			return True
 
 		# For bigger stacks, we have a gap to compare to.
 		if current_bias != new_bias or current_value != new_value:
-			logger.debug("Photo %s does not match %s", photo.number, photos[-1].number)
-			logger.debug("Bias: %s, %s. Value: %s, %s", current_bias, new_bias, current_value, new_value)
+			logger.critical("Photo %s does not match %s", photo.number, photos[-1].number)
+			logger.critical("Bias: %s, %s. Value: %s, %s", current_bias, new_bias, current_value, new_value)
 			return False
 		
-		logger.debug("Photo %s matches %s", photo.number, photos[-1].number)
+		logger.critical("Photo %s matches %s", photo.number, photos[-1].number)
 		return True
 	
 	def __len__(self):
