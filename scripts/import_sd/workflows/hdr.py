@@ -305,6 +305,9 @@ class HDRWorkflow(Workflow):
 			ValueError: If no photos are provided.
 			FileNotFoundError: If the HDR image is not created.
 		"""
+		if not photos:
+			raise ValueError('No photos provided')
+		
 		# Determine the final HDR name, so we can figure out if it already exists and handle conflicts early.
 		hdrname = self.name_hdr(photos)
 		hdrpath = os.path.join(self.hdr_path, hdrname)

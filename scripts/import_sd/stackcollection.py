@@ -101,7 +101,7 @@ class StackCollection:
 			list[PhotoStack]: The stacks.
 		"""
 		if len(self.photos) > 2:
-			return self.stacks + [self.photos]
+			return self.stacks + self.photos
 		return self.stacks
 
 	def __len__(self):
