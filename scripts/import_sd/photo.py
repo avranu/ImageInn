@@ -72,6 +72,13 @@ class Photo(FilePath):
 			raise ValueError('Path must be a file')
 		
 		self._path = os.path.normpath(value)
+
+	@property
+	def filename(self):
+		"""
+		The filename of the photo.
+		"""
+		return os.path.basename(self.path)
 	
 	@property
 	def aperture(self) -> Decimal | None:
