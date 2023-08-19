@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Fri Aug 18 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -38,7 +38,7 @@ class TestWorkflow(unittest.TestCase):
 		self.test_data_path = os.path.join(self.data_path, 'test_data')
 		self.sample_image_path = os.path.join(self.data_path, "_ARW_2544.arw")
 		self.sd_card_path = os.path.join(self.test_data_path, 'sd_card')
-		self.raw_path = os.path.join(self.test_data_path, 'network')
+		self.base_path = os.path.join(self.test_data_path, 'network')
 		self.jpg_path = os.path.join(self.test_data_path, 'jpgs')
 		self.empty_path = os.path.join(self.test_data_path, 'empty')
 		self.backup_path = os.path.join(self.test_data_path, 'backup_network')
@@ -47,7 +47,7 @@ class TestWorkflow(unittest.TestCase):
 		os.makedirs(self.data_path, exist_ok=True)
 		os.makedirs(self.test_data_path, exist_ok=True)
 		os.makedirs(self.sd_card_path, exist_ok=True)
-		os.makedirs(self.raw_path, exist_ok=True)
+		os.makedirs(self.base_path, exist_ok=True)
 		os.makedirs(self.jpg_path, exist_ok=True)
 		os.makedirs(self.empty_path, exist_ok=True)
 		os.makedirs(self.backup_path, exist_ok=True)
@@ -57,8 +57,8 @@ class TestWorkflow(unittest.TestCase):
 			os.path.join(self.sd_card_path, "img_001.jpg"),
 			os.path.join(self.sd_card_path, "img_002.jpg"),
 			os.path.join(self.sd_card_path, "img_003.jpg"),
-			os.path.join(self.raw_path, "img_001.jpg"),
-			os.path.join(self.raw_path, "img_002.jpg"),
+			os.path.join(self.base_path, "img_001.jpg"),
+			os.path.join(self.base_path, "img_002.jpg"),
 		]
 		self.file_contents = [
 			"test data",
@@ -78,7 +78,7 @@ class TestWorkflow(unittest.TestCase):
 				f.write(file + '\n')
 
 		self.sd_card = SDCard(self.sd_card_path)
-		self.workflow = Workflow(self.raw_path, self.jpg_path, self.backup_path, 'arw', self.sd_card)
+		self.workflow = Workflow(self.base_path, self.jpg_path, self.backup_path, 'arw', self.sd_card)
 
 	def tearDown(self):
 		for file in self.files:
@@ -93,7 +93,7 @@ class TestWorkflow(unittest.TestCase):
 		return os.path.normpath(path1).rstrip('/') == os.path.normpath(path2).rstrip('/')
 
 	def test_init(self):
-		self.assertTrue(self._same_path(self.workflow.raw_path, self.raw_path), msg="raw_path not set correctly")
+		self.assertTrue(self._same_path(self.workflow.base_path, self.base_path), msg="base_path not set correctly")
 		self.assertTrue(self._same_path(self.workflow.jpg_path, self.jpg_path), msg="jpg_path not set correctly")
 		self.assertTrue(self._same_path(self.workflow.backup_path, self.backup_path), msg="backup_path not set correctly")
 		self.assertEqual(self.workflow.sd_card, self.sd_card, msg="sd_card not set correctly")
@@ -106,16 +106,16 @@ class TestWorkflow(unittest.TestCase):
 
 		with patch.object(os.path, 'exists', return_value=False):
 			with self.assertRaises(FileNotFoundError):
-				_ = Workflow(self.raw_path, self.jpg_path, self.backup_path).sd_card
+				_ = Workflow(self.base_path, self.jpg_path, self.backup_path).sd_card
 
 	def test_path_properties(self):
 		# Valid path
-		self.workflow.raw_path = self.empty_path
-		self.assertTrue(self._same_path(self.workflow.raw_path, os.path.join(self.empty_path, '')), msg="raw_path not set correctly")
+		self.workflow.base_path = self.empty_path
+		self.assertTrue(self._same_path(self.workflow.base_path, os.path.join(self.empty_path, '')), msg="base_path not set correctly")
 
 		# Invalid path
 		with self.assertRaises(FileNotFoundError):
-			self.workflow.raw_path = os.path.join(self.empty_path, 'non_existent_folder')
+			self.workflow.base_path = os.path.join(self.empty_path, 'non_existent_folder')
 
 		# Test similar behavior for jpg_path and backup_path
 		self.workflow.jpg_path = self.empty_path
@@ -188,7 +188,7 @@ class TestWorkflow(unittest.TestCase):
 
 	def test_rsync_succeed(self):
 		source_path = self.sd_card_path
-		destination_path = self.raw_path
+		destination_path = self.base_path
 		self.workflow.rsync(source_path, destination_path)
 
 		with patch.object(subprocess, 'check_call', return_value = 1000):
@@ -196,7 +196,7 @@ class TestWorkflow(unittest.TestCase):
 
 	def test_teracopy_succeed(self):
 		source_path = self.sd_card_path
-		destination_path = self.raw_path
+		destination_path = self.base_path
 		with patch.object(subprocess, 'check_call', return_value = 1000):
 			self.assertTrue(self.workflow.teracopy(source_path, destination_path), msg="Teracopy should have succeeded")
 
