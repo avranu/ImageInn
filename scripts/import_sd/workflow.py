@@ -201,9 +201,6 @@ class Workflow:
 			#name = f'{date}_{photo.camera}_{photo.number}_{photo.exposure_bias}EB_{photo.exposure_value}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS_{photo.lens}'
 			name = f'{date}_{props["camera"]}_{props["num"]}_{props["eb"]}EB_{props["ev"]}EV_{props["b"]}B_{props["iso"]}ISO_{props["ss"]}SS_{props["lens"]}'
 
-		# Convert any decimal points to spaces
-		name = name.replace('.', ' ')
-
 		return f"{name}.{props['ext']}"
 	
 	def generate_path(self, photo : Photo | str) -> FilePath:
@@ -359,12 +356,15 @@ class Workflow:
 			logger.debug(output.stdout)
 			
 		if output.stderr:
-			logger.error('Command failed: "%s"', command)
-			logger.error('Error message: %s', output.stderr)
-			logger.error('Output: %s', output.stdout)
-			if check:
-				raise subprocess.CalledProcessError(output.returncode, command, output.stderr)
-			
+			logger.debug(output.stderr)
+
+			if output.returncode != 0:
+				logger.error('Command failed: "%s"', command)
+				logger.error('Error message: %s', output.stderr)
+				logger.error('Output: %s', output.stdout)
+				if check:
+					raise subprocess.CalledProcessError(output.returncode, command, output.stderr)
+
 		# Return the output
 		return output.stdout or output.stderr
 	
