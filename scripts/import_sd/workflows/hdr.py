@@ -25,7 +25,6 @@ import errno
 import os
 import re
 import sys
-import subprocess
 import logging
 import time
 from typing import Any, Dict, Optional, TypedDict
