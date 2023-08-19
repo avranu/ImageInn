@@ -78,22 +78,31 @@ class StackCollection:
 
 	def add_photos(self, photos : list[Photo]) -> None:
 		"""
-		Add a list of photos to the current stack.
+		Add a complete list of photos to the current stack. 
+
+		NOTE: This calls finishStack() at the end, which will discard any remaining photos that do not form a complete stack.
+		Therefore, this should not be called piecewise, but rather with a complete list of photos.
 		
 		Args:
 			photos (list[Photo]): The photos to add.
 		"""
 		for photo in photos:
 			self.add_photo(photo)
+		self.finish_stack()
 	
 	def get_stacks(self) -> list[PhotoStack]:
 		"""
-		Adds the current set to the finished stacks and returns them.
+		Adds the current set to the finished stacks (if it is full) and returns them.
+
+		NOTE: This does not actually call finishStack(), which would modify the list of "finished stacks".
+		It is only intended to show the current state of this object.
 
 		Returns:
-			list[PhotoStack]: The finished stacks.
+			list[PhotoStack]: The stacks.
 		"""
-		return self.stacks + [self.photos]
+		if len(self.photos) > 2:
+			return self.stacks + [self.photos]
+		return self.stacks
 
 	def __len__(self):
 		return len(self.stacks)
