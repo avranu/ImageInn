@@ -425,12 +425,12 @@ class HDRWorkflow(Workflow):
 			case _:
 				raise ValueError(f'Unknown onconflict value {self.onconflict}')
 	
-	def name_hdr(self, photos : list[Photo], output_dir : Optional[str] = None, short : bool = False) -> str:
+	def name_hdr(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str] = None, short : bool = False) -> str:
 		"""
 		Create a new name for an HDR image based on a list of brackets that will be combined.
 
 		Args:
-			photos (list[Photo]): The photos to combine.
+			photos (list[Photo] | PhotoStack): The photos to combine.
 			output_dir (str, optional): The directory to save the HDR image to. 
 			short (bool, optional): Whether to use the short filename or the long filename. Defaults to False (long).
 
@@ -456,6 +456,7 @@ class HDRWorkflow(Workflow):
 		ev = sum([p.exposure_value for p in photos]) / len(photos)
 		
 		first = photos[0]
+			
 		# Save the short filename no matter what, because we may use it later if the path is too long.
 		short_filename = f'{first.date.strftime("%Y%m%d")}_{first.number}_x{len(photos)}_{ev}EV_hdr.tif'
 

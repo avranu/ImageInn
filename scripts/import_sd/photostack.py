@@ -167,27 +167,25 @@ class PhotoStack:
 		return len(self._photos)
 	
 	def __iter__(self):
-		return iter(self._photos.values())
+		return iter(self.get_photos())
 	
 	def __getitem__(self, key):
-		return self._photos[key]
-	
-	def __setitem__(self, key, value):
-		self._photos[key] = value
-
-	def __delitem__(self, key):
-		del self._photos[key]
+		return self.get_photos()[key]
 
 	def __contains__(self, key):
-		return key in self._photos
+		return key in self.get_photos()
 	
 	def __str__(self):
-		return str(self._photos)
+		return str(self.get_photos())
 	
 	def __repr__(self):
-		return repr(self._photos)
+		return repr(self.get_photos())
 	
 	def __eq__(self, other):
+		if isinstance(other, list):
+			return self.get_photos() == other
+		if isinstance(other, dict):
+			return self._photos == other
 		if not isinstance(other, PhotoStack):
 			return False
 		return self._photos == other._photos
@@ -196,4 +194,4 @@ class PhotoStack:
 		return not self.__eq__(other)
 	
 	def __hash__(self):
-		return hash(self._photos)
+		return hash(self.get_photos())
