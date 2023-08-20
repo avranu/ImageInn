@@ -204,6 +204,9 @@ class Workflow:
 			#name = f'{date}_{photo.camera}_{photo.number}_{photo.exposure_bias}EB_{photo.exposure_value}EV_{photo.brightness}B_{photo.iso}ISO_{photo.ss}SS_{photo.lens}'
 			name = f'{date}_{props["camera"]}_{props["num"]}_{props["eb"]}EB_{props["ev"]}EV_{props["b"]}B_{props["iso"]}ISO_{props["ss"]}SS_{props["lens"]}'
 
+		# Replace whitespace in the name with a dash
+		name = name.replace(' ', '-')
+
 		return f"{name}.{props['ext']}"
 	
 	def generate_path(self, photo : Photo | str) -> FilePath:
