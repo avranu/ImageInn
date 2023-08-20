@@ -485,6 +485,9 @@ class HDRWorkflow(Workflow):
 		else:
 			filename = f'{first.date.strftime("%Y%m%d")}_{first.camera}_{first.number}_x{len(photos)}_{brightness}B_{ev}EV_{iso}ISO_{ss}SS_{first.lens}_hdr.tif'
 		
+		# Replace spaces in the name with dashes
+		filename = filename.replace(' ', '-')
+
 		if short is False:
 			path = os.path.join(output_dir, filename)
 			if len(path) > 255:
