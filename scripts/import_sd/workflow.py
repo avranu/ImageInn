@@ -92,11 +92,14 @@ class Workflow:
 		if directory is None:
 			directory = self.base_path
 
+		# Get all files in the directory (but not subdirectories), and sort them by their filename
+		files = os.listdir(directory)
+		files.sort()
+		
 		photos = []
-		for root, _dirs, files in os.walk(directory, followlinks=True):
-			for file in files:
-				if self.raw_extension and file.lower().endswith(self.raw_extension):
-					photos.append(Photo(os.path.join(root, file)))
+		for file in files:
+			if self.raw_extension and file.lower().endswith(self.raw_extension):
+				photos.append(Photo(os.path.join(directory, file)))
 
 		return photos
 	
