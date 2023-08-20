@@ -20,12 +20,14 @@
 from __future__ import annotations
 import datetime
 from math import fabs as abs
-from typing import Dict
+from typing import Dict, Optional, Tuple
 import logging
 from decimal import Decimal
 from scripts.import_sd.photo import Photo
 
 logger = logging.getLogger(__name__)
+
+TIME_DIFF_THRESHOLD = 5
 
 class PhotoStack:
 	"""
@@ -84,7 +86,7 @@ class PhotoStack:
 		"""
 		return list(self._photos.values())
 
-	def calculate_gap(self, photo : Photo) -> tuple[Decimal, Decimal]:
+	def calculate_gap(self, photo: Photo) -> Tuple[Optional[Decimal], Optional[Decimal]]:
 		"""
 		Calculates the gap between the provided photo and the last photo in the stack.
 
@@ -100,13 +102,23 @@ class PhotoStack:
 		
 		bias, exposure = None, None
 		
-		if photos[-1].exposure_bias is not None and photo.exposure_bias is not None:
-			bias = abs(photos[-1].exposure_bias - photo.exposure_bias)
+		last = photos[-1]
+		if last.exposure_bias is not None and photo.exposure_bias is not None:
+			bias = abs(last.exposure_bias - photo.exposure_bias)
 
-		if photos[-1].exposure_value is not None and photo.exposure_value is not None:
-			exposure = abs(photos[-1].exposure_value - photo.exposure_value)
+		if last.exposure_value is not None and photo.exposure_value is not None:
+			exposure = abs(last.exposure_value - photo.exposure_value)
 
 		return bias, exposure
+	
+	def _attribute_matches(self, photo : Photo, comparison : Photo, attribute : str) -> bool:
+		attr1 = getattr(photo, attribute)
+		attr2 = getattr(comparison, attribute)
+		if attr1 != attr2:
+			logger.debug(f"Photo {photo.number}:{attribute}. {attr1} does not match {attr2} of photo {comparison.number}")
+			return False
+		return True
+
 
 	def belongs(self, photo : Photo) -> bool:
 		"""
@@ -123,18 +135,13 @@ class PhotoStack:
 			logger.debug("No photos in stack, photo %s matches", photo.number)
 			return True
 		
-		photos = self.get_photos()
-		
-		current_bias_gap, current_ev_gap = self.get_gap()
-		new_bias_gap, new_ev_gap = self.calculate_gap(photo)
+		photos = self.get_photos()		
 		last = photos[-1]
 
-		# Match attributes, such as camera model, lens, etc
-		if photo.lens != last.lens:
-			logger.debug("Photo %s lens %s does not match %s", photo.number, photo.lens, photos[-1].lens)
-			return False
-		if photo.camera != last.camera:
-			logger.debug("Photo %s camera %s does not match %s", photo.number, photo.camera, photos[-1].camera)
+		if not all([
+			self._attribute_matches(photo, last, 'lens'),
+			self._attribute_matches(photo, last, 'camera'),
+		]):
 			return False
 		
 		# The exposure_value OR exposure_bias must be different than the current photo (unless they are none)
@@ -144,8 +151,8 @@ class PhotoStack:
 			return False
 		
 		# Photo was taken within 5 seconds of the last photo (after accounting for shutter speed TODO)
-		diff : datetime.timedelta = photo.date - photos[-1].date 
-		if diff.total_seconds() > 5 + photo.ss + photos[-1].ss:
+		diff : datetime.timedelta = photo.date - last.date 
+		if diff.total_seconds() > TIME_DIFF_THRESHOLD + photo.ss + last.ss:
 			logger.debug("Photo %s date %s does not match %s", photo.number, photo.date, photos[-1].date)
 			return False
 
@@ -153,6 +160,9 @@ class PhotoStack:
 			logger.debug("Photo %s matches %s", photo.number, photos[-1].number)
 			# If all the above conditions are met, we can add a 2nd photo to a 1 photo stack.
 			return True
+
+		current_bias_gap, current_ev_gap = self.get_gap()
+		new_bias_gap, new_ev_gap = self.calculate_gap(photo)
 
 		# For bigger stacks, we have a gap to compare to.
 		if current_bias_gap != new_bias_gap and current_ev_gap != new_ev_gap:
