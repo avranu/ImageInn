@@ -27,6 +27,7 @@ import re
 import sys
 import logging
 import time
+from tqdm import tqdm
 from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
@@ -93,7 +94,7 @@ class RenameWorkflow(Workflow):
 
 		# Find all files in the source_path that match the expected naming scheme
 		count = 0
-		for root, _, filenames in os.walk(self.base_path):
+		for root, _, filenames in tqdm(os.walk(self.base_path), desc='Renaming files...', unit='files'):
 			for filename in filenames:
 				matches = old_format_regex.match(filename)
 				if matches:

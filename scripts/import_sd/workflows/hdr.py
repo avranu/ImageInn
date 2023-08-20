@@ -23,6 +23,7 @@ import datetime
 import errno
 import os
 import re
+import subprocess
 import sys
 import logging
 import time
@@ -185,7 +186,7 @@ class HDRWorkflow(Workflow):
 			photos (list[Photo]): The photos to align.
 
 		Returns:
-			list[Photo]: The aligned photos.
+			list[Photo]: The aligned photos. If any of the photos cannot be aligned, an empty list will be returned.
 
 		Raises:
 			ValueError: If no photos are provided.
@@ -202,7 +203,7 @@ class HDRWorkflow(Workflow):
 
 		# Convert RAW to tiff
 		tiff_files = self.convert_to_tiff(photos)
-		aligned_photos = []
+		aligned_photos : list[Photo] = []
 
 		try:
 			# TODO conflicts
@@ -228,6 +229,13 @@ class HDRWorkflow(Workflow):
 				# Add the photo to the list
 				aligned_photo = self.get_photo(aligned_path)
 				aligned_photos.append(aligned_photo)
+
+		except subprocess.CalledProcessError as e:
+			logger.error('Could not align images -> %s', e)
+			# Clean up aligned photos we created
+			for aligned_photo in aligned_photos:
+				self.delete(aligned_photo.path)
+			return []
 		
 		finally:
 			# Delete the tiff files
@@ -242,7 +250,7 @@ class HDRWorkflow(Workflow):
 
 		return aligned_photos
 	
-	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[Photo] = None) -> Photo:
+	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[Photo] = None) -> Photo | None:
 		"""
 		Use enfuse to create the HDR image.
 
@@ -282,7 +290,11 @@ class HDRWorkflow(Workflow):
 			command.append(photo.path)
 
 		# Run the command
-		self.subprocess(command)
+		try:
+			self.subprocess(command)
+		except subprocess.CalledProcessError as e:
+			logger.error('Failed to create HDR image at %s -> %s', filepath, e)
+			return None
 
 		# Ensure the file was created
 		if not self.dry_run and not os.path.exists(filepath):
@@ -291,7 +303,7 @@ class HDRWorkflow(Workflow):
 		
 		return self.get_photo(filepath)
 	
-	def process_bracket(self, photos : list[Photo] | PhotoStack) -> Photo:
+	def process_bracket(self, photos : list[Photo] | PhotoStack) -> Photo | None:
 		"""
 		Process a bracket of photos into a single HDR.
 
@@ -299,7 +311,7 @@ class HDRWorkflow(Workflow):
 			photos (list[Photo]): The photos to process.
 
 		Returns:
-			Photo: The HDR image.
+			Photo | None: The HDR image.
 
 		Raises:
 			ValueError: If no photos are provided.
@@ -318,6 +330,9 @@ class HDRWorkflow(Workflow):
 				return self.get_photo(hdrpath)
 
 		images = self.align_images(photos)
+		if not images:
+			logger.error('No aligned images were created, cannot create HDR')
+			return None
 
 		try:
 			hdr = self.create_hdr(images, hdrpath)
@@ -355,7 +370,8 @@ class HDRWorkflow(Workflow):
 		hdrs = []
 		for bracket in tqdm(brackets, desc="Processing brackets...", ncols=100):
 			hdr = self.process_bracket(bracket)
-			hdrs.append(hdr)
+			if hdr:
+				hdrs.append(hdr)
 
 		logger.debug('Created %d HDR images', len(hdrs))
 
