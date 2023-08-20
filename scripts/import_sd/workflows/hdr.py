@@ -352,6 +352,8 @@ class HDRWorkflow(Workflow):
 				self.delete(tiff.path)
 				self.delete(tiff.path + '_original')
 
+			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
+
 		return aligned_photos
 		
 	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[Photo] = None) -> Photo | None:
@@ -465,6 +467,8 @@ class HDRWorkflow(Workflow):
 				
 				self.delete(image.path)
 				self.delete(image.path + '_original')
+
+			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
 
 		return hdr
 	
