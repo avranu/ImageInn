@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sat Aug 19 2023
+		Last Modified: Sun Aug 20 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -24,7 +24,7 @@ import errno
 import os
 import re
 import logging
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Optional, Self, TypedDict
 import exifread
 import exifread.utils
 import exifread.tags.exif
@@ -90,6 +90,28 @@ class FilePath(str):
 			return ""
 
 		return self.path.lower().split('.')[-1]
+	
+	@property
+	def filename_stem(self) -> str:
+		"""
+		Get the file name without the extension.
+
+		Returns:
+			str: The file name without the extension.
+
+		Examples:
+			>>> path = FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234.arw')
+			>>> path.filename_stem
+			'JAM_1234'
+		"""
+		return os.path.splitext(self.filename)[0]
+	
+	@property
+	def directory(self) -> str:
+		"""
+		The directory of the file.
+		"""
+		return os.path.dirname(self.path)
 
 	@property
 	def exists(self) -> bool:
@@ -137,6 +159,62 @@ class FilePath(str):
 			True
 		"""
 		return os.path.exists(self.path)
+	
+	def append_suffix(self, suffix: str) -> FilePath:
+		"""
+		Appends the given suffix to the filename.
+
+		NOTE: This does not change this object. It creates a new FilePath object to return.
+
+		Args:
+			suffix (str): The suffix to append.
+
+		Returns:
+			FilePath: The new path with the suffix appended.
+
+		Examples:
+			>>> path = FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
+			>>> path.append_suffix('_1')
+			FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234_1.arw')
+		"""
+		# If there is no decimal, then there is no extension
+		if '.' not in self.path:
+			return FilePath(self.path + suffix)
+
+		# Split the path into the name and extension
+		path_and_name, extension = self.path.lower().rsplit('.', 1)
+
+		return FilePath(path_and_name + suffix + '.' + extension)
+
+	def remove_suffix(self, suffix: str) -> FilePath:
+		"""
+		Removes the given suffix from the filename.
+
+		NOTE: This does not change this object. It creates a new FilePath object to return.
+
+		Args:
+			suffix (str): The suffix to remove.
+
+		Returns:
+			FilePath: The new path with the suffix removed.
+
+		Examples:
+			>>> path = FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234_1.arw')
+			>>> path.remove_suffix('_1')
+			FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
+		"""
+		# If there is no decimal, then there is no extension. Remove this suffix ONLY from the end of the path.
+		if '.' not in self.path:
+			path = re.sub(suffix + '$', '', self.path)
+			return FilePath(path)
+
+		# Split the path into the name and extension
+		path_and_name, extension = self.path.lower().rsplit('.', 1)
+
+		# Remove the suffix from the name
+		cleaned_path_and_name = re.sub(suffix + '$', '', path_and_name)
+
+		return FilePath(cleaned_path_and_name + '.' + extension)
 
 	def matches(self, file : FilePath) -> bool:
 		"""

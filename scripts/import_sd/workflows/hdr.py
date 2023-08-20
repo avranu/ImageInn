@@ -31,6 +31,9 @@ from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from tqdm import tqdm
 
+import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as ConcurrentTimeoutError
+
 from scripts.lib.choices import Choices
 from scripts.import_sd.path import FilePath
 from scripts.import_sd.photo import Photo
@@ -39,6 +42,18 @@ from scripts.import_sd.workflow import Workflow
 from scripts.import_sd.stackcollection import StackCollection
 
 logger = logging.getLogger(__name__)
+
+class Timeout(Choices):
+	"""
+	Enum for the different timeouts.
+	"""
+	HDR = 900			# 15 minutes
+	TIFF = 120			# 2 minutes
+	ALIGN = 240			# 4 minutes # TODO
+
+# TODO
+#MAX_RETRIES = 3
+MAX_THREADS = 4
 
 class OnConflict(Choices):
 	"""
@@ -133,9 +148,21 @@ class HDRWorkflow(Workflow):
 
 		return tiff_files
 	
-	def _subprocess_tif(self, exe : str, files : list[Photo]) -> list[Photo]:
+	@DeprecationWarning
+	def _subprocess_all_tifs(self, exe : str, files : list[Photo]) -> list[Photo]:
 		"""
-		Convert an ARW file to a TIFF file.
+		Convert a list of raw photos to tiff using the specified exe.
+
+		NOTE: This does not use multithreading or implement timeouts. Use _subprocess_tif instead.
+
+		This is deprecated
+
+		Args:
+			exe (str): The executable to use to convert the files.
+			files (list[Photo]): The list of files to convert.
+
+		Returns:
+			list[Photo]: The list of converted files.
 		"""
 		logger.debug('Converting %d files to TIFF...', len(files))
 
@@ -179,6 +206,78 @@ class HDRWorkflow(Workflow):
 
 		return tiff_files
 	
+	def _subprocess_single_tif(self, photo : Photo, exe : str) -> Photo:
+		"""
+		Convert a single raw photo to a TIFF file.
+
+		Args:
+			photo (Photo): The photo to convert.
+			exe (str): The executable to use.
+
+		Returns:
+			Photo: The converted photo.
+		"""
+		# Create a tiff filename
+		tiff_name = photo.filename.lower().replace('.arw', '.tif')
+		tiff_path = FilePath([self.tiff_path, tiff_name])
+
+		# Check if the file already exists
+		if tiff_path.exists:
+			tiff_path = self.handle_conflict(tiff_path)
+			if tiff_path is None:
+				logger.debug('Skipping existing file "%s"', photo.path)
+				return None
+			
+		# Add _tmp to the filename until it is finished converting
+		tiff_path = tiff_path.append_suffix('_tmp')
+
+		# Darktable-cli doesn't like backslashes for the tiff path
+		tiff_path_escaped = tiff_path
+		if exe == 'darktable-cli':
+			logger.debug('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
+			tiff_path_escaped = FilePath(tiff_path.replace('\\', '/'))
+
+		# Use the appropriate exe to convert the file
+		logger.debug('Creating tiff file %s from %s using %s', tiff_path, photo.path, exe)
+		self.subprocess([exe, photo.path, tiff_path_escaped], check=False)
+
+		# Check that it exists
+		if not tiff_path.exists:
+			logger.error('Could not find %s after conversion from %s using %s', tiff_path, photo.path, exe)
+			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tiff_path)
+		
+		# Copy EXIF data using ExifTool
+		logger.debug('Copying exif data from %s to %s', photo.path, tiff_path)
+		self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', tiff_path])
+
+		# Remove _tmp from the filename
+		tiff_path = tiff_path.remove_suffix('_tmp')
+
+		return Photo(tiff_path)
+	
+	def _subprocess_tif(self, exe: str, files: list[Photo]) -> list[Photo]:
+		"""
+		Convert a list of raw photos to TIFF files using multithreading and timeouts.
+		
+		Args:
+			exe (str): The executable to use.
+			files (list[Photo]): The photos to convert.
+			
+		Returns:
+			list[Photo]: The converted photos.
+		"""
+		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+			futures = [executor.submit(self._subprocess_single_tif, arw, exe) for arw in files]
+			tiff_files = []
+			for future in tqdm(concurrent.futures.as_completed(futures), desc="Converting RAW to TIFF...", total=len(files), ncols=100):
+				try:
+					tiff_file = future.result(timeout=Timeout.TIFF)
+					if tiff_file:
+						tiff_files.append(tiff_file)
+				except ConcurrentTimeoutError:
+					logger.error("Conversion to TIFF timed out for a file.")
+			return tiff_files
+	
 	def align_images(self, photos : list[Photo] | PhotoStack) -> list[Photo]:
 		"""
 		Use Hugin to align the images.
@@ -209,7 +308,7 @@ class HDRWorkflow(Workflow):
 		try:
 			# TODO conflicts
 			# Create the command
-			command = ['align_image_stack', '-a', os.path.join(self.aligned_path, 'aligned_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
+			command = ['align_image_stack', '-a', os.path.join(self.aligned_path, 'aligned_tmp_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
 			for tiff in tiff_files:
 				command.append(tiff.path)
 			self.subprocess(command)
@@ -220,15 +319,19 @@ class HDRWorkflow(Workflow):
 				output_path = os.path.join(self.aligned_path, f'aligned_{idx:04}.tif')
 				# Create a new file named {photo.filename}_aligned.{ext}
 				filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
-				aligned_path = os.path.join(self.aligned_path, filename)
+				aligned_path = FilePath([self.aligned_path, filename])
 				self.rename(output_path, aligned_path)
 
 				# Copy EXIF data using ExifTool
 				logger.debug('Copying exif data from %s to %s', photo.path, aligned_path)
 				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', aligned_path])
 
+				# Rename the file to remove _tmp
+				clean_path = FilePath(re.sub(r'_tmp_', '_', aligned_path))
+				self.rename(aligned_path, clean_path)
+
 				# Add the photo to the list
-				aligned_photo = self.get_photo(aligned_path)
+				aligned_photo = self.get_photo(clean_path)
 				aligned_photos.append(aligned_photo)
 
 		except subprocess.CalledProcessError as e:
@@ -249,8 +352,10 @@ class HDRWorkflow(Workflow):
 				self.delete(tiff.path)
 				self.delete(tiff.path + '_original')
 
+			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
+
 		return aligned_photos
-	
+		
 	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[Photo] = None) -> Photo | None:
 		"""
 		Use enfuse to create the HDR image.
@@ -277,7 +382,7 @@ class HDRWorkflow(Workflow):
 		# Name the file after the first photo
 		if filename is None:
 			filename = self.name_hdr(photos)
-		filepath = os.path.join(self.hdr_path, filename)
+		filepath = FilePath([self.hdr_path, filename])
 
 		# Handle conflicts
 		if os.path.exists(filepath):
@@ -285,6 +390,10 @@ class HDRWorkflow(Workflow):
 			if filepath is None:
 				logger.debug('Skipping existing file "%s"', filepath)
 				return None
+			
+		# Add ".tmp" to the end of the filename until it is finished
+		filepath = filepath.append_suffix('_tmp')
+		filename = filepath.filename
 
 		# Create the command
 		command = ['enfuse', '-o', filepath, '-v']
@@ -303,9 +412,16 @@ class HDRWorkflow(Workflow):
 			logger.error('Unable to create HDR image at %s', filepath)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filepath)
 		
+		# Remove the ".tmp" from the end of the filename
+		filepath = filepath.remove_suffix('_tmp')
+		filename = filepath.filename
+
+		# Rename the file
+		self.rename(filepath, os.path.join(self.hdr_path, filename))
+		
 		return self.get_photo(filepath)
 	
-	def process_bracket(self, photos : list[Photo] | PhotoStack) -> Photo | None:
+	def process_single_bracket(self, photos : list[Photo] | PhotoStack) -> Photo | None:
 		"""
 		Process a bracket of photos into a single HDR.
 
@@ -352,6 +468,8 @@ class HDRWorkflow(Workflow):
 				self.delete(image.path)
 				self.delete(image.path + '_original')
 
+			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
+
 		return hdr
 	
 	def process_brackets(self) -> list[Photo]:
@@ -370,12 +488,20 @@ class HDRWorkflow(Workflow):
 
 		logger.debug('Found %d brackets, containing %d photos.', len(brackets), sum([len(bracket) for bracket in brackets]))
 
-		# Process each bracket
-		hdrs = []
-		for bracket in tqdm(brackets, desc="Processing brackets...", ncols=100):
-			hdr = self.process_bracket(bracket)
-			if hdr:
-				hdrs.append(hdr)
+		# Process each bracket using multithreading
+		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
+			futures = [executor.submit(self.process_single_bracket, bracket) for bracket in brackets]
+			hdrs = []
+			for future in tqdm(concurrent.futures.as_completed(futures), desc="Processing brackets...", total=len(brackets), ncols=100):
+				try:
+					hdr = future.result(timeout=Timeout.HDR)
+					if hdr:
+						logger.debug('Appending HDR image at %s', hdr.path)
+						hdrs.append(hdr)
+					else:
+						logger.debug('HDR image was not created.')
+				except ConcurrentTimeoutError:
+					logger.error("Processing bracket timed out. Skipping this HDR.")
 
 		logger.debug('Created %d HDR images', len(hdrs))
 
