@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sat Aug 19 2023
+		Last Modified: Sun Aug 20 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -145,13 +145,8 @@ class HDRWorkflow(Workflow):
 		tiff_files = []
 		for arw in tqdm(files, desc="Converting RAW to TIFF...", ncols=100): 
 			# Create a tiff filename
-			tiff_name = arw.filename.replace('.arw', '.tif')
+			tiff_name = arw.filename.lower().replace('.arw', '.tif')
 			tiff_path = os.path.join(self.tiff_path, tiff_name)
-
-			# Darktable-cli doesn't like backslashes for the tiff path
-			if exe == 'darktable-cli':
-				logger.debug('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
-				tiff_path = tiff_path.replace('\\', '/')
 
 			# Check if the file already exists
 			if os.path.exists(tiff_path):
@@ -160,9 +155,15 @@ class HDRWorkflow(Workflow):
 					logger.debug('Skipping existing file "%s"', arw.path)
 					continue
 
-			# Use darktable-cli to convert the file
+			# Darktable-cli doesn't like backslashes for the tiff path
+			tiff_path_escaped = tiff_path
+			if exe == 'darktable-cli':
+				logger.debug('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
+				tiff_path_escaped = tiff_path.replace('\\', '/')
+
+			# Use the appropriate exe to convert the file
 			logger.debug('Creating tiff file %s from %s using %s', tiff_path, arw.path, exe)
-			self.subprocess([exe, arw.path, tiff_path], check=False)
+			self.subprocess([exe, arw.path, tiff_path_escaped], check=False)
 
 			# Check that it exists
 			if not os.path.exists(tiff_path):
@@ -279,10 +280,11 @@ class HDRWorkflow(Workflow):
 		filepath = os.path.join(self.hdr_path, filename)
 
 		# Handle conflicts
-		filepath = self.handle_conflict(filepath)
-		if filepath is None:
-			logger.debug('Skipping existing file "%s"', filepath)
-			return None
+		if os.path.exists(filepath):
+			filepath = self.handle_conflict(filepath)
+			if filepath is None:
+				logger.debug('Skipping existing file "%s"', filepath)
+				return None
 
 		# Create the command
 		command = ['enfuse', '-o', filepath, '-v']
