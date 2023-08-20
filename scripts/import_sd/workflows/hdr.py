@@ -326,10 +326,12 @@ class HDRWorkflow(Workflow):
 		hdrname = self.name_hdr(photos)
 		hdrpath = os.path.join(self.hdr_path, hdrname)
 		if os.path.exists(hdrpath):
-			hdrpath = self.handle_conflict(hdrpath)
-			if hdrpath is None:
-				logger.debug('Skipping bracket, because HDR already exists "%s"', hdrpath)
+			newpath = self.handle_conflict(hdrpath)
+			if newpath is None:
+				logger.debug('Skipping bracket, because HDR already exists "%s"', newpath)
 				return self.get_photo(hdrpath)
+			
+			hdrpath = newpath
 
 		images = self.align_images(photos)
 		if not images:

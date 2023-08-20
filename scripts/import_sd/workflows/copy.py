@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Fri Aug 18 2023
+		Last Modified: Sun Aug 20 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -243,6 +243,12 @@ class CopyWorkflow(Workflow):
 			logger.critical('Checksum validation failed on operation %s', operation)
 			errors.append('Checksum validation failed on operation %s' % operation)
 
+		# Verify that the number of files copied is equal to the number of photos on the SD card
+		sd_photos = self.count_sd_photos()
+		if len(files) != sd_photos:
+			logger.critical('Number of files copied does not match number of photos on SD card')
+			errors.append('Number of files copied does not match number of photos on SD card')
+
 		if len(errors) > 0:
 			logger.critical('Copy failed due to previous errors.')
 			return False
@@ -363,6 +369,38 @@ class CopyWorkflow(Workflow):
 			return False
 
 		return True
+	
+	def count_sd_photos(self) -> int:
+		"""
+		Count the number of photos on the SD card.
+		
+		Photos are considered based on matching extensions.
+		
+		Returns:
+			int: The number of photos on the SD card.
+		"""
+		count = 0
+
+		extensions = [
+			'.jpg', '.jpeg',
+			'.arw',
+			'.cr2',
+			'.nef',
+			'.dng',
+			'.orf',
+			'.raf',
+			'.tif', '.tiff',
+			'.png',
+		]
+
+		# Look in the DCIM folder, and all subfolders
+		path = os.path.join(self.sd_card.path, 'DCIM')
+		for root, _, files in os.walk(path):
+			for file in files:
+				if os.path.splitext(file)[1].lower() in extensions:
+					count += 1
+
+		return count
 	
 	def queue_files(self) -> Queue:
 		"""

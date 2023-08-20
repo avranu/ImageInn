@@ -10,6 +10,7 @@ __pycache__/
 # Libraries (npm, etc)
 node_modules
 package-lock.json
+.benchmarks
 
 # Temporary files
 *.out
