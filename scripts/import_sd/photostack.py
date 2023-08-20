@@ -125,8 +125,8 @@ class PhotoStack:
 		
 		photos = self.get_photos()
 		
-		current_bias, current_value = self.get_gap()
-		new_bias, new_value = self.calculate_gap(photo)
+		current_bias_gap, current_ev_gap = self.get_gap()
+		new_bias_gap, new_ev_gap = self.calculate_gap(photo)
 		last = photos[-1]
 
 		# Match attributes, such as camera model, lens, etc
@@ -155,9 +155,9 @@ class PhotoStack:
 			return True
 
 		# For bigger stacks, we have a gap to compare to.
-		if current_bias != new_bias or current_value != new_value:
+		if current_bias_gap != new_bias_gap and current_ev_gap != new_ev_gap:
 			logger.debug("Photo %s does not match %s", photo.number, photos[-1].number)
-			logger.debug("Bias: %s, %s. Value: %s, %s", current_bias, new_bias, current_value, new_value)
+			logger.debug("Bias: %s, %s. Value: %s, %s", current_bias_gap, new_bias_gap, current_ev_gap, new_ev_gap)
 			return False
 		
 		logger.debug("Photo %s matches %s", photo.number, photos[-1].number)
