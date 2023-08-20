@@ -157,7 +157,7 @@ class PhotoStack:
 			return False
 
 		if len(self._photos) == 1:
-			logger.debug("Photo %s matches %s", photo.number, photos[-1].number)
+			logger.debug("Photo %s matches %s", photo.number, last.number)
 			# If all the above conditions are met, we can add a 2nd photo to a 1 photo stack.
 			return True
 
