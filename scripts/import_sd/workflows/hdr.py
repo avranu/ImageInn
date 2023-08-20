@@ -328,7 +328,7 @@ class HDRWorkflow(Workflow):
 		if os.path.exists(hdrpath):
 			newpath = self.handle_conflict(hdrpath)
 			if newpath is None:
-				logger.debug('Skipping bracket, because HDR already exists "%s"', newpath)
+				logger.debug('Skipping bracket, because HDR already exists "%s"', hdrpath)
 				return self.get_photo(hdrpath)
 			
 			hdrpath = newpath
