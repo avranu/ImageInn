@@ -34,7 +34,6 @@ from .validator import Validator
 
 logger = logging.getLogger(__name__)
 
-
 class FilePath(str):
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
