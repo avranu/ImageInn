@@ -69,7 +69,6 @@ class Photo(FilePath):
 		clean_path = os.path.normpath(value)
 		clean_path = os.path.abspath(clean_path)
 
-		logger.critical('Checking existance of %s', clean_path)
 		if not os.path.exists(clean_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), clean_path)
 		
