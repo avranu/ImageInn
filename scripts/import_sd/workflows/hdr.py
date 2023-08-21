@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sun Aug 20 2023
+		Last Modified: Mon Aug 21 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -48,8 +48,8 @@ class Timeout(Choices):
 	Enum for the different timeouts.
 	"""
 	HDR = 900			# 15 minutes
-	TIFF = 120			# 2 minutes
-	ALIGN = 240			# 4 minutes # TODO
+	TIFF = 300			# 5 minutes
+	ALIGN = 300			# 5 minutes # TODO
 
 # TODO
 #MAX_RETRIES = 3
@@ -229,30 +229,28 @@ class HDRWorkflow(Workflow):
 				return None
 			
 		# Add _tmp to the filename until it is finished converting
-		tiff_path = tiff_path.append_suffix('_tmp')
+		tmp_tiff_path = tiff_path.append_suffix('_tmp')
 
 		# Darktable-cli doesn't like backslashes for the tiff path
-		tiff_path_escaped = tiff_path
+		tiff_path_escaped = tmp_tiff_path
 		if exe == 'darktable-cli':
-			logger.debug('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
-			tiff_path_escaped = FilePath(tiff_path.replace('\\', '/'))
+			logger.debug('Replacing backslashes with forward slashes for darktable in %s', tmp_tiff_path)
+			tiff_path_escaped = FilePath(tmp_tiff_path.replace('\\', '/'))
 
 		# Use the appropriate exe to convert the file
-		logger.debug('Creating tiff file %s from %s using %s', tiff_path, photo.path, exe)
+		logger.debug('Creating tiff file %s from %s using %s', tmp_tiff_path, photo.path, exe)
 		self.subprocess([exe, photo.path, tiff_path_escaped], check=False)
 
 		# Check that it exists
-		if not tiff_path.exists:
-			logger.error('Could not find %s after conversion from %s using %s', tiff_path, photo.path, exe)
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tiff_path)
+		if not tmp_tiff_path.exists:
+			logger.error('Could not find %s after conversion from %s using %s', tmp_tiff_path, photo.path, exe)
+			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_tiff_path)
 		
 		# Copy EXIF data using ExifTool
-		logger.debug('Copying exif data from %s to %s', photo.path, tiff_path)
-		self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', tiff_path])
+		logger.debug('Copying exif data from %s to %s', photo.path, tmp_tiff_path)
+		self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', tmp_tiff_path])
 
-		# Remove _tmp from the filename
-		tiff_path = tiff_path.remove_suffix('_tmp')
-
+		# Return a photo object (ensuring the path exists) without the _tmp suffix.
 		return Photo(tiff_path)
 	
 	def _subprocess_tif(self, exe: str, files: list[Photo]) -> list[Photo]:
@@ -267,7 +265,7 @@ class HDRWorkflow(Workflow):
 			list[Photo]: The converted photos.
 		"""
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-			futures = [executor.submit(self._subprocess_single_tif, arw, exe) for arw in files]
+			futures = [executor.submit(self._subprocess_single_tif, photo, exe) for photo in files]
 			tiff_files = []
 			for future in tqdm(concurrent.futures.as_completed(futures), desc="Converting RAW to TIFF...", total=len(files), ncols=100):
 				try:
@@ -275,7 +273,8 @@ class HDRWorkflow(Workflow):
 					if tiff_file:
 						tiff_files.append(tiff_file)
 				except ConcurrentTimeoutError:
-					logger.error("Conversion to TIFF timed out for a file.")
+					logger.error("Conversion to TIFF timed out.")
+
 			return tiff_files
 	
 	def align_images(self, photos : list[Photo] | PhotoStack) -> list[Photo]:
@@ -303,6 +302,13 @@ class HDRWorkflow(Workflow):
 
 		# Convert RAW to tiff
 		tiff_files = self.convert_to_tiff(photos)
+		if not tiff_files:
+			logger.error('Could not create any tiff files')
+			return []
+		if len(tiff_files) != len(photos):
+			logger.error('Could not convert all photos to TIFF. Converted %d/%d photos', len(tiff_files), len(photos))
+			return []
+		
 		aligned_photos : list[Photo] = []
 
 		try:
@@ -371,8 +377,8 @@ class HDRWorkflow(Workflow):
 			FileNotFoundError: If the HDR image is not created.
 			FileFoundError: If self.onconflict is set to "fail" and the HDR image already exists.
 		"""
-		if not photos:
-			raise ValueError('No photos provided')
+		if not photos or len(photos) < 2:
+			raise ValueError('Not enough photos provided to create HDR at %s', self.hdr_path)
 		
 		logger.debug('Creating HDR...')
 
@@ -392,11 +398,11 @@ class HDRWorkflow(Workflow):
 				return None
 			
 		# Add ".tmp" to the end of the filename until it is finished
-		filepath = filepath.append_suffix('_tmp')
-		filename = filepath.filename
+		tmp_filepath = filepath.append_suffix('_tmp')
+		tmp_filename = tmp_filepath.filename
 
 		# Create the command
-		command = ['enfuse', '-o', filepath, '-v']
+		command = ['enfuse', '-o', tmp_filepath, '-v']
 		for photo in photos:
 			command.append(photo.path)
 
@@ -404,20 +410,16 @@ class HDRWorkflow(Workflow):
 		try:
 			self.subprocess(command)
 		except subprocess.CalledProcessError as e:
-			logger.error('Failed to create HDR image at %s -> %s', filepath, e)
+			logger.error('Failed to create HDR image at %s -> %s', tmp_filepath, e)
 			return None
 
 		# Ensure the file was created
-		if not self.dry_run and not os.path.exists(filepath):
-			logger.error('Unable to create HDR image at %s', filepath)
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filepath)
-		
-		# Remove the ".tmp" from the end of the filename
-		filepath = filepath.remove_suffix('_tmp')
-		filename = filepath.filename
+		if not self.dry_run and not os.path.exists(tmp_filepath):
+			logger.error('Unable to create HDR image at %s', tmp_filepath)
+			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_filepath)
 
 		# Rename the file
-		self.rename(filepath, os.path.join(self.hdr_path, filename))
+		self.rename(tmp_filepath, filepath)
 		
 		return self.get_photo(filepath)
 	
@@ -435,23 +437,24 @@ class HDRWorkflow(Workflow):
 			ValueError: If no photos are provided.
 			FileNotFoundError: If the HDR image is not created.
 		"""
-		if not photos:
-			raise ValueError('No photos provided')
+		if not photos or len(photos) < 2:
+			raise ValueError('Not enough photos provided in bracket: %s', photos)
 		
 		# Determine the final HDR name, so we can figure out if it already exists and handle conflicts early.
 		hdrname = self.name_hdr(photos)
-		hdrpath = os.path.join(self.hdr_path, hdrname)
-		if os.path.exists(hdrpath):
+		hdrpath = FilePath([self.hdr_path, hdrname])
+		if hdrpath.exists:
 			newpath = self.handle_conflict(hdrpath)
-			if newpath is None:
+			if not newpath:
 				logger.debug('Skipping bracket, because HDR already exists "%s"', newpath)
 				return self.get_photo(hdrpath)
 			
 			hdrpath = newpath
 
 		images = self.align_images(photos)
-		if not images:
-			logger.error('No aligned images were created, cannot create HDR')
+
+		if not images or len(images) != len(photos):
+			logger.error('Not enough aligned images were created, cannot create HDR')
 			return None
 
 		try:
