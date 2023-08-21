@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: sd.py
 		Project: import_sd
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sun Aug 13 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -59,13 +59,13 @@ class SDCard:
 	def get_media_dir(cls) -> str:
 		"""
 		Get the media directory for the current operating system.
-		
+
 		Returns:
 			str: The media directory for the current operating system.
-			
+
 		Raises:
 			FileNotFoundError: If the media directory does not exist.
-			
+
 			Examples:
 				>>> SDCards.get_media_dir()
 				'/media'
@@ -73,7 +73,7 @@ class SDCard:
 		# Windows
 		if os.name == 'nt':
 			return 'D:\\'
-			
+
 		# Chromebook
 		if 'CHROMEOS' in os.environ and os.path.exists('/mnt/chromeos/MyFiles/Removable'):
 			return '/mnt/chromeos/MyFiles/Removable'
@@ -81,7 +81,7 @@ class SDCard:
 			return '/mnt/chromeos/removable'
 		if os.name == 'posix' and os.path.exists('/media/removable'):
 			return '/media/removable'
-		
+
 		# Linux + Mac
 		if os.name == 'posix' or sys.platform == 'darwin':
 			if os.path.exists('/Volumes'):
@@ -90,32 +90,32 @@ class SDCard:
 				return '/media'
 			elif os.path.exists('/mnt'):
 				return '/mnt'
-			
+
 		# Try media
 		if os.path.exists('/media'):
 			logger.warning('Unknown operating system, trying /media')
 			return '/media'
-		
+
 		# Unsupported
 		raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), '/media')
-	
+
 	@classmethod
 	def sd_contains_photos(cls, sd_path: str, raise_errors : bool = True) -> bool:
 		"""
 		Determines if the SD card is structured in the way we expect to contain DSLR photos.
-		
+
 		We look for a DCIM folder in the root directory. If it exists, we assume this is a DSLR sd card.
-		
+
 		Args:
 			sd_path (str): The path to the SD card.
 			raise_errors (bool): Whether or not to raise errors if the SD card does not exist.
-			
+
 		Returns:
 			bool: True if the SD card contains photos, False otherwise.
-			
+
 		Raises:
 			FileNotFoundError: If the SD card does not exist and the raise_errors parameter is True.
-			
+
 		Examples:
 			>>> SDCards.sd_contains_photos('/media/SD_CARD')
 			True
@@ -124,14 +124,14 @@ class SDCard:
 			if raise_errors:
 				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), sd_path)
 			return False
-		
+
 		return Validator.is_dir(os.path.join(sd_path, 'DCIM'))
-		
+
 	@classmethod
 	def get_list(cls, media_path : Optional[str] = None) -> list[SDFolder]:
 		"""
 		Get all SD cards mounted to the server this code is running on.
-		
+
 		Returns:
 			list[SDFolder]: A list containing each SD card path
 
@@ -142,8 +142,8 @@ class SDCard:
 				SDFolder {
 					'path': '/media/pi/SD',
 				}
-			]	
-				
+			]
+
 		"""
 		# Handle multiple operating systems
 		if not media_path:
@@ -161,11 +161,11 @@ class SDCard:
 			sd_cards.append(sd_directory)
 
 		return sd_cards
-	
+
 	def get_info(self) -> SDFolder:
 		"""
 		Get info about the SD card at this card's path.
-		
+
 		This includes the total size, used space, and free space, number of files, etc.
 
 		Returns:
@@ -191,8 +191,8 @@ class SDCard:
 	@classmethod
 	def get_info_for(cls, sd_card_path : Optional[str] = None) -> SDFolder:
 		"""
-		Get info about the SD card at the given path. 
-		
+		Get info about the SD card at the given path.
+
 		This includes the total size, used space, and free space, number of files, etc.
 
 		Args:
@@ -221,7 +221,7 @@ class SDCard:
 		# Ensure the path exists
 		if not Validator.is_dir(sd_card_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), sd_card_path)
-		
+
 		# Get the total size of the SD card
 		total, used, free = shutil.disk_usage(sd_card_path)
 
@@ -240,11 +240,11 @@ class SDCard:
 			num_files = num_files,
 			num_dirs = num_dirs
 		)
-	
+
 	def determine_subpath(self, filepath : str) -> str:
 		"""
 		Takes a file path and turns it into just the subdirectories of the SD card (ignoring the root DCIM folder)
-		
+
 		Args:
 			filepath (str): The file path to convert.
 

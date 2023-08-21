@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: photo.py
 		Project: import_sd
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Mon Aug 21 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -59,24 +59,49 @@ class Photo(FilePath):
 		The path to the photo.
 		"""
 		return self._path
-	
+
 	@path.setter
-	def path(self, value : str):
+	def path(self, value : list[str] | str):
 		"""
 		The path to the photo, which must already exist.
 		"""
-		# Normalize the path before working with it
-		clean_path = os.path.normpath(value)
-		clean_path = os.path.abspath(clean_path)
+		if isinstance(value, str):
+			# Cast to string to convert FilePath() to string
+			joined_path = str(value)
+		else:
+			joined_path = os.path.join(*value)
 
-		if not os.path.exists(clean_path):
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), clean_path)
+		self._path = os.path.normpath(joined_path)
+
+		self.validate()
+
+	def validate(self) -> bool:
+		"""
+		Whether the photo is valid or not.
+
+		This MUST return True. If the path is not valid, it will raise an exception to indicate why.
+
+		Returns:
+			bool: True if the photo is valid. Raises exception otherwise.
+
+		Raises:
+			FileNotFoundError: If the path does not exist.
+			ValueError: If the path is not a file.
+		"""
+		if not isinstance(self.path, str):
+			logger.info('Path is not a string: %s. It is %s', self.path, type(self.path).__name__)
+			raise TypeError('Path must be a string. It is currently a %s' % type(self.path).__name__)
 		
-		if not os.path.isfile(clean_path):
+		if not os.path.exists(self.path):
+			logger.info('Path does not exist: %s', self.path)
+			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
+
+		if not os.path.isfile(self.path):
+			logger.info('Path is not a file: %s', self.path)
 			raise ValueError('Path must be a file')
-		
-		self._path = clean_path
-	
+
+		return True
+
 	@property
 	def aperture(self) -> Decimal | None:
 		"""
@@ -95,7 +120,7 @@ class Photo(FilePath):
 			return None
 		# Round up, always
 		return round(result, 2)
-	
+
 	@property
 	def brightness(self) -> Decimal | None:
 		"""
@@ -113,13 +138,13 @@ class Photo(FilePath):
 		if not result:
 			return None
 
-		# Round up the 2nd decimal place. Always round up, never down. 
+		# Round up the 2nd decimal place. Always round up, never down.
 		return round(result, 2)
-	
+
 	@property
 	def b(self) -> Decimal | None:
 		return self.brightness
-	
+
 	@property
 	def camera(self) -> str | None:
 		"""
@@ -134,7 +159,7 @@ class Photo(FilePath):
 			'a7r4'
 		"""
 		return self.attr(ExifTag.CAMERA)
-	
+
 	@property
 	def date(self) -> datetime:
 		"""
@@ -152,7 +177,7 @@ class Photo(FilePath):
 		if not value:
 			return None
 		return datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-	
+
 	@property
 	def dimensions(self) -> Dict[str, int] | None:
 		"""
@@ -193,11 +218,11 @@ class Photo(FilePath):
 
 		# Round up the 2nd decimal place, always
 		return round(result, 2)
-	
+
 	@property
 	def eb(self) -> Decimal | None:
 		return self.exposure_bias
-	
+
 	@property
 	def exposure_value(self) -> Decimal | None:
 		"""
@@ -216,15 +241,15 @@ class Photo(FilePath):
 		iso = self.iso
 		if not aperture or not shutter_speed or not iso:
 			return None
-		
+
 		result = math.log2((aperture ** 2) / shutter_speed * iso)
 		result = Decimal(result)
 		return round(result, 2)
-	
+
 	@property
 	def ev(self) -> Decimal | None:
 		return self.exposure_value
-	
+
 	@property
 	def exposure_mode(self) -> str | None:
 		"""
@@ -271,7 +296,7 @@ class Photo(FilePath):
 			return None
 		# Round up the 10th decimal place, always
 		return round(result, 10)
-	
+
 	@property
 	def f(self) -> Decimal | None:
 		"""
@@ -304,7 +329,7 @@ class Photo(FilePath):
 			True
 		"""
 		return self.attr(ExifTag.FLASH)
-	
+
 	@property
 	def focal_length(self) -> Decimal | None:
 		"""
@@ -323,7 +348,7 @@ class Photo(FilePath):
 			return None
 		# Round up, always
 		return round(result, 2)
-	
+
 	@property
 	def height(self) -> int | None:
 		"""
@@ -353,7 +378,7 @@ class Photo(FilePath):
 			'100'
 		"""
 		return self.attr(ExifTag.ISO)
-	
+
 	@property
 	def landscape(self) -> bool | None:
 		"""
@@ -367,7 +392,7 @@ class Photo(FilePath):
 			True
 		"""
 		return self.orientation == 'Landscape'
-	
+
 	@property
 	def portrait(self) -> bool | None:
 		"""
@@ -396,7 +421,7 @@ class Photo(FilePath):
 			'FE 35mm F1.8'
 		"""
 		return self.attr(ExifTag.LENS)
-	
+
 	@property
 	def metering_mode(self) -> str | None:
 		"""
@@ -406,7 +431,7 @@ class Photo(FilePath):
 			str: The metering mode.
 		"""
 		return self.attr(ExifTag.METERING_MODE)
-	
+
 	@property
 	def megapixels(self) -> Decimal | None:
 		"""
@@ -421,7 +446,7 @@ class Photo(FilePath):
 			'24.2'
 		"""
 		return self.attr(ExifTag.MEGAPIXELS)
-	
+
 	@property
 	def orientation(self) -> str | None:
 		"""
@@ -452,7 +477,7 @@ class Photo(FilePath):
 
 		if not result:
 			return None
-		
+
 		# Round up the 4th decimal place, always
 		return round(result, 4)
 
@@ -465,7 +490,7 @@ class Photo(FilePath):
 			int: The size.
 		"""
 		return self.attr(ExifTag.SIZE)
-	
+
 	@property
 	def temperature(self) -> str | None:
 		"""
@@ -475,7 +500,7 @@ class Photo(FilePath):
 			str: The temperature.
 		"""
 		return self.attr(ExifTag.TEMPERATURE)
-	
+
 	@property
 	def wb(self) -> str | None:
 		"""
@@ -488,7 +513,7 @@ class Photo(FilePath):
 			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
 		"""
 		return self.attr(ExifTag.WB)
-	
+
 	@property
 	def wb_mode(self) -> str | None:
 		"""
@@ -498,7 +523,7 @@ class Photo(FilePath):
 			str: The white balance mode.
 		"""
 		return self.attr(ExifTag.WB_MODE)
-	
+
 	@property
 	def width(self) -> int | None:
 		"""
@@ -513,7 +538,7 @@ class Photo(FilePath):
 			6000
 		"""
 		return self.attr(ExifTag.WIDTH)
-	
+
 	@property
 	def resolution(self) -> str | None:
 		"""
@@ -523,7 +548,7 @@ class Photo(FilePath):
 			str: The resolution.
 		"""
 		return self.attr(ExifTag.RESOLUTION)
-	
+
 	@property
 	def number(self) -> int:
 		"""
@@ -544,7 +569,7 @@ class Photo(FilePath):
 		"""
 		if self._number:
 			return self._number
-		
+
 		# Start with the standard RAW format from a DSLR
 		matches = re.search(r'^_?[a-z0-9]+_(\d+)(\.[a-zA-Z]{1,5})?$', os.path.basename(self.path), re.IGNORECASE)
 		if not matches:
@@ -552,9 +577,9 @@ class Photo(FilePath):
 			matches = re.search(r'^\d{8}_[a-z0-9-]+_(\d+)', os.path.basename(self.path), re.IGNORECASE)
 			if not matches:
 				return None
-			
+
 		return int(matches.group(1))
-	
+
 	@number.setter
 	def number(self, value: int):
 		"""
@@ -564,7 +589,7 @@ class Photo(FilePath):
 			value (int): The photo number.
 		"""
 		self._number = value
-	
+
 	@property
 	def extension(self) -> str:
 		"""
@@ -583,7 +608,7 @@ class Photo(FilePath):
 			return ""
 
 		return self.path.lower().split('.')[-1]
-	
+
 	@property
 	def checksum(self) -> str:
 		"""
@@ -598,7 +623,7 @@ class Photo(FilePath):
 			'8f3d1d8a'
 		"""
 		return Validator.calculate_checksum(self.path)
-	
+
 	def attr(self, key : ExifTag) -> str | Decimal | int | None:
 		"""
 		Get the EXIF data from the given file.
@@ -638,16 +663,16 @@ class Photo(FilePath):
 				if isinstance(result, float):
 					return Decimal(result)
 				return result
-			
+
 			if value is None:
 				return None
-		
+
 			return exifread.utils.make_string(value)
 		except KeyError:
 			logger.warning('Unable to find attribute %s in %s', key, self.path)
 			logger.warning('Tags are %s', tags)
 			return None
-	
+
 	def is_jpg(self) -> bool:
 		"""
 		Checks if the given file is a JPG.
@@ -661,10 +686,10 @@ class Photo(FilePath):
 			True
 		"""
 		return self.extension == 'jpg' or self.extension == 'jpeg'
-	
+
 	def __str__(self):
 		return self.path
-	
+
 
 class FakePhoto(Photo):
 	"""
@@ -691,77 +716,77 @@ class FakePhoto(Photo):
 		The FAKE shutter speed of the photo.
 		"""
 		return Decimal(0.01)
-	
+
 	@property
 	def iso(self) -> int:
 		"""
 		The FAKE ISO of the photo.
 		"""
 		return 100
-	
+
 	@property
 	def aperture(self) -> Decimal:
 		"""
 		The FAKE aperture of the photo.
 		"""
 		return Decimal(2.8)
-	
+
 	@property
 	def date(self) -> datetime:
 		"""
 		The FAKE date of the photo.
 		"""
 		return datetime.datetime.now()
-	
+
 	@property
 	def exposure_bias(self) -> Decimal:
 		"""
 		The FAKE exposure bias of the photo.
 		"""
 		return Decimal(0)
-	
+
 	@property
 	def focal_length(self) -> Decimal:
 		"""
 		The FAKE focal length of the photo.
 		"""
 		return 35
-	
+
 	@property
 	def wb(self) -> str:
 		"""
 		The FAKE white balance of the photo.
 		"""
 		return 'Auto'
-	
+
 	@property
 	def lens(self) -> str:
 		"""
 		The FAKE lens of the photo.
 		"""
 		return 'FE 35mm F1.8'
-	
+
 	@property
 	def camera(self) -> str:
 		"""
 		The FAKE camera model of the photo.
 		"""
 		return 'ILCE-7RM4'
-	
+
 	@property
 	def brightness(self) -> Decimal:
 		"""
 		The FAKE brightness of the photo.
 		"""
 		return Decimal(0)
-	
+
 	@property
 	def exposure_time(self) -> Decimal:
 		"""
 		The FAKE exposure time of the photo.
 		"""
 		return Decimal(0.5)
-	
+
 	@property
 	def f(self) -> Decimal:
 		"""
@@ -784,5 +809,4 @@ class FakePhoto(Photo):
 			{'EXIF ExposureTime': (1, 100)}
 		"""
 		return 'fake'
-	
-	
+

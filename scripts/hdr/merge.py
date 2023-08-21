@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: merge.py
 		Project: hdr
 		Created Date: 18 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 import cv2

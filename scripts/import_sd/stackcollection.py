@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: stackcollection.py
 		Project: import_sd
 		Created Date: 18 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ class StackCollection:
 	def append(self, stack : PhotoStack):
 		"""
 		Add a stack to the collection.
-		
+
 		Args:
 			stack (PhotoStack): The stack to add.
 		"""
@@ -44,9 +44,9 @@ class StackCollection:
 		Finishes the current stack and starts a new one.
 
 		If the current stack has more than 2 photos, it is saved to the collection. Otherwise, it is discarded.
-		
+
 		Returns:
-			bool: True if the previous stack was saved, False otherwise.	
+			bool: True if the previous stack was saved, False otherwise.
 		"""
 		logger.debug(f'Finishing stack: ')
 		if len(self.photos) > 2:
@@ -54,7 +54,7 @@ class StackCollection:
 			self.photos = PhotoStack()
 			logger.debug(f'Saved previous stack and started New Stack: ')
 			return True
-		
+
 		logger.debug(f'Started New Stack without saving previous stack: Photos in previous stack were {len(self.photos)}')
 		self.photos = PhotoStack()
 		return False
@@ -62,7 +62,7 @@ class StackCollection:
 	def add_photo(self, photo : Photo) -> None:
 		"""
 		Add a photo to the current stack.
-		
+
 		Args:
 			photo (Photo): The photo to add.
 		"""
@@ -78,18 +78,18 @@ class StackCollection:
 
 	def add_photos(self, photos : list[Photo]) -> None:
 		"""
-		Add a complete list of photos to the current stack. 
+		Add a complete list of photos to the current stack.
 
 		NOTE: This calls finishStack() at the end, which will discard any remaining photos that do not form a complete stack.
 		Therefore, this should not be called piecewise, but rather with a complete list of photos.
-		
+
 		Args:
 			photos (list[Photo]): The photos to add.
 		"""
 		for photo in photos:
 			self.add_photo(photo)
 		self.finish_stack()
-	
+
 	def get_stacks(self) -> list[PhotoStack]:
 		"""
 		Adds the current set to the finished stacks (if it is full) and returns them.

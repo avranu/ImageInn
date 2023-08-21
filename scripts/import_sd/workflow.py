@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: workflow.py
 		Project: import_sd
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -66,7 +66,7 @@ class Workflow:
 		The path to the network location to copy raw files from the SD Card to.
 		"""
 		return self._base_path
-	
+
 	@base_path.setter
 	def base_path(self, base_path: str) -> None:
 		"""
@@ -95,14 +95,14 @@ class Workflow:
 		# Get all files in the directory (but not subdirectories), and sort them by their filename
 		files = os.listdir(directory)
 		files.sort()
-		
+
 		photos = []
 		for file in files:
 			if self.raw_extension and file.lower().endswith(self.raw_extension):
 				photos.append(Photo(os.path.join(directory, file)))
 
 		return photos
-	
+
 	def _normalize_path(self, path: str) -> str:
 		"""
 		Normalize a path for the system, and ensure that it ends with a trailing slash (which is important for rsync)
@@ -114,7 +114,7 @@ class Workflow:
 			str: The normalized path.
 		"""
 		return os.path.join(os.path.normpath(path), '')
-	
+
 	def _check_photo(self, photo: Photo, destinations: list[Photo]) -> tuple[bool, list[Photo]]:
 		"""
 		Checks if a photo exists in a list of destinations, and if so, whether its checksum matches.
@@ -124,7 +124,7 @@ class Workflow:
 			destinations (list[Photo]): The list of destinations to check.
 
 		Returns:
-			tuple[bool, list[Photo]]: 
+			tuple[bool, list[Photo]]:
 				(already_exists, mismatched_destinations)
 				A tuple of whether the photo exists in all destinations, and a list of destinations where its checksum does not match.
 
@@ -137,25 +137,25 @@ class Workflow:
 				continue
 			if not photo.matches(path):
 				mismatched.append(path)
-		
+
 		return exists, mismatched
-	
-	
+
+
 	def generate_name(self, photo : Photo | str, short : bool = False, properties : Optional[dict[str, Any]] = None) -> str:
 		"""
-		Generate a name for the photo we are copying. 
-		
+		Generate a name for the photo we are copying.
+
 		The name is in the format:
 		{YYYYmmdd}_{camera model}_{filename number suffix}_{exposure-bias}_{brightness value}_{ISO speed}_{shutter speed}_{Lens}.{extension}
 
 		The filename number suffix comes from the last 4 digits of the filename (e.g. JAM_1234.jpg -> 1234).
 
 		Args:
-			photo (Photo | str): 
+			photo (Photo | str):
 				The photo to generate a name for. If a str, it is assumed to be the file path.
-			short (bool, optional): 
+			short (bool, optional):
 				Whether to generate a short name. Defaults to False.
-			properties (Optional[dict[str, Any]], optional): 
+			properties (Optional[dict[str, Any]], optional):
 				The properties of the photo. Defaults to None, where the properties are determined from the photo.
 
 		Returns:
@@ -178,7 +178,7 @@ class Workflow:
 				photo = Photo(photo)
 
 		# Merge properties from the param and the photo, prioritizing the param
-		props = { 
+		props = {
 			'num': properties.get('number', photo.number),
 			'eb': properties.get('exposure_bias', photo.exposure_bias),
 			'ev': properties.get('exposure_value', photo.exposure_value),
@@ -208,16 +208,16 @@ class Workflow:
 		name = name.replace(' ', '-')
 
 		return f"{name}.{props['ext']}"
-	
+
 	def generate_path(self, photo : Photo | str) -> FilePath:
 		"""
-		Figure out an appropriate path to copy the file, given its creation date. 
-		
+		Figure out an appropriate path to copy the file, given its creation date.
+
 		The path is in the format:
 		{network_path}/{YYYY}/{YYYY-mm-dd}/{filename}
 
 		NOTE: generate_name is used to generate the filename, so the resulting file will be renamed.
-		
+
 		Args:
 			photo (Photo | str): The photo to generate a path for. If a str, it is assumed to be the file path.
 
@@ -260,18 +260,18 @@ class Workflow:
 		path = f'{self.base_path}/{year}/{date}/{filename}'
 
 		return FilePath(path)
-	
+
 	@classmethod
 	def ask_user_continue(cls, message : str = f"Errors were found:", errors : Optional[list] = None, continue_message : str = "Continue to the next step? [y/n]", throw_error : bool = True) -> bool:
 		"""
 		Ask the user if they want to continue copying the SD card, given the errors that occurred, using the CLI.
-		
+
 		Args:
 			message (str, optional): The message to print to the user. Defaults to f"Errors were found:".
 			errors (list): The errors that occurred.
 			continue_message (str, optional): The message to print to the user to ask if they want to continue. Defaults to "Continue to the next step? [y/n]".
 			throw_error (bool, optional): Whether to throw an error if the user decides to abort. Defaults to True. If false, the function will return a bool.
-			
+
 		Returns:
 			bool: Whether the user wants to continue copying the SD card.
 		"""
@@ -293,11 +293,11 @@ class Workflow:
 			if throw_error:
 				raise KeyboardInterrupt('User decided to abort. Prompt was "%s"', message)
 			return False
-		
+
 	def mkdir(self, path : FilePath, exist_ok : bool = True) -> None:
 		"""
 		Create a directory, if it doesn't already exist.
-		
+
 		Args:
 			path (FilePath): The path to create.
 		"""
@@ -310,7 +310,7 @@ class Workflow:
 	def rename(self, path : FilePath, destination : FilePath) -> None:
 		"""
 		Rename a file, if it doesn't already exist.
-		
+
 		Args:
 			path (FilePath): The source path.
 			destination (FilePath): The destination path.
@@ -324,27 +324,27 @@ class Workflow:
 	def subprocess(self, command : str, cwd : FilePath = None, check : bool = True) -> str:
 		"""
 		Run a subprocess, printing the command and output to the user.
-		
+
 		Args:
-			command (str): 
+			command (str):
 				The command to run.
-			cwd (FilePath, optional): 
+			cwd (FilePath, optional):
 				The working directory to run the command in. Defaults to None.
-			check (bool, optional): 
+			check (bool, optional):
 				Whether to raise an exception if the command fails. Defaults to True.
 
 		Returns:
 			str: The output of the command.
 
 		Raises:
-			subprocess.CalledProcessError: 
+			subprocess.CalledProcessError:
 				If the command fails, and check is True.
 				Otherwise, the error is logged, and the error message is returned when an exception is encountered.
 		"""
 		if self.dry_run:
 			logger.info('Would run command "%s"', command)
 			return 'Dry run. Command skipped.'
-		
+
 		try:
 			# Run the command
 			output = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True, check=check)
@@ -357,10 +357,10 @@ class Workflow:
 				raise e
 			else:
 				return e.stderr
-		
+
 		if output.stdout:
 			logger.debug(output.stdout)
-			
+
 		if output.stderr:
 			logger.debug(output.stderr)
 
@@ -373,11 +373,11 @@ class Workflow:
 
 		# Return the output
 		return output.stdout or output.stderr
-	
+
 	def delete(self, path : FilePath) -> None:
 		"""
 		Delete a file.
-		
+
 		Args:
 			path (FilePath): The path to delete.
 		"""
@@ -389,7 +389,7 @@ class Workflow:
 	def rmdir(self, path : FilePath) -> bool:
 		"""
 		Delete a directory.
-		
+
 		Args:
 			path (FilePath): The path to delete.
 
@@ -406,18 +406,18 @@ class Workflow:
 		if os.listdir(path):
 			logger.info('Directory "%s" is not empty, so was not deleted.', path)
 			return False
-		
+
 		if self.dry_run:
 			logger.info('Would delete directory "%s"', path)
 		else:
 			os.rmdir(path)
 
 		return True
-	
+
 	def get_photo(self, path : str) -> Photo:
 		"""
 		Turn a path into a Photo object.
-		
+
 		If dry_run, this will return a FakePhoto object instead.
 
 		Args:
@@ -464,7 +464,7 @@ def main():
 			from scripts.import_sd.workflows.pano import main as subscript
 		case _:
 			raise ValueError(f'Invalid action: {args.action}')
-		
+
 	# Run the next script
 	subscript()
 

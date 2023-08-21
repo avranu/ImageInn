@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: workflow.py
 		Project: workflows
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -44,8 +44,8 @@ class RenameWorkflow(Workflow):
 	def __init__(self, base_path : str, raw_extension : str = 'arw', dry_run : bool = False):
 		"""
 		Args:
-			base_path (str): 
-				The path to the network location to copy raw files from the SD Card to. 
+			base_path (str):
+				The path to the network location to copy raw files from the SD Card to.
 				NOTE: This destination should be a "Photography" directory, where the files will be organized and renamed.
 			raw_extension (str):
 				The file extension of the raw files to copy. Defaults to 'arw'.
@@ -62,7 +62,7 @@ class RenameWorkflow(Workflow):
 		The path to the network location to copy raw files from the SD Card to.
 		"""
 		return self._base_path
-	
+
 	@base_path.setter
 	def base_path(self, base_path: str) -> None:
 		"""
@@ -77,7 +77,7 @@ class RenameWorkflow(Workflow):
 
 	def run(self) -> dict[str, str]:
 		"""
-		Rename files in the directory to the new naming scheme. 
+		Rename files in the directory to the new naming scheme.
 		"""
 		# Old format is: 20230805-a7r4-1935--7-10 EV-8.27B-ISO 800-SAMYANG AF 12mm F2.0.arw
 		# New format is from self.generate_name()
@@ -124,7 +124,7 @@ def main():
 	"""
 	# Parse command line arguments
 	parser = argparse.ArgumentParser(
-		description='Run the Rename workflow.', 
+		description='Run the Rename workflow.',
 		prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}'
 	)
 	# Ignore the first argument, which is the script name

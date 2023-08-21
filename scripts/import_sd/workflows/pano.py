@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: workflow.py
 		Project: workflows
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sat Aug 19 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -52,7 +52,7 @@ class PanoramaWorkflow(Workflow):
 
 	def run(self) -> bool:
 		raise NotImplementedError()
-	
+
 def main():
 	"""
 	Entry point for the application.

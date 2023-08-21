@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: workflow.py
 		Project: workflows
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Mon Aug 21 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -97,7 +97,7 @@ class HDRWorkflow(Workflow):
 		The path to the tiff directory.
 		"""
 		return os.path.join(self.hdr_path, 'tiff')
-	
+
 	@property
 	def aligned_path(self) -> str:
 		"""
@@ -122,10 +122,10 @@ class HDRWorkflow(Workflow):
 		if result:
 			logger.info('HDR workflow completed successfully. %d HDRs created.', len(result))
 			return True
-		
+
 		logger.error('HDR workflow failed.')
 		return False
-	
+
 	def convert_to_tiff(self, files : list[Photo]) -> list[Photo]:
 		"""
 		Convert an ARW file to a TIFF file.
@@ -147,7 +147,7 @@ class HDRWorkflow(Workflow):
 		tiff_files = self._subprocess_tif('darktable-cli', files)
 
 		return tiff_files
-	
+
 	@DeprecationWarning
 	def _subprocess_all_tifs(self, exe : str, files : list[Photo]) -> list[Photo]:
 		"""
@@ -170,13 +170,13 @@ class HDRWorkflow(Workflow):
 		self.mkdir(self.tiff_path)
 
 		tiff_files = []
-		for arw in tqdm(files, desc="Converting RAW to TIFF...", ncols=100): 
+		for arw in tqdm(files, desc="Converting RAW to TIFF...", ncols=100):
 			# Create a tiff filename
 			tiff_name = arw.filename.lower().replace('.arw', '.tif')
-			tiff_path = os.path.join(self.tiff_path, tiff_name)
+			tiff_path = FilePath([self.tiff_path, tiff_name])
 
 			# Check if the file already exists
-			if os.path.exists(tiff_path):
+			if tiff_path.exists():
 				tiff_path = self.handle_conflict(tiff_path)
 				if tiff_path is None:
 					logger.debug('Skipping existing file "%s"', arw.path)
@@ -196,7 +196,7 @@ class HDRWorkflow(Workflow):
 			if not os.path.exists(tiff_path):
 				logger.error('Could not find %s after conversion from %s using %s', tiff_path, arw.path, exe)
 				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tiff_path)
-			
+
 			# Copy EXIF data using ExifTool
 			logger.debug('Copying exif data from %s to %s', arw.path, tiff_path)
 			self.subprocess(['exiftool', '-TagsFromFile', arw.path, '-all', tiff_path])
@@ -205,7 +205,7 @@ class HDRWorkflow(Workflow):
 			tiff_files.append(Photo(tiff_path))
 
 		return tiff_files
-	
+
 	def _subprocess_single_tif(self, photo : Photo, exe : str) -> Photo:
 		"""
 		Convert a single raw photo to a TIFF file.
@@ -222,17 +222,17 @@ class HDRWorkflow(Workflow):
 		tiff_path = FilePath([self.tiff_path, tiff_name])
 
 		# Check if the file already exists
-		if tiff_path.exists:
+		if tiff_path.exists():
 			tiff_path = self.handle_conflict(tiff_path)
 			if tiff_path is None:
 				logger.debug('Skipping existing file "%s"', photo.path)
 				return None
-			
+
 		# Add _tmp to the filename until it is finished converting
 		tmp_tiff_path = tiff_path.append_suffix('_tmp')
 
 		# If the tmp file already exists, delete it
-		if tmp_tiff_path.exists:
+		if tmp_tiff_path.exists():
 			logger.debug('Deleting existing tmp file %s', tmp_tiff_path)
 			self.delete(tmp_tiff_path)
 
@@ -247,25 +247,25 @@ class HDRWorkflow(Workflow):
 		self.subprocess([exe, photo.path, tiff_path_escaped], check=False)
 
 		# Check that it exists
-		if not tmp_tiff_path.exists:
+		if not tmp_tiff_path.exists():
 			logger.error('Could not find %s after conversion from %s using %s', tmp_tiff_path, photo.path, exe)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_tiff_path)
-		
+
 		# Copy EXIF data using ExifTool
 		logger.debug('Copying exif data from %s to %s', photo.path, tmp_tiff_path)
 		self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', tmp_tiff_path])
 
 		# Return a photo object (ensuring the path exists) without the _tmp suffix.
 		return Photo(tiff_path)
-	
+
 	def _subprocess_tif(self, exe: str, files: list[Photo]) -> list[Photo]:
 		"""
 		Convert a list of raw photos to TIFF files using multithreading and timeouts.
-		
+
 		Args:
 			exe (str): The executable to use.
 			files (list[Photo]): The photos to convert.
-			
+
 		Returns:
 			list[Photo]: The converted photos.
 		"""
@@ -281,7 +281,7 @@ class HDRWorkflow(Workflow):
 					logger.error("Conversion to TIFF timed out.")
 
 			return tiff_files
-	
+
 	def align_images(self, photos : list[Photo] | PhotoStack) -> list[Photo]:
 		"""
 		Use Hugin to align the images.
@@ -299,7 +299,7 @@ class HDRWorkflow(Workflow):
 		"""
 		if not photos:
 			raise ValueError('No photos provided')
-		
+
 		logger.debug('Aligning images...')
 
 		# Create the output directory
@@ -313,7 +313,7 @@ class HDRWorkflow(Workflow):
 		if len(tiff_files) != len(photos):
 			logger.error('Could not convert all photos to TIFF. Converted %d/%d photos', len(tiff_files), len(photos))
 			return []
-		
+
 		aligned_photos : list[Photo] = []
 
 		try:
@@ -351,14 +351,14 @@ class HDRWorkflow(Workflow):
 			for aligned_photo in aligned_photos:
 				self.delete(aligned_photo.path)
 			return []
-		
+
 		finally:
 			# Delete the tiff files
 			for tiff in tiff_files:
 				# Ensure they end in .tif. This is technically unnecessary, but provides an extra layer of safety deleting files.
 				if not tiff.path.endswith('.tif'):
 					raise ValueError(f'Deleting tiff file {tiff.path}, but it does not end in .tif')
-				
+
 				logger.debug('Deleting %s', tiff.path)
 				self.delete(tiff.path)
 				self.delete(tiff.path + '_original')
@@ -366,7 +366,7 @@ class HDRWorkflow(Workflow):
 			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
 
 		return aligned_photos
-		
+
 	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[Photo] = None) -> Photo | None:
 		"""
 		Use enfuse to create the HDR image.
@@ -384,7 +384,7 @@ class HDRWorkflow(Workflow):
 		"""
 		if not photos or len(photos) < 2:
 			raise ValueError('Not enough photos provided to create HDR at %s', self.hdr_path)
-		
+
 		logger.debug('Creating HDR...')
 
 		# Create the output directory
@@ -396,12 +396,12 @@ class HDRWorkflow(Workflow):
 		filepath = FilePath([self.hdr_path, filename])
 
 		# Handle conflicts
-		if os.path.exists(filepath):
+		if filepath.exists():
 			filepath = self.handle_conflict(filepath)
 			if filepath is None:
 				logger.debug('Skipping existing file "%s"', filepath)
 				return None
-			
+
 		# Add ".tmp" to the end of the filename until it is finished
 		tmp_filepath = filepath.append_suffix('_tmp')
 		tmp_filename = tmp_filepath.filename
@@ -430,9 +430,9 @@ class HDRWorkflow(Workflow):
 
 		# Rename the file
 		self.rename(tmp_filepath, filepath)
-		
+
 		return self.get_photo(filepath)
-	
+
 	def process_single_bracket(self, photos : list[Photo] | PhotoStack) -> Photo | None:
 		"""
 		Process a bracket of photos into a single HDR.
@@ -449,16 +449,16 @@ class HDRWorkflow(Workflow):
 		"""
 		if not photos or len(photos) < 2:
 			raise ValueError('Not enough photos provided in bracket: %s', photos)
-		
+
 		# Determine the final HDR name, so we can figure out if it already exists and handle conflicts early.
 		hdrname = self.name_hdr(photos)
 		hdrpath = FilePath([self.hdr_path, hdrname])
-		if hdrpath.exists:
+		if hdrpath.exists():
 			newpath = self.handle_conflict(hdrpath)
 			if not newpath:
 				logger.debug('Skipping bracket, because HDR already exists: "%s"', hdrpath)
 				return self.get_photo(hdrpath)
-			
+
 			hdrpath = newpath
 
 		images = self.align_images(photos)
@@ -477,14 +477,14 @@ class HDRWorkflow(Workflow):
 				if not image.filename.endswith('_aligned.tif'):
 					logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. Path: %s', image.path)
 					raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. Path: {image.path}')
-				
+
 				self.delete(image.path)
 				self.delete(image.path + '_original')
 
 			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
 
 		return hdr
-	
+
 	def process_brackets(self) -> list[Photo]:
 		"""
 		Process all brackets in the base directory, and returns a list of paths to HDR images.
@@ -523,9 +523,9 @@ class HDRWorkflow(Workflow):
 	def find_brackets(self) -> list[PhotoStack]:
 		"""
 		Find all brackets in the base directory.
-		
+
 		Returns:
-			list[PhotoStack]: The brackets.	
+			list[PhotoStack]: The brackets.
 		"""
 		# Get the list of photos
 		photos = self.get_photos()
@@ -543,13 +543,13 @@ class HDRWorkflow(Workflow):
 		logger.info('Created %d stacks from %s total photos', len(stack_collection), len(photos))
 
 		return stack_collection.get_stacks()
-	
+
 	def handle_conflict(self, path : Photo) -> FilePath | None:
 		"""
 		Handle a collision, where a temporary photo is being written to a location where a file already exists.
 
 		The behavior of this operation will depend on the value of {self.onconflict}.
-		
+
 		Args:
 			path (Photo): The path to the file that already exists.
 
@@ -561,40 +561,44 @@ class HDRWorkflow(Workflow):
 			FileExistsError: If {self.onconflict} is set to OnConflict.FAIL.
 			RuntimeError: If a filename to use cannot be found.
 		"""
+		# First, ensure there is actually a conflict
+		if not path.exists():
+			return path
+		
 		match self.onconflict:
 			case OnConflict.SKIP:
-				logger.debug('Skipping %s', path)
+				logger.info('Skipping %s', path)
 				return None
-			
+
 			case OnConflict.OVERWRITE:
-				logger.debug('Overwriting %s', path)
+				logger.info('Overwriting %s', path)
 				# Remove the offending file
 				self.delete(path)
 				return path
-			
+
 			case OnConflict.RENAME:
-				logger.debug('Renaming %s', path)
+				logger.info('Renaming %s', path)
 				newpath = path
 				for i in range(1, 100):
 					newpath = path.filename.replace(f'.{path.extension}', f'_{i:02d}.{path.extension}')
 					if not os.path.exists(newpath):
 						return FilePath(newpath)
 				raise RuntimeError('Unable to find a new filename for %s', path)
-			
+
 			case OnConflict.FAIL:
-				logger.debug('Failing on conflict %s', path)
+				logger.info('Failing on conflict %s', path)
 				raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), path)
-			
+
 			case _:
 				raise ValueError(f'Unknown onconflict value {self.onconflict}')
-	
+
 	def name_hdr(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str] = None, short : bool = False) -> str:
 		"""
 		Create a new name for an HDR image based on a list of brackets that will be combined.
 
 		Args:
 			photos (list[Photo] | PhotoStack): The photos to combine.
-			output_dir (str, optional): The directory to save the HDR image to. 
+			output_dir (str, optional): The directory to save the HDR image to.
 			short (bool, optional): Whether to use the short filename or the long filename. Defaults to False (long).
 
 		Returns:
@@ -605,10 +609,10 @@ class HDRWorkflow(Workflow):
 		"""
 		if not photos:
 			raise ValueError('No photos provided')
-		
+
 		if not output_dir:
 			output_dir = self.hdr_path
-		
+
 		# Get the highest ISO
 		iso = max([p.iso for p in photos])
 		# Get the longest exposure
@@ -617,9 +621,9 @@ class HDRWorkflow(Workflow):
 		brightness = min([p.brightness for p in photos])
 		# Get the average exposure value
 		ev = sum([p.exposure_value for p in photos]) / len(photos)
-		
+
 		first = photos[0]
-			
+
 		# Save the short filename no matter what, because we may use it later if the path is too long.
 		short_filename = f'{first.date.strftime("%Y%m%d")}_{first.number}_x{len(photos)}_{ev}EV_hdr.tif'
 
@@ -627,7 +631,7 @@ class HDRWorkflow(Workflow):
 			filename = short_filename
 		else:
 			filename = f'{first.date.strftime("%Y%m%d")}_{first.camera}_{first.number}_x{len(photos)}_{brightness}B_{ev}EV_{iso}ISO_{ss}SS_{first.lens}_hdr.tif'
-		
+
 		# Replace spaces in the name with dashes
 		filename = filename.replace(' ', '-')
 
@@ -636,9 +640,9 @@ class HDRWorkflow(Workflow):
 			if len(path) > 255:
 				logger.info('Filename is too long, shortening it: %s', path)
 				filename = short_filename
-		
+
 		return filename
-	
+
 def main():
 	"""
 	Entry point for the application.
@@ -652,8 +656,8 @@ def main():
 	parser.add_argument('ignored', 				nargs = '?', 					help = argparse.SUPPRESS)
 	parser.add_argument('path', 				type = str, 				 	help = 'The path to the directory that contains the photos.')
 	parser.add_argument('--extension', '-e', 	type = str, default = "arw",	help = 'The extension to use for RAW files.')
-	parser.add_argument('--onconflict', '-c', 	type = str, 
-		     									default = OnConflict.OVERWRITE, 
+	parser.add_argument('--onconflict', '-c', 	type = str,
+		     									default = OnConflict.OVERWRITE,
 		     									choices = OnConflict.values(),	help = '''How to handle temporary files that already exist.
 																						  This will not alter original RAW files. Only files that this process
 																						  created in a previous run.''')
