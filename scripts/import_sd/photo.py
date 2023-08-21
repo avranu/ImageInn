@@ -42,7 +42,7 @@ class Photo(FilePath):
 	_path : str
 	_number : int
 
-	def __init__(self, path : str, number : Optional[int] = None):
+	def __init__(self, path : list[str] | str, number : Optional[int] = None):
 		"""
 		Initialise the photo object.
 

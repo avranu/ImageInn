@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sun Aug 20 2023
+		Last Modified: Mon Aug 21 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -47,9 +47,12 @@ class FilePath(str):
 			*path (str): The path to the photo, which can be specified in path parts to be joined
 		"""
 		if isinstance(path, list):
-			self.path = os.path.join(*path)
+			joined_path = os.path.join(*path)
 		else:
-			self.path = path
+			joined_path = path
+
+		self._path = os.path.normpath(joined_path)
+		super().__init__(joined_path)
 
 	@property
 	def path(self) -> str:

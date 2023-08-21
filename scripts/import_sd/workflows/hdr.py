@@ -231,6 +231,11 @@ class HDRWorkflow(Workflow):
 		# Add _tmp to the filename until it is finished converting
 		tmp_tiff_path = tiff_path.append_suffix('_tmp')
 
+		# If the tmp file already exists, delete it
+		if tmp_tiff_path.exists:
+			logger.debug('Deleting existing tmp file %s', tmp_tiff_path)
+			self.delete(tmp_tiff_path)
+
 		# Darktable-cli doesn't like backslashes for the tiff path
 		tiff_path_escaped = tmp_tiff_path
 		if exe == 'darktable-cli':
@@ -400,6 +405,11 @@ class HDRWorkflow(Workflow):
 		# Add ".tmp" to the end of the filename until it is finished
 		tmp_filepath = filepath.append_suffix('_tmp')
 		tmp_filename = tmp_filepath.filename
+
+		# If the file already exists, delete it
+		if os.path.exists(tmp_filepath):
+			logger.debug('Deleting existing file "%s"', tmp_filepath)
+			self.delete(tmp_filepath)
 
 		# Create the command
 		command = ['enfuse', '-o', tmp_filepath, '-v']
