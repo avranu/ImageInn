@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: photo.py
 		Project: import_sd
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Mon Aug 21 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -46,12 +46,7 @@ class FilePath(str):
 		Args:
 			*path (str): The path to the photo, which can be specified in path parts to be joined
 		"""
-		if isinstance(path, list):
-			joined_path = os.path.join(*path)
-		else:
-			joined_path = path
-
-		self._path = os.path.normpath(joined_path)
+		self.path = path
 
 	@property
 	def path(self) -> str:
@@ -61,11 +56,17 @@ class FilePath(str):
 		return self._path
 
 	@path.setter
-	def path(self, value: str):
+	def path(self, value: list[str] | str):
 		"""
 		Set the path
 		"""
-		self._path = os.path.normpath(value)
+		if isinstance(value, str):
+			# Cast to string to convert FilePath() to string
+			joined_path = str(value)
+		else:
+			joined_path = os.path.join(*value)
+
+		self._path = os.path.normpath(joined_path)
 
 	@property
 	def filename(self):
@@ -92,7 +93,7 @@ class FilePath(str):
 			return ""
 
 		return self.path.lower().split('.')[-1]
-	
+
 	@property
 	def filename_stem(self) -> str:
 		"""
@@ -107,28 +108,13 @@ class FilePath(str):
 			'JAM_1234'
 		"""
 		return os.path.splitext(self.filename)[0]
-	
+
 	@property
 	def directory(self) -> str:
 		"""
 		The directory of the file.
 		"""
 		return os.path.dirname(self.path)
-
-	@property
-	def exists(self) -> bool:
-		"""
-		Checks if the given file exists.
-
-		Returns:
-			bool: True if the file exists, False otherwise.
-
-		Examples:
-			>>> path = FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
-			>>> path.exists
-			True
-		"""
-		return os.path.exists(self.path)
 
 	@property
 	def checksum(self) -> str:
@@ -143,9 +129,9 @@ class FilePath(str):
 			>>> path.checksum
 			'8f3d1d8a'
 		"""
-		if not self.exists:
+		if not self.exists():
 			return ''
-		
+
 		return Validator.calculate_checksum(self.path)
 
 	def exists(self) -> bool:
@@ -161,7 +147,7 @@ class FilePath(str):
 			True
 		"""
 		return os.path.exists(self.path)
-	
+
 	def append_suffix(self, suffix: str) -> FilePath:
 		"""
 		Appends the given suffix to the filename.
@@ -240,8 +226,8 @@ class FilePath(str):
 
 		return self.checksum == file.checksum
 
-	def __str__(self):
+	def __str__(self) -> str:
 		return self.path
-	
-	def __repr__(self):
+
+	def __repr__(self) -> str:
 		return self.path

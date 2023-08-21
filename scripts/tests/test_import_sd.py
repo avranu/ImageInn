@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: test_import_sd.py
 		Project: tests
 		Created Date: 08 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sun Aug 13 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 import datetime
@@ -82,7 +82,7 @@ class TestSDCards(unittest.TestCase):
 		with open(filepath, "w") as f:
 			f.write("test data")
 		return filepath
-	
+
 	def test_the_test(self):
 		"""
 		Test this unit test to be sure we are doing what we expect
@@ -111,7 +111,7 @@ class TestSDCards(unittest.TestCase):
 		self.assertEqual(len(files), len(self.files) + 1, msg="Wrong number of files in sd_card dir. File list: {}".format(files))
 
 	def test_teardown(self):
-		""" 
+		"""
 		Run the test again, verifying that teardown reset everything.
 		"""
 		self.test_the_test()
@@ -326,7 +326,7 @@ class TestSDCards(unittest.TestCase):
 	def test_perform_rsync_failure(self, mock_check_call):
 		result = self.sd_cards.perform_rsync("/valid/sd/card", "/valid/network/path")
 		self.assertFalse(result)
-		
+
 	@patch("os.path.isfile", return_value=True)
 	@patch("os.access", return_value=True)
 	@patch("os.path.exists", return_value=True)
@@ -470,7 +470,7 @@ class TestSDCards(unittest.TestCase):
 					expected_path = expected_output
 				else:
 					expected_path = os.path.join(network_path, expected_output)
-				self.assertEqual(result, expected_path, msg=f"Failed (loop {i}) to generate truncated path for {target_file_path} with network path size {path_size}")	
+				self.assertEqual(result, expected_path, msg=f"Failed (loop {i}) to generate truncated path for {target_file_path} with network path size {path_size}")
 				self.assertLessEqual(len(result), 255, msg=f"Generated path (loop {i}) is too long for {target_file_path} with network path size {path_size}")
 
 	@patch('builtins.input', return_value='y')
@@ -581,7 +581,7 @@ class TestSDCards(unittest.TestCase):
 		for original_path, new_path in results.items():
 			self.assertTrue(os.path.exists(new_path), msg=f"Failed to move {original_path} to {new_path}. New path doesn't exist")
 			self.assertNotEqual(original_path, new_path, msg=f"Failed to move {original_path} to {new_path}. New path is the same as the original path")
-			
+
 			# Test that it was renamed and placed into a new YYYY/YYYY-mm-dd directory
 			date = datetime.datetime.now()
 			new_directory = os.path.join(self.network_path, str(date.year), date.strftime('%Y-%m-%d'))
@@ -844,7 +844,7 @@ class TestSDCards(unittest.TestCase):
 		self.assertEqual(len(skipped), 0, msg='Skipped length is incorrect')
 		self.assertEqual(len(mismatches), 0, msg='Mismatches length is incorrect')
 		os.remove(duplicate_file)
-	
+
 	@patch.object(SDCards, "generate_name", return_value=['1.jpg', '2.jpg', '3.jpg', '4.jpg', '5.jpg'])
 	@patch.object(SDCards, "compare_checksums", return_value=False)
 	@patch('builtins.input', return_value='y')

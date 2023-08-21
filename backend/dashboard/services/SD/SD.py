@@ -39,13 +39,13 @@ class SDCards:
 	def get_media_dir(self) -> str:
 		"""
 		Get the media directory for the current operating system.
-		
+
 		Returns:
 			str: The media directory for the current operating system.
-			
+
 		Raises:
 			FileNotFoundError: If the media directory does not exist.
-			
+
 			Examples:
 				>>> sd_cards = SDCards()
 				>>> sd_cards.get_media_dir()
@@ -54,7 +54,7 @@ class SDCards:
 		# Windows
 		if os.name == 'nt':
 			return 'D:\\'
-			
+
 		# Chromebook
 		if 'CHROMEOS' in os.environ and os.path.exists('/mnt/chromeos/MyFiles/Removable'):
 			return '/mnt/chromeos/MyFiles/Removable'
@@ -62,7 +62,7 @@ class SDCards:
 			return '/mnt/chromeos/removable'
 		if os.name == 'posix' and os.path.exists('/media/removable'):
 			return '/media/removable'
-		
+
 		# Linux + Mac
 		if os.name == 'posix' or sys.platform == 'darwin':
 			if os.path.exists('/Volumes'):
@@ -71,20 +71,20 @@ class SDCards:
 				return '/media'
 			elif os.path.exists('/mnt'):
 				return '/mnt'
-			
+
 		# Try media
 		if os.path.exists('/media'):
 			logger.warning('Unknown operating system, trying /media')
 			return '/media'
-		
+
 		# Unsupported
 		raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), '/media')
-			
-	
+
+
 	def get_list(self, media_path : Optional[str] = None) -> list[SDDirectory]:
 		"""
 		Get all SD cards mounted to the server this code is running on.
-		
+
 		Returns:
 			list[SDDirectory]: A list containing each SD card path
 
@@ -95,8 +95,8 @@ class SDCards:
 				SDDirectory {
 					'path': '/media/pi/SD',
 				}
-			]	
-				
+			]
+
 		"""
 		# Handle multiple operating systems
 		if not media_path:
@@ -117,8 +117,8 @@ class SDCards:
 
 	def get_info(self, sd_card_path : Optional[str] = None) -> SDDirectory:
 		"""
-		Get info about the SD card at the given path. 
-		
+		Get info about the SD card at the given path.
+
 		This includes the total size, used space, and free space, number of files, etc.
 
 		Args:
@@ -148,7 +148,7 @@ class SDCards:
 		# Ensure the path exists
 		if not self.check_sd_path(sd_card_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), sd_card_path)
-		
+
 		# Get the total size of the SD card
 		total, used, free = shutil.disk_usage(sd_card_path)
 
@@ -167,14 +167,14 @@ class SDCards:
 			num_files = num_files,
 			num_dirs = num_dirs
 		)
-	
+
 	def calculate_checksum(self, file_path : str) -> str:
 		"""
 		Calculate the checksum of the given file.
-		
+
 		Args:
 			file_path (str): The path to the file to calculate the checksum of.
-			
+
 		Returns:
 			str: The checksum of the given file.
 
@@ -197,7 +197,7 @@ class SDCards:
 			hasher.update(buf)
 
 		return hasher.hexdigest()
-	
+
 	def check_sd_path(self, sd_card_path : Optional[str] = None) -> bool:
 		"""
 		Ensure the given path is a valid SD card path.
@@ -215,12 +215,12 @@ class SDCards:
 		if not os.path.exists(sd_card_path):
 			logger.error(f'The SD card path does not exist: {sd_card_path}')
 			return False
-		
+
 		# Ensure the path is a directory
 		if not os.path.isdir(sd_card_path):
 			logger.error(f'The SD card path is not a directory: {sd_card_path}')
 			return False
-		
+
 		return True
 
 	def copy_sd_card(self, sd_card_path : str, network_path : str, backup_network_path : str):
@@ -243,17 +243,17 @@ class SDCards:
 		logger.info('Copying sd card...')
 		if not self.check_sd_path(sd_card_path):
 			return False
-		
+
 		# Verify we can write to the network path
 		if not os.access(network_path, os.W_OK):
 			logger.error(f'Cannot write to network path: {network_path}')
 			return False
-		
+
 		# Verify we can write to the backup network path
 		if not os.access(backup_network_path, os.W_OK):
 			logger.error(f'Cannot write to backup network path: {backup_network_path}')
 			return False
-		
+
 		# Calculate checksums before rsync
 		error_count = 0
 		checksums_before = {}
@@ -268,21 +268,21 @@ class SDCards:
 				try:
 					subprocess.check_call(['rsync', '-av', '--checksum', sd_card_path, destination_path])
 					# Success
-					break 
+					break
 				except subprocess.CalledProcessError as e:
 					# Attempting retry
 					logger.warning(f'rsync to {destination_path} failed with error code {e.returncode}, retrying...')
 			else:
 				logger.error(f'rsync to {destination_path} failed after {MAX_RETRIES} attempts')
 				return False
-			
+
 			# Calculate checksums after rsync
 			checksums_after = {}
 			for root, _dirs, files in os.walk(destination_path):
 				for file in files:
 					file_path = os.path.join(root, file)
 					checksums_after[file_path] = self.calculate_checksum(file_path)
-			
+
 			# Compare checksums and write them to a file
 			with open(os.path.join(destination_path, 'checksum.txt'), 'w') as f:
 				for file_path, checksum_before in checksums_before.items():
@@ -292,10 +292,10 @@ class SDCards:
 					else:
 						logger.error(f'Checksum mismatch for {file_path}: {checksum_before} != {checksum_after}')
 						error_count += 1
-		
+
 		if error_count > 0:
 			logger.critical(f'Checksum mismatch for {error_count} files')
 			return False
-		
+
 		return True
 

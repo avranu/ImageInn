@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: test_validator.py
 		Project: tests
 		Created Date: 12 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sat Aug 12 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 import unittest

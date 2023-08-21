@@ -9,7 +9,7 @@ class FileChecksum(models.Model):
 	updated = models.UpdatedNowField()
 
 	file = models.ForeignKey(
-		'FileInfo', 
+		'FileInfo',
 		on_delete=CASCADE,
 		related_name='checksums',
 	)

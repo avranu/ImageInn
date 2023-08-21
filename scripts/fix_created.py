@@ -46,7 +46,7 @@ class TimestampUpdater:
 		https://stackoverflow.com/questions/64514225/add-date-taken-exif-xmp-information-to-tif-file-using-python
 		"""
 		raise NotImplementedError("This method is not yet implemented for raw photos.")
-	
+
 		# Load the EXIF data from the image file
 		exif_data = piexif.load(filename)
 
@@ -89,7 +89,7 @@ class TimestampUpdater:
 
 		Returns:
 			dict: A dictionary of all exif attributes and their values.
-		
+
 		Examples:
 			>>> get_exif_from_raw('test.arw')
 			{'Image Make': 'SONY', 'Image Model': 'ILCE-7RM3', 'Image Orientation': 'Horizontal (normal)', 'Image XResolution': '350', 'Image YResolution': '350', 'Image ResolutionUnit': 'Pixels/Inch', 'Image Software': 'ILCE-7RM3 v1.10', 'Image DateTime': '2020:01:01 00:00:00', 'Image Artist': 'Unknown', 'Image Copyright': '', 'Image ExifOffset': '240'}

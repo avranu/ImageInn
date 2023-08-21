@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: workflow.py
 		Project: workflows
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sun Aug 20 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -57,17 +57,17 @@ class CopyWorkflow(Workflow):
 	def __init__(self, base_path : str, jpg_path : str, backup_path : str, raw_extension : str = 'arw', sd_card : Optional[str | SDCard] = None, dry_run : bool = False):
 		"""
 		Args:
-			base_path (str): 
-				The path to the network location to copy raw files from the SD Card to. 
+			base_path (str):
+				The path to the network location to copy raw files from the SD Card to.
 				NOTE: This destination should be a "Photography" directory, where the files will be organized and renamed.
 			jpg_path (str):
 				The path to the network location to copy jpg files from the SD Card to.
-			backup_path (str): 
+			backup_path (str):
 				The path to the backup network location to copy the SD card to.
 				This destination should be a "backup" directory, where the SD card will be copied exactly as-is.
 			raw_extension (str):
 				The file extension of the raw files to copy. Defaults to 'arw'.
-			sd_card (str | None): 
+			sd_card (str | None):
 				The SDCard (or a path to an SD card) to copy. Defaults to attempting to find the SD card automatically.
 			dry_run (bool):
 				Whether or not to actually copy files. Defaults to False.
@@ -95,7 +95,7 @@ class CopyWorkflow(Workflow):
 				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), 'SD Card not found')
 			return SDCard(media_dir)
 		return self._sd_card
-	
+
 	@sd_card.setter
 	def sd_card(self, sd_card: SDCard | str) -> None:
 		"""
@@ -115,7 +115,7 @@ class CopyWorkflow(Workflow):
 		The path to the network location to copy raw files from the SD Card to.
 		"""
 		return self._base_path
-	
+
 	@base_path.setter
 	def base_path(self, base_path: str) -> None:
 		"""
@@ -134,12 +134,12 @@ class CopyWorkflow(Workflow):
 		The path to the network location to copy jpg files from the SD Card to.
 		"""
 		return self._jpg_path
-	
+
 	@jpg_path.setter
 	def jpg_path(self, jpg_path: str) -> None:
 		"""
 		Set the path to the network location to copy jpg files from the SD Card to.
-		
+
 		Args:
 			jpg_path (str): The path to the network location to copy jpg files from the SD Card to.
 		"""
@@ -153,12 +153,12 @@ class CopyWorkflow(Workflow):
 		The path to the backup network location to copy the SD card to.
 		"""
 		return self._backup_path
-	
+
 	@backup_path.setter
 	def backup_path(self, backup_path: str) -> None:
 		"""
 		Set the path to the backup network location to copy the SD card to.
-		
+
 		Args:
 			backup_path (str): The path to the backup network location to copy the SD card to.
 		"""
@@ -182,7 +182,7 @@ class CopyWorkflow(Workflow):
 				raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), self._bucket_path)
 
 		return self._bucket_path
-		
+
 	def run(self, operation : CopyOperation = CopyOperation.TERACOPY) -> bool:
 		"""
 		Copy the SD card to several different network locations, and verify checksums after copy.
@@ -237,7 +237,7 @@ class CopyWorkflow(Workflow):
 			filename = os.path.basename(temp_file)
 			filepath = os.path.join(self.sd_card.path, filename)
 			files[filepath] = network_file
-		
+
 		# Validate checksums after teracopy
 		if not Validator.validate_checksum_list(queue.get_checksums(), files):
 			logger.critical('Checksum validation failed on operation %s', operation)
@@ -252,21 +252,21 @@ class CopyWorkflow(Workflow):
 		if len(errors) > 0:
 			logger.critical('Copy failed due to previous errors.')
 			return False
-				
+
 		return True
-	
+
 	def copy_from_list(self, list_path : str, destination_path: str, checksums_before : dict[str, str], operation : CopyOperation = CopyOperation.TERACOPY) -> bool:
 		"""
 		Perform a copy from a list of files to a destination using an arbitrary method, and verify checksums.
-		
+
 		This method exists to allow us to swap out different copy methods without changing the main logic.
-		
+
 		Args:
 			list_path (str): The path to the list of files to copy.
 			destination_path (str): The path to the destination directory to copy to.
 			checksums_before (dict[str, str]): The checksums of the files before the copy.
 			operation (CopyOperation): The copy operation to use. Defaults to Teracopy.
-			
+
 		Raises:
 			KeyboardInterrupt: If errors occur during copy and the user chooses to abort.
 			FileNotFoundError: If either path does not exist.
@@ -288,7 +288,7 @@ class CopyWorkflow(Workflow):
 		# Perform the backup first
 		if self.dry_run:
 			raise NotImplementedError('Dry run is not yet implemented for file lists')
-		
+
 		if not perform_copy(list_path, destination_path):
 			logger.critical('Perform copy failed for %s', destination_path)
 			# Ask user if they want to continue
@@ -319,14 +319,14 @@ class CopyWorkflow(Workflow):
 		for _ in range(MAX_RETRIES):
 			try:
 				subprocess.check_call(['rsync', '-av', '--checksum', source_path, destination_path])
-				return True  
+				return True
 			except subprocess.CalledProcessError as e:
 				logger.warning(f'rsync to {destination_path} failed with error code {e.returncode}, retrying...')
 				time.sleep(1)
-				
+
 		logger.error(f'rsync to {destination_path} failed after {MAX_RETRIES} attempts')
 		return False
-	
+
 	@classmethod
 	def teracopy(cls, source_path : str, destination_path: str) -> bool:
 		"""
@@ -346,7 +346,7 @@ class CopyWorkflow(Workflow):
 			return False
 
 		return True
-	
+
 	@classmethod
 	def teracopy_from_list(cls, list_path : str, destination_path: str) -> bool:
 		"""
@@ -361,7 +361,7 @@ class CopyWorkflow(Workflow):
 		"""
 		if not os.path.exists(list_path):
 			raise FileNotFoundError(f'File list {list_path} does not exist')
-		
+
 		try:
 			subprocess.check_call(['teracopy.exe', 'Copy', f'*"{list_path}"', destination_path, '/NoClose', '/SkipAll'])
 		except subprocess.CalledProcessError as e:
@@ -369,13 +369,13 @@ class CopyWorkflow(Workflow):
 			return False
 
 		return True
-	
+
 	def count_sd_photos(self) -> int:
 		"""
 		Count the number of photos on the SD card.
-		
+
 		Photos are considered based on matching extensions.
-		
+
 		Returns:
 			int: The number of photos on the SD card.
 		"""
@@ -401,13 +401,13 @@ class CopyWorkflow(Workflow):
 					count += 1
 
 		return count
-	
+
 	def queue_files(self) -> Queue:
 		"""
 		Figure out which files need to be copied and return a map that can be iterated over.
 
 		NOTE: No files are actually copied in this method.
-		
+
 		Returns:
 			Queue: A mapping of destination paths to a list of source paths that will be copied there, along with metadata.
 
@@ -451,7 +451,7 @@ class CopyWorkflow(Workflow):
 				filepath = os.path.join(root, filename)
 				folder = self.sd_card.determine_subpath(filepath)
 				photo = Photo(filepath)
-			
+
 				# Add RAW extensions to the base_path, jpg extensions to the jpg_path, and all files to the backup_path
 				if photo.extension == self.raw_extension:
 					# Only append the RAW file if it doesn't exist (or mismatches) the FINAL location it will end up in, after it is organized.
@@ -469,13 +469,13 @@ class CopyWorkflow(Workflow):
 
 		logger.info('Queueing %d files to copy', files.count())
 		return files
-	
+
 	def create_filelist(self, destination_path : str, list_path : Optional[str] = None) -> tuple[str, list[str], list[str], dict[str, str]]:
 		"""
 		Generates a list of files to copy to a given folder.
 
-		This is used for tools like teracopy. 
-		
+		This is used for tools like teracopy.
+
 		When files are present in the destination path, checksums are verified to ensure they are identical.
 
 		NOTE: It is assumed that files in the destination_path are named and organized via generate_name and generate_path.
@@ -487,7 +487,7 @@ class CopyWorkflow(Workflow):
 		Raises:
 			KeyboardInterrupt: If the conflicting files exist and the user chooses to abort the program.
 			FileNotFoundError: If one of the paths provided does not exist.
-			
+
 		Returns:
 			tuple[str, list[str], list[str], dict[str, str]]: A tuple containing the list_path, a list of files to copy, a list of files skipped, and a dictionary of mismatched files.
 		"""
@@ -507,7 +507,7 @@ class CopyWorkflow(Workflow):
 		'''
 
 		return (list_path, queue, to_skip, mismatch_count)
-		
+
 	def organize_files(self) -> dict[str, str]:
 		"""
 		Organize files into folders by date, and rename them based on their attributes.
@@ -552,7 +552,7 @@ class CopyWorkflow(Workflow):
 					new_file_path = f'{mismatched_file_path} ({i})'
 					if not os.path.exists(new_file_path):
 						break
-				
+
 				# If we couldn't find a unique name, skip the file
 				if os.path.exists(new_file_path):
 					logger.critical(f'Could not find a unique name for {file_path}')

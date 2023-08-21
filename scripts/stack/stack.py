@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: stack.py
 		Project: code
 		Created Date: 01 Apr 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Tue Apr 04 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 
@@ -80,7 +80,7 @@ class Stack:
 	_file_prefix: str = ''
 	_file_suffix: str = '.NEF'
 	_verbose: bool = False
-	
+
 	def __init__(self, options : dict = dict()):
 		self._load_config(options)
 
@@ -95,11 +95,11 @@ class Stack:
 	@property
 	def file_suffix(self) -> str:
 		return self._file_suffix
-	
+
 	@property
 	def verbose(self) -> bool:
 		return self._verbose
-	
+
 	@property
 	def config(self) -> dict:
 		return self._config
@@ -120,7 +120,7 @@ class Stack:
 				The path to get, within the context of the base path.
 		"""
 		return os.path.join(self.config['paths']['base'], path)
-	
+
 	def get_path_by_name(self, name : str) -> str:
 		"""
 		Returns the path to a directory in the folder.
@@ -130,7 +130,7 @@ class Stack:
 				The name of the path to get, as defined in the config file.
 		"""
 		return self.get_path(self.config['paths'][name])
-	
+
 	def get_template_path(self, template_name : str) -> str:
 		"""
 		Returns the path to a template file.
@@ -174,13 +174,13 @@ class Stack:
 	def read_exif_data(self, file_path: str) -> Dict[str, exifread.ExifTag]:
 		"""
 		Reads the EXIF data from an image file.
-		
+
 		Args:
 			file_path : str
 				The path to the image file.
 
 		Returns:
-			Dict[str, exifread.ExifTag]: 
+			Dict[str, exifread.ExifTag]:
 				A dictionary of EXIF tags.
 		"""
 		logger.debug('Reading EXIF data from %s', file_path)
@@ -225,7 +225,7 @@ class Stack:
 		"""
 		if attribute.value not in tags:
 			return None
-		
+
 		# Handle special cases
 		if attribute == ExifAttribute.TIMESTAMP:
 			logger.debug('Returning timestamp for %s', tags[attribute.value])
@@ -234,7 +234,7 @@ class Stack:
 		# Default case
 		logger.debug('Returning %s for %s', tags[attribute.value].values[0], tags[attribute.value])
 		return float(tags[attribute.value].values[0])
-	
+
 	def get_images(self, folder_path: str = None) -> List[os.DirEntry[str]]:
 		"""
 		Gets a list of images in the folder.
@@ -262,7 +262,7 @@ class Stack:
 				if file_name.startswith("."):
 					logger.debug('Skipping subdirectory beginning with ".": %s', file_name)
 					continue
-				
+
 				logger.debug('Adding images from subdirectory: %s', file_name)
 				files.extend(self.get_images(os.path.join(folder_path, file_name)))
 			else:
@@ -276,11 +276,11 @@ class Stack:
 	def group_images_by_date_time(self, file_list: List[os.DirEntry[str]]) -> Dict[str, List[os.DirEntry[str]]]:
 		"""
 		Groups images by their date and time.
-		
+
 		Args:
 			file_list : List[os.DirEntry[str]]
 				A list of file paths.
-				
+
 		Returns:
 			A dictionary with the date and time as the key and a list of file paths as the value.
 		"""
@@ -306,7 +306,7 @@ class Stack:
 		logger.debug('Found %d images grouped by date/time', len(images_by_date_time))
 		# Return the dictionary of images
 		return images_by_date_time
-	
+
 	def find_brackets(self, file_list: Optional[List[os.DirEntry[str]]] = None) -> List[List[os.DirEntry[str]]]:
 		"""
 		Finds bracketed images in a list of files.
@@ -342,7 +342,7 @@ class Stack:
 		# Return the list of bracketed images
 		logger.debug('Found %d brackets', len(brackets))
 		return brackets
-	
+
 	def echo_bracketed_images(self, image_list: Optional[List[os.DirEntry[str]]] = None) -> None:
 		"""
 		Prints a list of bracketed images in a list of files.
@@ -385,7 +385,7 @@ class Stack:
 			if not os.path.exists(subfolder):
 				logger.debug('Making new bracket folder: %s', subfolder)
 				os.makedirs(subfolder)
-			
+
 			# Move the images to the subfolder
 			for image in bracket:
 				shutil.move(image, subfolder)
@@ -409,7 +409,7 @@ if __name__ == '__main__':
 	print('Starting bracket stacking.')
 
 	stack = Stack(vars(args))
-	
+
 	images = stack.move_brackets_to_subfolders()
 	#stack.echo_bracketed_images()
 

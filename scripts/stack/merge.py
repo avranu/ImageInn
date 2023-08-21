@@ -24,10 +24,10 @@ class HDRProcessor:
     def load_image(file_path) -> np.ndarray:
         '''
         Load image from file path
-        
+
         Args:
             file_path: path to the image file
-            
+
         Returns:
             np.ndarray: loaded image
         '''
@@ -88,11 +88,11 @@ class HDRProcessor:
 
         logger.debug("Processed HDR image")
         return hdr_image
-    
+
     def save_hdr(self, file_path: str) -> str:
         '''
         Save HDR image to file path
-        
+
         Args:
             file_path: path to the output file
         '''

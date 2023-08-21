@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: validator.py
 		Project: import_sd
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Sun Aug 13 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
@@ -35,7 +35,7 @@ class Validator:
 		Check if the given path exists and is a directory.
 		"""
 		return os.path.isdir(path)
-	
+
 	@classmethod
 	def is_file(cls, path: str) -> bool:
 		"""
@@ -49,8 +49,8 @@ class Validator:
 		Check if the given path is writable.
 		"""
 		return os.access(path, os.W_OK)
-	
-	@classmethod 
+
+	@classmethod
 	def ensure_dir(cls, path: str) -> bool:
 		"""
 		Ensure that the given path exists and is a directory. If it does not exist, create a new directory.
@@ -64,7 +64,7 @@ class Validator:
 		if not os.path.exists(path):
 			logger.info(f'Creating directory: {path}')
 			os.makedirs(path, exist_ok=True)
-		
+
 		return cls.is_dir(path)
 
 	@classmethod
@@ -101,15 +101,15 @@ class Validator:
 					logger.error(f'File not accessible: {file_path}')
 
 		return checksums
-	
+
 	@classmethod
 	def calculate_checksum(cls, file_path : str) -> str:
 		"""
 		Calculate the checksum of the given file.
-		
+
 		Args:
 			file_path (str): The path to the file to calculate the checksum of.
-			
+
 		Returns:
 			str: The checksum of the given file.
 
@@ -136,9 +136,9 @@ class Validator:
 		if not result:
 			logger.error('Failed to calculate checksum for file: {file_path}')
 			raise ValueError(f'Failed to calculate checksum for file: {file_path}')
-		
+
 		return result
-	
+
 	@classmethod
 	def compare_checksums(cls, source_file : str, destination_file : str) -> bool:
 		"""
@@ -187,7 +187,7 @@ class Validator:
 			return False
 
 		return True
-	
+
 	@classmethod
 	def validate_checksum_list(cls, checksums_before : dict[str, str], files : dict[str, str]) -> bool:
 		"""
@@ -218,4 +218,3 @@ class Validator:
 			return False
 
 		return True
-	
