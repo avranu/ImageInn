@@ -24,7 +24,7 @@ import errno
 import os
 import re
 import logging
-from typing import Any, Dict, Optional, Self, TypedDict
+from typing import Any, Dict, Optional, TypedDict
 import exifread
 import exifread.utils
 import exifread.tags.exif
