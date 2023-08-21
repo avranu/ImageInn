@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Sat Aug 19 2023
+		Last Modified: Mon Aug 21 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -65,13 +65,18 @@ class Photo(FilePath):
 		"""
 		The path to the photo, which must already exist.
 		"""
-		if not os.path.exists(value):
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), value)
+		# Normalize the path before working with it
+		clean_path = os.path.normpath(value)
+		clean_path = os.path.abspath(clean_path)
+
+		logger.critical('Checking existance of %s', clean_path)
+		if not os.path.exists(clean_path):
+			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), clean_path)
 		
-		if not os.path.isfile(value):
+		if not os.path.isfile(clean_path):
 			raise ValueError('Path must be a file')
 		
-		self._path = os.path.normpath(value)
+		self._path = clean_path
 	
 	@property
 	def aperture(self) -> Decimal | None:
