@@ -52,7 +52,6 @@ class FilePath(str):
 			joined_path = path
 
 		self._path = os.path.normpath(joined_path)
-		super().__init__(joined_path)
 
 	@property
 	def path(self) -> str:
