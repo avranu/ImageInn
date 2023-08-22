@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Mon Aug 21 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 
 		-----
@@ -169,7 +169,7 @@ class FilePath(str):
 			return FilePath(self.path + suffix)
 
 		# Split the path into the name and extension
-		path_and_name, extension = self.path.lower().rsplit('.', 1)
+		path_and_name, extension = self.path.rsplit('.', 1)
 
 		return FilePath(path_and_name + suffix + '.' + extension)
 
@@ -196,7 +196,7 @@ class FilePath(str):
 			return FilePath(path)
 
 		# Split the path into the name and extension
-		path_and_name, extension = self.path.lower().rsplit('.', 1)
+		path_and_name, extension = self.path.rsplit('.', 1)
 
 		# Remove the suffix from the name
 		cleaned_path_and_name = re.sub(suffix + '$', '', path_and_name)

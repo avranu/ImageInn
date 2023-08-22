@@ -218,7 +218,7 @@ class HDRWorkflow(Workflow):
 			Photo: The converted photo.
 		"""
 		# Create a tiff filename
-		tiff_name = photo.filename.lower().replace('.arw', '.tif')
+		tiff_name = re.sub(rf'\.{photo.extension}$', '.tif', photo.filename)
 		tiff_path = FilePath([self.tiff_path, tiff_name])
 
 		# Check if the file already exists
