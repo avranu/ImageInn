@@ -10,7 +10,7 @@
 	
 		-----
 	
-		Last Modified: Mon Aug 21 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 	
 		-----
@@ -21,7 +21,6 @@ import os
 import unittest
 from unittest.mock import patch
 from decimal import Decimal
-from datetime import datetime
 import exifread
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.exif import ExifTag

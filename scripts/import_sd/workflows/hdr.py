@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Mon Aug 21 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 
 		-----
@@ -667,8 +667,8 @@ def main():
 	args = parser.parse_args()
 
 	# Set up logging
-	logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler()])
-	logger.setLevel(logging.DEBUG)
+	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler()])
+	logger.setLevel(logging.INFO)
 
 	# Copy the SD card
 	workflow = HDRWorkflow(args.path, args.extension, args.onconflict, args.dry_run)
