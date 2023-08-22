@@ -349,7 +349,7 @@ class Workflow:
 			# Run the command
 			output = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True, check=check)
 		except subprocess.CalledProcessError as e:
-			logger.error('Command failed: "%s"', command)
+			logger.error('Command failed: %s', command)
 			logger.error('Error message: %s', e.stderr)
 			logger.error('Output: %s', e.stdout)
 
@@ -365,7 +365,7 @@ class Workflow:
 			logger.debug(output.stderr)
 
 			if output.returncode != 0:
-				logger.error('Command failed: "%s"', command)
+				logger.error('Command failed: %s', command)
 				logger.error('Error message: %s', output.stderr)
 				logger.error('Output: %s', output.stdout)
 				if check:

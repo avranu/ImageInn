@@ -230,7 +230,7 @@ class HDRWorkflow(Workflow):
 		# Check if the file already exists
 		if tiff_path.exists():
 			tiff_path = self.handle_conflict(tiff_path)
-			if tiff_path is None:
+			if not tiff_path:
 				logger.debug('Skipping existing file "%s"', photo.path)
 				return None
 
@@ -252,7 +252,7 @@ class HDRWorkflow(Workflow):
 
 		# Use the appropriate exe to convert the file
 		logger.debug('Creating tiff file %s from %s using %s', tiff_path_escaped, photo.path, exe)
-		output, error = self.subprocess([exe, photo.path, tiff_path_escaped], check=False)
+		output, error = self.subprocess([exe, photo.path, tiff_path_escaped.path], check=False)
 
 		# Check that it exists
 		if not tmp_tiff_path.exists():
