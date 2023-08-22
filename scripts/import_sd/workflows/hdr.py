@@ -25,7 +25,7 @@ import os
 import re
 import subprocess
 import sys
-import logging
+import logging, logging.config
 import time
 from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
@@ -257,6 +257,7 @@ class HDRWorkflow(Workflow):
 		# Check that it exists
 		if not tmp_tiff_path.exists():
 			logger.error('Could not find %s after conversion from %s using %s', tmp_tiff_path, photo.path, exe)
+			sys.exit(1)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_tiff_path)
 
 		# Copy EXIF data using ExifTool
@@ -674,9 +675,25 @@ def main():
 	# Parse the arguments passed in from the user
 	args = parser.parse_args()
 
+	# Logging config, which will eventually be migrated to a separate configfile
+	config = {
+		'version': 1,
+		'formatters': {
+			'basic': {'format': '%(asctime)s - %(levelname)s - %(message)s'}
+		},
+		'handlers': {
+			'console': {'class': 'logging.StreamHandler', 'formatter': 'basic', 'level': logging.INFO},
+			'file': {'class': 'logging.FileHandler', 'formatter': 'basic', 'level': logging.DEBUG, 'filename': 'log.txt'}
+		},
+		'root': {
+			'handlers': ['console', 'file'],
+			'level': logging.DEBUG,
+		},
+	}
+
 	# Set up logging
-	logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', handlers=[logging.StreamHandler()])
-	logger.setLevel(logging.INFO)
+	logging.config.dictConfig(config)
+	logger.setLevel(logging.DEBUG)
 
 	# Copy the SD card
 	workflow = HDRWorkflow(args.path, args.extension, args.onconflict, args.dry_run)
