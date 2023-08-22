@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Mon Aug 21 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 
 		-----
@@ -91,7 +91,7 @@ class Photo(FilePath):
 		if not isinstance(self.path, str):
 			logger.info('Path is not a string: %s. It is %s', self.path, type(self.path).__name__)
 			raise TypeError('Path must be a string. It is currently a %s' % type(self.path).__name__)
-		
+
 		if not os.path.exists(self.path):
 			logger.info('Path does not exist: %s', self.path)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)

@@ -184,13 +184,19 @@ class HDRWorkflow(Workflow):
 
 			# Darktable-cli doesn't like backslashes for the tiff path
 			tiff_path_escaped = tiff_path
+			'''
 			if exe == 'darktable-cli':
 				logger.debug('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
 				tiff_path_escaped = tiff_path.replace('\\', '/')
+			'''
 
 			# Use the appropriate exe to convert the file
 			logger.debug('Creating tiff file %s from %s using %s', tiff_path, arw.path, exe)
-			self.subprocess([exe, arw.path, tiff_path_escaped], check=False)
+			output, error = self.subprocess([exe, arw.path, tiff_path_escaped], check=False)
+
+			if error:
+				logger.error('Could not convert %s to tiff using %s -> %s', arw.path, exe, error)
+				sys.exit(1)
 
 			# Check that it exists
 			if not os.path.exists(tiff_path):
@@ -218,7 +224,7 @@ class HDRWorkflow(Workflow):
 			Photo: The converted photo.
 		"""
 		# Create a tiff filename
-		tiff_name = re.sub(rf'\.{photo.extension}$', '.tif', photo.filename)
+		tiff_name = re.sub(rf'\.{photo.extension}$', '.tif', photo.filename, flags=re.IGNORECASE)
 		tiff_path = FilePath([self.tiff_path, tiff_name])
 
 		# Check if the file already exists
@@ -238,13 +244,15 @@ class HDRWorkflow(Workflow):
 
 		# Darktable-cli doesn't like backslashes for the tiff path
 		tiff_path_escaped = tmp_tiff_path
+		'''
 		if exe == 'darktable-cli':
 			logger.debug('Replacing backslashes with forward slashes for darktable in %s', tmp_tiff_path)
 			tiff_path_escaped = FilePath(tmp_tiff_path.replace('\\', '/'))
+		'''
 
 		# Use the appropriate exe to convert the file
-		logger.debug('Creating tiff file %s from %s using %s', tmp_tiff_path, photo.path, exe)
-		self.subprocess([exe, photo.path, tiff_path_escaped], check=False)
+		logger.debug('Creating tiff file %s from %s using %s', tiff_path_escaped, photo.path, exe)
+		output, error = self.subprocess([exe, photo.path, tiff_path_escaped], check=False)
 
 		# Check that it exists
 		if not tmp_tiff_path.exists():
@@ -564,7 +572,7 @@ class HDRWorkflow(Workflow):
 		# First, ensure there is actually a conflict
 		if not path.exists():
 			return path
-		
+
 		match self.onconflict:
 			case OnConflict.SKIP:
 				logger.info('Skipping %s', path)

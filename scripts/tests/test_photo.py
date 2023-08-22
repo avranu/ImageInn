@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: test_photo.py
 		Project: tests
 		Created Date: 21 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 import os
@@ -34,7 +34,7 @@ class TestPhoto(unittest.TestCase):
     def test_init(self):
         self.assertEqual(self.photo.path, self.sample_path)
         self.assertEqual(self.photo.number, 1234)
-        
+
         photo = Photo(self.sample_path, number=5678)
         self.assertEqual(photo.path, self.sample_path)
         self.assertEqual(photo.number, 5678)

@@ -1,20 +1,20 @@
 """
-	
+
 	Metadata:
-	
+
 		File: test_path.py
 		Project: tests
 		Created Date: 21 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
-		Last Modified: Mon Aug 21 2023
+
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 import os
@@ -27,7 +27,7 @@ from scripts.import_sd.path import FilePath
 from scripts.import_sd.validator import Validator
 
 class TestFilePath(unittest.TestCase):
-	
+
 	def setUp(self):
 		# Paths
 		self.data_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'data')

@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Sat Aug 19 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 
 		-----
@@ -321,7 +321,7 @@ class Workflow:
 			else:
 				os.rename(path, destination)
 
-	def subprocess(self, command : str, cwd : FilePath = None, check : bool = True) -> str:
+	def subprocess(self, command : str, cwd : FilePath = None, check : bool = True) -> tuple[str, str]:
 		"""
 		Run a subprocess, printing the command and output to the user.
 
@@ -334,7 +334,7 @@ class Workflow:
 				Whether to raise an exception if the command fails. Defaults to True.
 
 		Returns:
-			str: The output of the command.
+			tuple[str, str]: The output of the command, and the error str from the command.
 
 		Raises:
 			subprocess.CalledProcessError:
@@ -343,7 +343,7 @@ class Workflow:
 		"""
 		if self.dry_run:
 			logger.info('Would run command "%s"', command)
-			return 'Dry run. Command skipped.'
+			return 'Dry run. Command skipped.', ''
 
 		try:
 			# Run the command
@@ -354,9 +354,9 @@ class Workflow:
 			logger.error('Output: %s', e.stdout)
 
 			if check:
-				raise e
+				raise e from e
 			else:
-				return e.stderr
+				return getattr(output, 'stdout', ''), e.stderr
 
 		if output.stdout:
 			logger.debug(output.stdout)
@@ -372,7 +372,7 @@ class Workflow:
 					raise subprocess.CalledProcessError(output.returncode, command, output.stderr)
 
 		# Return the output
-		return output.stdout or output.stderr
+		return output.stdout, output.stderr
 
 	def delete(self, path : FilePath) -> None:
 		"""
