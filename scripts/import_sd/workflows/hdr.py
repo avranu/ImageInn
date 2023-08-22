@@ -254,6 +254,12 @@ class HDRWorkflow(Workflow):
 		logger.debug('Creating tiff file %s from %s using %s', tiff_path_escaped, photo.path, exe)
 		output, error = self.subprocess([exe, photo.path, tiff_path_escaped.path], check=False)
 
+		# Check for "usage: darktable-cli"
+		if error and 'usage: darktable-cli' in error:
+			logger.critical('Creating tiff file %s from %s using %s', tiff_path_escaped, photo.path, exe)
+			logger.critical('darktable-cli usage error -> %s', error)
+			sys.exit(1)
+
 		# Check that it exists
 		if not tmp_tiff_path.exists():
 			logger.error('Could not find %s after conversion from %s using %s', tmp_tiff_path, photo.path, exe)
