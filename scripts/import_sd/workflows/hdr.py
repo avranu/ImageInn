@@ -675,26 +675,6 @@ def main():
 	# Parse the arguments passed in from the user
 	args = parser.parse_args()
 
-	# Logging config, which will eventually be migrated to a separate configfile
-	config = {
-		'version': 1,
-		'formatters': {
-			'basic': {'format': '%(asctime)s - %(levelname)s - %(message)s'}
-		},
-		'handlers': {
-			'console': {'class': 'logging.StreamHandler', 'formatter': 'basic', 'level': logging.INFO},
-			'file': {'class': 'logging.FileHandler', 'formatter': 'basic', 'level': logging.DEBUG, 'filename': 'log.txt'}
-		},
-		'root': {
-			'handlers': ['console', 'file'],
-			'level': logging.DEBUG,
-		},
-	}
-
-	# Set up logging
-	logging.config.dictConfig(config)
-	logger.setLevel(logging.DEBUG)
-
 	# Copy the SD card
 	workflow = HDRWorkflow(args.path, args.extension, args.onconflict, args.dry_run)
 	result = workflow.run()

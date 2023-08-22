@@ -23,7 +23,7 @@ import datetime
 from enum import Enum
 import errno
 import os
-import logging
+import logging, logging.config
 import subprocess
 import sys
 from typing import Any, Dict, Optional, TypedDict
@@ -434,8 +434,25 @@ def main():
 	"""
 	Entry point for the application.
 	"""
-	logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', handlers=[logging.StreamHandler()])
-	logger.setLevel(logging.INFO)
+	# Logging config, which will eventually be migrated to a separate configfile
+	config = {
+		'version': 1,
+		'formatters': {
+			'basic': {'format': '%(asctime)s - %(levelname)s - %(message)s'}
+		},
+		'handlers': {
+			'console': {'class': 'logging.StreamHandler', 'formatter': 'basic', 'level': logging.INFO},
+			'file': {'class': 'logging.FileHandler', 'formatter': 'basic', 'level': logging.DEBUG, 'filename': 'log.txt'}
+		},
+		'root': {
+			'handlers': ['console', 'file'],
+			'level': logging.DEBUG,
+		},
+	}
+
+	# Set up logging
+	logging.config.dictConfig(config)
+	logger.setLevel(logging.DEBUG)
 
 	# Parse command line arguments
 	parser = argparse.ArgumentParser(description='Begin a workflow for importing or processing photos.')
