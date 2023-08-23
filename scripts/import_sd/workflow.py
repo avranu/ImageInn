@@ -51,32 +51,36 @@ class Workflow:
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
 	"""
-	_base_path: str
-	_jpg_path: str
-	_backup_path: str
+	_base_path: FilePath
+	_jpg_path: FilePath
+	_backup_path: FilePath
 	_sd_card : SDCard = None
-	_bucket_path : str = None
+	_bucket_path : FilePath | None = None
 	raw_extension : str
 	dry_run : bool = False
 	action : str
 
 	@property
-	def base_path(self) -> str:
+	def base_path(self) -> FilePath:
 		"""
 		The path to the network location to copy raw files from the SD Card to.
 		"""
 		return self._base_path
 
 	@base_path.setter
-	def base_path(self, base_path: str) -> None:
+	def base_path(self, base_path: str | list[str] | FilePath) -> None:
 		"""
 		Set the path to the network location to copy raw files from the SD Card to.
 
 		Args:
 			base_path (str): The path to the network location to copy raw files from the SD Card to.
 		"""
+		if isinstance(base_path, (str, list)):
+			base_path = FilePath(base_path)
+
 		if not Validator.is_dir(base_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), base_path)
+		
 		self._base_path = self._normalize_path(base_path)
 
 	def get_photos(self, directory : Optional[str] = None) -> list[Photo]:
@@ -99,11 +103,11 @@ class Workflow:
 		photos = []
 		for file in files:
 			if self.raw_extension and file.lower().endswith(self.raw_extension):
-				photos.append(Photo(os.path.join(directory, file)))
+				photos.append(Photo([directory, file]))
 
 		return photos
 
-	def _normalize_path(self, path: str) -> str:
+	def _normalize_path(self, path: str) -> FilePath:
 		"""
 		Normalize a path for the system, and ensure that it ends with a trailing slash (which is important for rsync)
 
@@ -113,7 +117,7 @@ class Workflow:
 		Returns:
 			str: The normalized path.
 		"""
-		return os.path.join(os.path.normpath(path), '')
+		return FilePath([os.path.normpath(path), ''])
 
 	def _check_photo(self, photo: Photo, destinations: list[Photo]) -> tuple[bool, list[Photo]]:
 		"""
@@ -319,7 +323,7 @@ class Workflow:
 			if self.dry_run:
 				logger.info('Would rename "%s" to "%s"', path, destination)
 			else:
-				os.rename(path.path, destination.path)
+				os.rename(path, destination)
 
 	def subprocess(self, command : str | list[str], cwd : FilePath = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
 		"""

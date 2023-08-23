@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Sat Aug 19 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 
 		-----
@@ -32,16 +32,17 @@ from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
 from scripts.import_sd.validator import Validator
+from scripts.import_sd.path import FilePath
 from scripts.import_sd.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 
 class RenameWorkflow(Workflow):
-	_base_path: str
+	_base_path: FilePath
 	raw_extension : str
 	dry_run : bool = False
 
-	def __init__(self, base_path : str, raw_extension : str = 'arw', dry_run : bool = False):
+	def __init__(self, base_path : str | list[str] | FilePath, raw_extension : str = 'arw', dry_run : bool = False):
 		"""
 		Args:
 			base_path (str):
@@ -57,22 +58,26 @@ class RenameWorkflow(Workflow):
 		self.dry_run = dry_run
 
 	@property
-	def base_path(self) -> str:
+	def base_path(self) -> FilePath:
 		"""
 		The path to the network location to copy raw files from the SD Card to.
 		"""
 		return self._base_path
 
 	@base_path.setter
-	def base_path(self, base_path: str) -> None:
+	def base_path(self, base_path: str | list[str] | FilePath) -> None:
 		"""
 		Set the path to the network location to copy raw files from the SD Card to.
 
 		Args:
 			base_path (str): The path to the network location to copy raw files from the SD Card to.
 		"""
+		if isinstance(base_path, (list, str)):
+			base_path = FilePath(base_path)
+
 		if not Validator.is_dir(base_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), base_path)
+		
 		self._base_path = self._normalize_path(base_path)
 
 	def run(self) -> dict[str, str]:
@@ -88,7 +93,7 @@ class RenameWorkflow(Workflow):
 		old_format_regex = re.compile(r'^_JAM_(\d{4}).arw$', re.IGNORECASE)
 
 		# Verify the paths exist
-		if not all([os.path.exists(path) for path in [self.base_path]]):
+		if not self.base_path.exists():
 			logger.info('One or more of the paths provided does not exist: "%s"', self.base_path)
 			raise FileNotFoundError('Raw path does not exist.')
 
@@ -98,16 +103,16 @@ class RenameWorkflow(Workflow):
 			for filename in filenames:
 				matches = old_format_regex.match(filename)
 				if matches:
-					old_path = os.path.join(root, filename)
+					old_path = FilePath([root, filename])
 					# Determine the photo number from the old name
 					number = matches.group(1)
 					new_name = self.generate_name(old_path, properties={'number': number})
-					new_path = os.path.join(root, new_name)
+					new_path = FilePath([root, new_name])
 					results[old_path] = new_path
 					logger.debug('QUEUE: %s -> %s', old_path, new_path)
 
 					# Do not clobber existing files
-					if os.path.exists(new_name):
+					if new_path.exists():
 						logger.warning('File already exists, skipping... %s', new_name)
 						continue
 

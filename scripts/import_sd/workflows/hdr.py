@@ -84,25 +84,25 @@ class HDRWorkflow(Workflow):
 		self.onconflict 	= onconflict
 
 	@property
-	def hdr_path(self) -> str:
+	def hdr_path(self) -> FilePath:
 		"""
 		The path to the HDR directory.
 		"""
-		return os.path.join(self.base_path, 'hdr')
+		return FilePath([self.base_path, 'hdr'])
 
 	@property
 	def tiff_path(self) -> str:
 		"""
 		The path to the tiff directory.
 		"""
-		return os.path.join(self.hdr_path, 'tiff')
+		return FilePath([self.hdr_path, 'tiff'])
 
 	@property
 	def aligned_path(self) -> str:
 		"""
 		The path to the aligned directory.
 		"""
-		return os.path.join(self.hdr_path, 'aligned')
+		return FilePath([self.hdr_path, 'aligned'])
 
 	def run(self) -> bool:
 		"""
@@ -298,7 +298,7 @@ class HDRWorkflow(Workflow):
 			# Create the photos
 			for idx, photo in tqdm(enumerate(photos), desc="Aligning Images...", ncols=100):
 				# Create the path.
-				output_path = os.path.join(self.aligned_path, f'aligned_{idx:04}.tif')
+				output_path = FilePath([self.aligned_path, f'aligned_{idx:04}.tif'])
 				# Create a new file named {photo.filename}_aligned.{ext}
 				filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
 				aligned_path = FilePath([self.aligned_path, filename])
