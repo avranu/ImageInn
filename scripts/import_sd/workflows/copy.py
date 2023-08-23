@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Sun Aug 20 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 
 		-----
@@ -34,7 +34,7 @@ import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.operations import CopyOperation
 from scripts.import_sd.validator import Validator
-from scripts.import_sd.path import FilePath
+from scripts.lib.path import Path
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.queue import Queue
 from scripts.import_sd.sd import SDCard

@@ -31,7 +31,7 @@ import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.validator import Validator
-from scripts.import_sd.path import FilePath
+from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.photo import Photo, FakePhoto
 from scripts.import_sd.sd import SDCard
 
@@ -51,39 +51,39 @@ class Workflow:
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
 	"""
-	_base_path: FilePath
+	_base_path: DirPath
 	_jpg_path: FilePath
-	_backup_path: FilePath
+	_backup_path: DirPath
 	_sd_card : SDCard = None
-	_bucket_path : FilePath | None = None
+	_bucket_path : DirPath | None = None
 	raw_extension : str
 	dry_run : bool = False
 	action : str
 
 	@property
-	def base_path(self) -> FilePath:
+	def base_path(self) -> DirPath:
 		"""
 		The path to the network location to copy raw files from the SD Card to.
 		"""
 		return self._base_path
 
 	@base_path.setter
-	def base_path(self, base_path: str | list[str] | FilePath) -> None:
+	def base_path(self, base_path: str | list[str] | DirPath) -> None:
 		"""
 		Set the path to the network location to copy raw files from the SD Card to.
 
 		Args:
 			base_path (str): The path to the network location to copy raw files from the SD Card to.
 		"""
-		if not isinstance(base_path, FilePath):
-			base_path = FilePath(base_path)
+		if not isinstance(base_path, DirPath):
+			base_path = DirPath(base_path)
 
 		if not Validator.is_dir(base_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), base_path)
 		
 		self._base_path = self._normalize_path(base_path)
 
-	def get_photos(self, directory : Optional[str] = None) -> list[Photo]:
+	def get_photos(self, directory : Optional[DirPath] = None) -> list[Photo]:
 		"""
 		Get a list of photos from a given directory
 
@@ -97,7 +97,7 @@ class Workflow:
 			directory = self.base_path
 
 		# Get all files in the directory (but not subdirectories), and sort them by their filename
-		files = os.listdir(directory)
+		files = os.listdir(directory.path)
 		files.sort()
 
 		photos = []
@@ -107,7 +107,7 @@ class Workflow:
 
 		return photos
 
-	def _normalize_path(self, path: str) -> FilePath:
+	def _normalize_path(self, path: str) -> DirPath:
 		"""
 		Normalize a path for the system, and ensure that it ends with a trailing slash (which is important for rsync)
 
@@ -117,7 +117,7 @@ class Workflow:
 		Returns:
 			str: The normalized path.
 		"""
-		return FilePath([os.path.normpath(path), ''])
+		return DirPath([os.path.normpath(path), ''])
 
 	def _check_photo(self, photo: Photo, destinations: list[Photo]) -> tuple[bool, list[Photo]]:
 		"""
@@ -241,11 +241,11 @@ class Workflow:
 		# Get the new filename
 		filename = self.generate_name(photo)
 
-		#		MAX   Path				 Extension		   ---.  Date (2023/2023-01-05/)
+		#		MAX   FilePath				 Extension		   ---.  Date (2023/2023-01-05/)
 		buffer = 254 - len(self.base_path) - len(photo.extension) - 4 - 16
 		if buffer < 1:
 			# No room for even a truncated filename
-			raise ValueError(f'Path is too long: {self.base_path}')
+			raise ValueError(f'FilePath is too long: {self.base_path}')
 		elif buffer < len(filename):
 			# First, try re-generating a name without the camera model or lens, and a shortened date.
 			filename = self.generate_name(photo, short=True)
@@ -298,12 +298,12 @@ class Workflow:
 				raise KeyboardInterrupt('User decided to abort. Prompt was "%s"', message)
 			return False
 
-	def mkdir(self, path : FilePath, exist_ok : bool = True) -> None:
+	def mkdir(self, path : DirPath, exist_ok : bool = True) -> None:
 		"""
 		Create a directory, if it doesn't already exist.
 
 		Args:
-			path (FilePath): The path to create.
+			path (DirPath): The path to create.
 		"""
 		if not os.path.exists(path):
 			if self.dry_run:
@@ -325,14 +325,14 @@ class Workflow:
 			else:
 				os.rename(path, destination)
 
-	def subprocess(self, command : str | list[str], cwd : FilePath = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
+	def subprocess(self, command : str | list[str], cwd : DirPath = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
 		"""
 		Run a subprocess, printing the command and output to the user.
 
 		Args:
 			command (str):
 				The command to run.
-			cwd (FilePath, optional):
+			cwd (DirPath, optional):
 				The working directory to run the command in. Defaults to None.
 			check (bool, optional):
 				Whether to raise an exception if the command fails. Defaults to True.
@@ -393,12 +393,12 @@ class Workflow:
 			except FileNotFoundError:
 				logger.debug('File "%s" does not exist, so was not deleted.', path)
 
-	def rmdir(self, path : FilePath) -> bool:
+	def rmdir(self, path : DirPath) -> bool:
 		"""
 		Delete a directory.
 
 		Args:
-			path (FilePath): The path to delete.
+			path (DirPath): The path to delete.
 
 		Returns:
 			bool: Whether the directory was deleted.

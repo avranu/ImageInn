@@ -32,17 +32,17 @@ from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
 from scripts.import_sd.validator import Validator
-from scripts.import_sd.path import FilePath
+from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 
 class RenameWorkflow(Workflow):
-	_base_path: FilePath
+	_base_path: DirPath
 	raw_extension : str
 	dry_run : bool = False
 
-	def __init__(self, base_path : str | list[str] | FilePath, raw_extension : str = 'arw', dry_run : bool = False):
+	def __init__(self, base_path : str | list[str] | DirPath, raw_extension : str = 'arw', dry_run : bool = False):
 		"""
 		Args:
 			base_path (str):
@@ -58,22 +58,22 @@ class RenameWorkflow(Workflow):
 		self.dry_run = dry_run
 
 	@property
-	def base_path(self) -> FilePath:
+	def base_path(self) -> DirPath:
 		"""
 		The path to the network location to copy raw files from the SD Card to.
 		"""
 		return self._base_path
 
 	@base_path.setter
-	def base_path(self, base_path: str | list[str] | FilePath) -> None:
+	def base_path(self, base_path: str | list[str] | DirPath) -> None:
 		"""
 		Set the path to the network location to copy raw files from the SD Card to.
 
 		Args:
 			base_path (str): The path to the network location to copy raw files from the SD Card to.
 		"""
-		if not isinstance(base_path, FilePath):
-			base_path = FilePath(base_path)
+		if not isinstance(base_path, DirPath):
+			base_path = DirPath(base_path)
 
 		if not Validator.is_dir(base_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), base_path)

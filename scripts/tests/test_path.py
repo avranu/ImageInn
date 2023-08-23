@@ -23,7 +23,7 @@ from unittest.mock import patch
 import shutil
 import tempfile
 import unittest
-from scripts.import_sd.path import FilePath
+from scripts.lib.path import FilePath
 from scripts.import_sd.validator import Validator
 
 class TestFilePath(unittest.TestCase):

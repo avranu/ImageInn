@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 
 		-----
@@ -23,7 +23,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from scripts.import_sd.path import FilePath
+from scripts.lib.path import FilePath
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.queue import Queue
 from scripts.import_sd.validator import Validator
