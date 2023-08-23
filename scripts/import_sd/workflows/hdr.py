@@ -95,14 +95,14 @@ class HDRWorkflow(Workflow):
 		"""
 		The path to the tiff directory.
 		"""
-		return self.base_path.child('tiff')
+		return self.hdr_path.child('tiff')
 
 	@property
 	def aligned_path(self) -> DirPath:
 		"""
 		The path to the aligned directory.
 		"""
-		return self.base_path.child('aligned')
+		return self.hdr_path.child('aligned')
 
 	def run(self) -> bool:
 		"""
