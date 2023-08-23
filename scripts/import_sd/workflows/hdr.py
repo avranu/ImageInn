@@ -197,7 +197,7 @@ class HDRWorkflow(Workflow):
 		# Run the conversion
 		results = self.tif_provider.run(job)
 
-		return results.values()
+		return list(results.values())
 
 	def _subprocess_tif(self, files: list[Photo], method : Optional[TiffMethods.values] = None) -> list[Photo]:
 		"""
