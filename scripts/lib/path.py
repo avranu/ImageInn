@@ -436,18 +436,20 @@ class DirPath(Path):
 			list[Path]: The contents of this directory.
 		"""
 		contents = []
-		for filename in os.listdir(self.path):
-			path = os.path.join(self.path, filename)
 
-			if os.path.isfile(path):
-				contents.append(FilePath(path))
-			elif os.path.isdir(path):
-				contents.append(DirPath(path))
-			else:
-				logger.warning("Unknown file type for %s", path)
+		if self.exists():	
+			for filename in os.listdir(self.path):
+				path = os.path.join(self.path, filename)
 
-		if sort:
-			contents.sort()
+				if os.path.isfile(path):
+					contents.append(FilePath(path))
+				elif os.path.isdir(path):
+					contents.append(DirPath(path))
+				else:
+					logger.warning("Unknown file type for %s", path)
+
+			if sort:
+				contents.sort()
 
 		return contents
 	

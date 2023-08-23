@@ -96,7 +96,7 @@ class Photo(FilePath):
 			logger.info('Path does not exist: %s', self.path)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
 
-		if not self.is_file(self.path):
+		if not self.is_file():
 			logger.info('Path is not a file: %s', self.path)
 			raise ValueError('Path must be a file')
 
