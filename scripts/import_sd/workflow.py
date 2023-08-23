@@ -321,7 +321,7 @@ class Workflow:
 			else:
 				os.rename(path, destination)
 
-	def subprocess(self, command : str, cwd : FilePath = None, check : bool = True) -> tuple[str, str]:
+	def subprocess(self, command : str | list[str], cwd : FilePath = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
 		"""
 		Run a subprocess, printing the command and output to the user.
 
@@ -347,7 +347,7 @@ class Workflow:
 
 		try:
 			# Run the command
-			output = subprocess.run(command, cwd=cwd, shell=True, capture_output=True, text=True, check=check)
+			output = subprocess.run(command, cwd=cwd, capture_output=True, text=True, check=check, timeout=timeout)
 		except subprocess.CalledProcessError as e:
 			logger.error('Command failed: %s', command)
 			logger.error('Error message: %s', e.stderr)
