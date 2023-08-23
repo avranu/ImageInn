@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Tue Aug 22 2023
 		Modified By: Jess Mann
 
 		-----
@@ -23,9 +23,9 @@ from typing import Optional
 from datetime import datetime
 import logging
 
-from .path import FilePath
-from .photo import Photo
-from .validator import Validator
+from scripts.lib.path import FilePath
+from scripts.import_sd.photo import Photo
+from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +102,7 @@ class Queue:
 
 		return True
 
-	def append_parts(self, photo : Photo, destination_parts : list[str] | str) -> bool:
+	def append_parts(self, photo : Photo, destination_parts : list[str] | str | FilePath) -> bool:
 		"""
 		Adds a photo to the queue, if possible, where the destination path is constructed from a list of path parts.
 

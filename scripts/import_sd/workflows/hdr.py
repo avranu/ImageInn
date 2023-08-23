@@ -36,7 +36,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as ConcurrentTim
 
 from scripts.lib.choices import Choices
 from scripts.import_sd.config import MAX_RETRIES
-from scripts.import_sd.path import FilePath
+from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.photostack import PhotoStack
 from scripts.import_sd.workflow import Workflow
@@ -84,25 +84,25 @@ class HDRWorkflow(Workflow):
 		self.onconflict 	= onconflict
 
 	@property
-	def hdr_path(self) -> FilePath:
+	def hdr_path(self) -> DirPath:
 		"""
 		The path to the HDR directory.
 		"""
-		return FilePath([self.base_path, 'hdr'])
+		return DirPath([self.base_path, 'hdr'])
 
 	@property
-	def tiff_path(self) -> str:
+	def tiff_path(self) -> DirPath:
 		"""
 		The path to the tiff directory.
 		"""
-		return FilePath([self.hdr_path, 'tiff'])
+		return DirPath([self.hdr_path, 'tiff'])
 
 	@property
-	def aligned_path(self) -> str:
+	def aligned_path(self) -> DirPath:
 		"""
 		The path to the aligned directory.
 		"""
-		return FilePath([self.hdr_path, 'aligned'])
+		return DirPath([self.hdr_path, 'aligned'])
 
 	def run(self) -> bool:
 		"""
@@ -446,8 +446,8 @@ class HDRWorkflow(Workflow):
 				# Ensure the filename ends with _aligned.tif
 				# This is unnecessary, but we're going to be completely safe
 				if not image.filename.endswith('_aligned.tif'):
-					logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. Path: %s', image.path)
-					raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. Path: {image.path}')
+					logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. FilePath: %s', image.path)
+					raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. FilePath: {image.path}')
 
 				self.delete(image.path)
 				self.delete(image.path + '_original')
