@@ -75,7 +75,7 @@ class Workflow:
 		Args:
 			base_path (str): The path to the network location to copy raw files from the SD Card to.
 		"""
-		if isinstance(base_path, (str, list)):
+		if not isinstance(base_path, FilePath):
 			base_path = FilePath(base_path)
 
 		if not Validator.is_dir(base_path):

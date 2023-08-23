@@ -65,6 +65,10 @@ class FilePath(str):
 		else:
 			joined_path = os.path.join(*value)
 
+		# If it's a directory, add a trailing slash
+		if os.path.isdir(joined_path):
+			joined_path += '/'
+
 		self._path = os.path.normpath(joined_path)
 
 	@property
