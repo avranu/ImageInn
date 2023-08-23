@@ -188,13 +188,6 @@ class FilePath(Path):
 	
 	NOTE: This file does not need to exist yet. os.path.exists() should not be assumed to be true.
 	"""
-	def validate(self) -> bool:
-		# IF the path exists, check that it is a file
-		if self.exists() and not os.path.isfile(self.path):
-			raise ValueError("The path %s is not a file", self.path)
-		
-		return super().validate()
-	
 	@property
 	def filename(self):
 		"""
@@ -309,6 +302,13 @@ class FilePath(Path):
 		cleaned_path_and_name = re.sub(suffix + '$', '', path_and_name)
 
 		return FilePath(cleaned_path_and_name + '.' + extension)
+	
+	def validate(self) -> bool:
+		# IF the path exists, check that it is a file
+		if self.exists() and not os.path.isfile(self.path):
+			raise ValueError("The path %s is not a file", self.path)
+		
+		return True
 
 class DirPath(Path):
 	"""
@@ -364,4 +364,4 @@ class DirPath(Path):
 		if self.exists() and not os.path.isdir(self.path):
 			raise ValueError("The path %s is not a directory", self.path)
 		
-		return super().validate()
+		return True
