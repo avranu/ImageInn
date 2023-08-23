@@ -28,7 +28,7 @@ from scripts.import_sd.photo import Photo
 logger = logging.getLogger(__name__)
 
 class DarktableProvider(TiffProvider):
-	command : str = 'darktable_cli'
+	command : str = 'darktable-cli'
 
 	def next(self, photo : Photo, tiff_path : FilePath) -> Photo | None:
 		"""

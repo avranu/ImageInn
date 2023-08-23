@@ -69,7 +69,7 @@ class TiffProvider(Provider, ABC):
 				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', tiff.path])
 
 				# Rename the file to remove the _tmp suffix
-				self.rename(tiff.path, tiff_path)
+				self.rename(tiff, tiff_path)
 				results[photo] = tiff_path
 				
 				# Done! No need to loop more
