@@ -98,6 +98,8 @@ class HDRWorkflow(Workflow):
 		self.onconflict 	= onconflict
 
 		self.tif_provider 	= tiff.DarktableProvider()
+		self.align_provider = align.HuginProvider()
+		self.hdr_provider 	= merge.EnfuseProvider()
 
 	@property
 	def hdr_path(self) -> DirPath:
@@ -264,41 +266,8 @@ class HDRWorkflow(Workflow):
 			logger.error('Could not convert all photos to TIFF. Converted %d/%d photos', len(tiff_files), len(photos))
 			return []
 
-		aligned_photos : list[Photo] = []
-
 		try:
-			# TODO conflicts
-			# Create the command
-			command = ['align_image_stack', '-a', os.path.join(self.aligned_path, 'aligned_tmp_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
-			for tiff in tiff_files:
-				command.append(tiff.path)
-			self.subprocess(command)
-
-			# Create the photos
-			for idx, photo in tqdm(enumerate(photos), desc="Aligning Images...", ncols=100):
-				# Create the path.
-				output_path = FilePath([self.aligned_path, f'aligned_tmp_{idx:04}.tif'])
-
-				# Copy EXIF data using ExifTool
-				logger.debug('Copying exif data from %s to %s', photo.path, output_path)
-				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', output_path])
-
-				# Create a new file named {photo.filename}_aligned.{ext}
-				filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
-				aligned_path = FilePath([self.aligned_path, filename])
-				self.rename(output_path, aligned_path)
-
-				# Add the photo to the list
-				aligned_photo = self.get_photo(aligned_path)
-				aligned_photos.append(aligned_photo)
-
-		except subprocess.CalledProcessError as e:
-			logger.error('Could not align images -> %s', e)
-			# Clean up aligned photos we created
-			for aligned_photo in aligned_photos:
-				self.delete(aligned_photo)
-			return []
-
+			aligned_photos = self.align_provider.run(tiff_files)
 		finally:
 			# Delete the tiff files
 			for tiff in tiff_files:
@@ -357,25 +326,15 @@ class HDRWorkflow(Workflow):
 			logger.debug('Deleting existing file "%s"', tmp_filepath)
 			self.delete(tmp_filepath)
 
-		# Create the command
-		command = ['enfuse', '-o', tmp_filepath, '-v']
-		for photo in photos:
-			command.append(photo.path)
-
-		# Run the command
-		try:
-			self.subprocess(command)
-		except subprocess.CalledProcessError as e:
-			logger.error('Failed to create HDR image at %s -> %s', tmp_filepath, e)
-			return None
+		hdr = self.hdr_provider.run(photos, tmp_filepath)
 
 		# Ensure the file was created
-		if not self.dry_run and not tmp_filepath.exists():
+		if not self.dry_run and not hdr.exists():
 			logger.error('Unable to create HDR image at %s', tmp_filepath)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_filepath)
 
 		# Rename the file
-		self.rename(tmp_filepath, filepath)
+		hdr.rename(filename)
 
 		return self.get_photo(filepath)
 

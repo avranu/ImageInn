@@ -40,7 +40,6 @@ class Provider(ABC):
 		Returns:
 			Any: returns a type defined by the subclass.
 		"""
-		# TODO multiple and single run methods
 		raise NotImplementedError("Provider.run() must be implemented in a subclass.")
 	
 	@abstractmethod

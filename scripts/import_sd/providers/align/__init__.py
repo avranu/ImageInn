@@ -18,3 +18,4 @@
 		Copyright (c) 2023 Jess Mann
 """
 from scripts.import_sd.providers.align.base import AlignmentProvider
+from scripts.import_sd.providers.align.hugin import HuginProvider

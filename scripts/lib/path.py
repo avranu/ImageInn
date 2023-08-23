@@ -373,6 +373,52 @@ class FilePath(Path):
 			raise ValueError("The path %s is not a file", self.path)
 		
 		return True
+	
+	def delete(self, require_success : bool = False) -> bool:
+		"""
+		Delete the file.
+		
+		Returns:
+			bool: True if the file was deleted, False otherwise.
+		"""
+		# If the file doesnt exist, return True
+		if not self.exists():
+			return True
+		
+		try:
+			os.remove(self.path)
+			return True
+		except Exception as e:
+			logger.error("Could not delete file %s -> %s", self.path, e)
+			if require_success:
+				raise e from e
+			
+		if require_success and self.exists():
+			raise Exception(f"Could not delete file {self.path}")
+		
+		return False
+	
+	def rename(self, value : str) -> Self:
+		"""
+		Rename the file.
+
+		Args:
+			value (str): The new name of the file.
+
+		Returns:
+			FilePath: The new path to the file.
+		"""
+		# If the file doesnt exist, return True
+		if not self.exists():
+			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
+		
+		try:
+			os.rename(self.path, value)
+		except Exception as e:
+			logger.error("Could not rename file %s -> %s", self.path, e)
+			raise e from e
+		
+		return self.__class__([self.directory, value])
 
 class DirPath(Path):
 	"""

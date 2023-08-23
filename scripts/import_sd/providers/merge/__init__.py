@@ -18,3 +18,4 @@
 		Copyright (c) 2023 Jess Mann
 """
 from scripts.import_sd.providers.merge.base import HDRProvider
+from scripts.import_sd.providers.merge.enfuse import EnfuseProvider
