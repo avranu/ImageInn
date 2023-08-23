@@ -31,7 +31,7 @@ from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from scripts.import_sd.exif import ExifTag
 from scripts.import_sd.validator import Validator
-from scripts.lib.path import FilePath
+from scripts.lib.path import FilePath, Path
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +61,17 @@ class Photo(FilePath):
 		return self._path
 
 	@path.setter
-	def path(self, value : list[str] | str):
+	def path(self, value : str | list[str]):
 		"""
 		The path to the photo, which must already exist.
 		"""
-		if isinstance(value, list):
+		if isinstance(value, (Path, str)):
+			# Cast to string to convert Path objects to string
+			joined_path = str(value)
+		elif isinstance(value, list):
 			joined_path = os.path.join(*value)
 		else:
-			# Cast to string to convert FilePath() to string
-			joined_path = str(value)
+			raise ValueError("The path must be a string or a list of strings")
 
 		self._path = os.path.normpath(joined_path)
 

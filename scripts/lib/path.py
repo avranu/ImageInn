@@ -41,11 +41,14 @@ class Path(str, ABC):
 	"""
 	_path: str
 
-	def __init__(self, path: list[str] | str):
+	def __init__(self, path: str | list[str]):
 		"""
 		Args:
 			*path (str): The path, which can be specified in path parts to be joined
 		"""
+		if not path:
+			raise ValueError("The path cannot be empty")
+		
 		self.path = path
 
 	@property
@@ -60,14 +63,14 @@ class Path(str, ABC):
 		"""
 		Set the path
 		"""
-		if isinstance(value, list):
-			joined_path = os.path.join(*value)
-			logger.critical("Path is a list: %s. Result will be %s", value, os.path.normpath(joined_path))
-		else:
+		if isinstance(value, (Path, str)):
 			# Cast to string to convert Path objects to string
 			joined_path = str(value)
-			logger.critical("Path is not a list: %s. Result will be %s", value, os.path.normpath(joined_path))
-
+		elif isinstance(value, list):
+			joined_path = os.path.join(*value)
+		else:
+			raise ValueError("The path must be a string or a list of strings")
+		
 		# Eliminate double slashes
 		self._path = os.path.normpath(joined_path)
 
@@ -389,11 +392,16 @@ class DirPath(Path):
 		"""
 		Set the path
 		"""
-		if isinstance(value, list):
-			joined_path = os.path.join(*value)
-		else:
+		if not value:
+			raise ValueError("The path cannot be empty")
+		
+		if isinstance(value, (Path, str)):
 			# Cast to string to convert Path objects to string
 			joined_path = str(value)
+		elif isinstance(value, list):
+			joined_path = os.path.join(*value)
+		else:
+			raise ValueError("The path must be a string or a list of strings")
 
 		# Ensure no double-slashes, and exactly 1 final slash
 		self._path = os.path.join(os.path.normpath(joined_path), '')
@@ -490,3 +498,8 @@ class DirPath(Path):
 			DirPath: The child directory of this directory.
 		"""
 		return DirPath([self.path, dir_name])
+	
+if __name__ == "__main__":
+	path = DirPath(['/mnt/Photography/Recent/Lightroom/2023/2023-08-05/hdr/', 'aligned'])
+	file = FilePath([path, 'IMG_1234.jpg'])
+	print(file)
