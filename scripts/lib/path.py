@@ -30,8 +30,8 @@ import exifread
 import exifread.utils
 import exifread.tags.exif
 import exifread.classes
-from scripts.import_sd..import_sd.exif import ExifTag
-from scripts.import_sd..import_sd.validator import Validator
+from scripts.import_sd.exif import ExifTag
+from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
 
