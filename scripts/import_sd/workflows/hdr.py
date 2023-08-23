@@ -218,7 +218,11 @@ class HDRWorkflow(Workflow):
 		"""
 		# Darktable cannot be run in parallel, so we need to run it sequentially.
 		# -- This can apparently be addressed with the library param: darktable-cli --library /path/to/library.db <input file> <output file>
-		return [self._subprocess_single_tif(photo, exe) for photo in files]
+		# -- update: this does not appear to be true.
+		results = []
+		for photo in files:
+			results.append(self._subprocess_single_tif(photo, exe))
+		return results
 
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
 			futures = [executor.submit(self._subprocess_single_tif, photo, exe) for photo in files]
