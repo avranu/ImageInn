@@ -2,3 +2,5 @@ tqdm
 exifread
 djangofoundry
 argparse
+rawpy
+imageio

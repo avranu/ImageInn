@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -41,7 +41,7 @@ class StackWorkflow(Workflow):
 	raw_extension : str
 	dry_run : bool = False
 
-	def __init__(self, base_path : str, raw_extension : str = 'arw', dry_run : bool = False):
+	def __init__(self, base_path : str | list[str], raw_extension : str = 'arw', dry_run : bool = False):
 		self.base_path = base_path
 		self.raw_extension = raw_extension.lower()
 		self.dry_run = dry_run

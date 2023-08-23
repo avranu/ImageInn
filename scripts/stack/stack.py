@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: stack.py
-		Project: code
+		Project: stack
 		Created Date: 01 Apr 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Tue Apr 04 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -31,6 +31,8 @@ import logging
 import logging.config
 from tqdm import tqdm
 from enum import Enum
+
+from scripts.lib.path import FilePath, DirPath
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +78,7 @@ class Stack:
 	"""
 
 	_config : dict = dict()
-	_folder_path: str = ''
+	_folder_path: DirPath
 	_file_prefix: str = ''
 	_file_suffix: str = '.NEF'
 	_verbose: bool = False
@@ -111,7 +113,7 @@ class Stack:
 		"""
 		return self.config.get('max_stack_size', 3)
 
-	def get_path(self, path : str) -> str:
+	def get_path(self, path : str) -> DirPath:
 		"""
 		Returns the path to a directory in the folder.
 

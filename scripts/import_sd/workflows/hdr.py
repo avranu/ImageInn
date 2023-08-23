@@ -30,6 +30,8 @@ import time
 from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from tqdm import tqdm
+import rawpy
+import imageio
 
 import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as ConcurrentTimeoutError
@@ -51,6 +53,13 @@ class Timeout(Choices):
 	HDR = 900			# 15 minutes
 	TIFF = 300			# 5 minutes
 	ALIGN = 300			# 5 minutes # TODO
+
+class TiffMethods(Choices):
+	"""
+	Enum for the different methods to use for converting RAW to TIFF.
+	"""
+	RAWPY = 'rawpy'
+	DARKTABLE = 'darktable-cli'
 
 MAX_THREADS = 4
 
@@ -156,17 +165,17 @@ class HDRWorkflow(Workflow):
 		#tiff_files = self._subprocess_tif('convert', files)
 
 		# Darktable
-		tiff_files = self._subprocess_tif('darktable-cli', files)
+		tiff_files = self._subprocess_tif(TiffMethods.DARKTABLE, files)
 
 		return tiff_files
 
-	def _subprocess_single_tif(self, photo : Photo, exe : str) -> Photo:
+	def _subprocess_single_tif(self, photo : Photo, method : Optional[TiffMethods.values] = None) -> Photo:
 		"""
 		Convert a single raw photo to a TIFF file.
 
 		Args:
 			photo (Photo): The photo to convert.
-			exe (str): The executable to use.
+			method (str): The method to use.
 
 		Returns:
 			Photo: The converted photo.
@@ -199,17 +208,19 @@ class HDRWorkflow(Workflow):
 		'''
 
 		for i in range(MAX_RETRIES):
-			# Use the appropriate exe to convert the file
-			logger.debug('Creating tiff file %s from %s using %s', tmp_tiff_path, photo.path, exe)
-			output, error = self.subprocess([exe, photo.path, tmp_tiff_path.path], check=False)
+			match method:
+				case TiffMethods.RAWPY:
+					tif = self.convert_tif_rawpy(photo, tmp_tiff_path)
+				case TiffMethods.DARKTABLE | None:
+					tif = self.convert_tif_darktable(photo, tmp_tiff_path)
+				case _:
+					raise ValueError(f'Unknown tiff conversion method {method}')
 
-			# DB still locked from last darktable process
-			if re.search(r'the database lock file', error, re.IGNORECASE):
+			if tif is None:
 				# Wait a few seconds, then try again.
-				logger.info('Database lock file detected. Waiting 5 seconds and trying again. (%d/%d)', i+1, MAX_RETRIES)
-
 				# Sleep a little longer each time, up to a maximum time.
 				sleep_time = min(60, 5 * (i+1))
+				logger.info('Waiting %d seconds and trying again. (%d/%d)', sleep_time, i+1, MAX_RETRIES)
 				time.sleep(sleep_time)
 				continue
 
@@ -218,9 +229,7 @@ class HDRWorkflow(Workflow):
 
 		# Check that it exists
 		if not tmp_tiff_path.exists():
-			logger.error('Could not find %s after conversion from %s using %s', tmp_tiff_path, photo.path, exe)
-			logger.error('Output: %s', output)
-			logger.error('Error: %s', error)
+			logger.error('Could not find %s after conversion from %s using %s', tmp_tiff_path, photo.path, method)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_tiff_path)
 
 		# Copy EXIF data using ExifTool
@@ -232,14 +241,58 @@ class HDRWorkflow(Workflow):
 
 		# Return a photo object (ensuring the path exists) without the _tmp suffix.
 		return Photo(tiff_path)
+	
+	def convert_tif_rawpy(self, photo : Photo, tif_path : FilePath) -> Photo | None:
+		"""
+		Convert a single raw photo to a TIFF file using rawpy.
 
-	def _subprocess_tif(self, exe: str, files: list[Photo]) -> list[Photo]:
+		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors, 
+		this method will raise an exception.
+
+		Args:
+			photo (Photo): The photo to convert.
+			tif_path (FilePath): The path to the TIFF file to create.
+
+		Returns:
+			Photo: The converted photo. Returns None if an expected error occurred that we can retry.
+		"""
+		with rawpy.imread(photo) as raw:
+			rgb = raw.postprocess()
+		imageio.imsave(tif_path, rgb)
+
+		return Photo(tif_path)
+	
+	def convert_tif_darktable(self, photo : Photo, tiff_path : FilePath) -> Photo | None:
+		"""
+		Convert a single raw photo to a TIFF file using darktable.
+
+		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors, 
+		this method will raise an exception.
+		
+		Args:
+			photo (Photo): The photo to convert.
+			tif_path (FilePath): The path to the TIFF file to create.
+
+		Returns:
+			Photo: The converted photo.	Returns None if an expected error occurred that we can retry.
+		"""
+		logger.debug('Creating tiff file %s from %s using darktable-cli', tiff_path, photo.path)
+		output, error = self.subprocess(['darktable-cli', photo.path, tiff_path.path], check=False)
+
+		# DB still locked from last darktable process
+		if re.search(r'the database lock file', error, re.IGNORECASE):
+			logger.info('Database lock file detected for Darktable.')
+			return None
+
+		return Photo(tiff_path)
+
+	def _subprocess_tif(self, files: list[Photo], method : Optional[TiffMethods.values] = None) -> list[Photo]:
 		"""
 		Convert a list of raw photos to TIFF files using multithreading and timeouts.
 
 		Args:
-			exe (str): The executable to use.
 			files (list[Photo]): The photos to convert.
+			method (str): The method to use.
 
 		Returns:
 			list[Photo]: The converted photos.
@@ -249,7 +302,7 @@ class HDRWorkflow(Workflow):
 		# -- update: this does not appear to be true.
 		results = []
 		for photo in files:
-			tif = self._subprocess_single_tif(photo, exe)
+			tif = self._subprocess_single_tif(photo, method)
 			results.append(tif)
 			# Wait for cleanup
 			#time.sleep(1)
@@ -324,7 +377,7 @@ class HDRWorkflow(Workflow):
 				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', aligned_path])
 
 				# Rename the file to remove _tmp
-				clean_path = FilePath(re.sub(r'_tmp_', '_', aligned_path))
+				clean_path = FilePath(re.sub(r'aligned_tmp_', 'aligned_', aligned_path))
 				self.rename(aligned_path, clean_path)
 
 				# Add the photo to the list

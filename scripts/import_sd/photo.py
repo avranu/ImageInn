@@ -710,21 +710,6 @@ class FakePhoto(Photo):
 	"""
 	This is used to mock a photo for testing purposes and dry runs.
 	"""
-
-	@property
-	def path(self) -> str:
-		"""
-		The path to the photo.
-		"""
-		return self._path
-
-	@path.setter
-	def path(self, value: str):
-		"""
-		The path to the photo, which NORMALLY must already exist. For a fake photo, it does not need to exist.
-		"""
-		self._path = os.path.normpath(value)
-
 	@property
 	def ss(self) -> Decimal:
 		"""
@@ -825,3 +810,8 @@ class FakePhoto(Photo):
 		"""
 		return 'fake'
 
+	def validate(self) -> bool:
+		"""
+		Always return True for FakePhoto.
+		"""
+		return True

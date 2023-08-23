@@ -56,15 +56,17 @@ class Path(str, ABC):
 		return self._path
 
 	@path.setter
-	def path(self, value: list[str] | str):
+	def path(self, value: str | list[str]):
 		"""
 		Set the path
 		"""
 		if isinstance(value, list):
 			joined_path = os.path.join(*value)
+			logger.critical("Path is a list: %s. Result will be %s", value, os.path.normpath(joined_path))
 		else:
 			# Cast to string to convert Path objects to string
 			joined_path = str(value)
+			logger.critical("Path is not a list: %s. Result will be %s", value, os.path.normpath(joined_path))
 
 		# Eliminate double slashes
 		self._path = os.path.normpath(joined_path)
@@ -383,7 +385,7 @@ class DirPath(Path):
 		return self._path
 
 	@path.setter
-	def path(self, value: list[str] | str):
+	def path(self, value: str | list[str]):
 		"""
 		Set the path
 		"""
