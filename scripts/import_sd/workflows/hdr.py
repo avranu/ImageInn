@@ -263,6 +263,9 @@ class HDRWorkflow(Workflow):
 		logger.debug('Copying exif data from %s to %s', photo.path, tmp_tiff_path)
 		self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', tmp_tiff_path])
 
+		# Rename the file to remove _tmp
+		self.rename(tmp_tiff_path, tiff_path)
+
 		# Return a photo object (ensuring the path exists) without the _tmp suffix.
 		return Photo(tiff_path)
 
