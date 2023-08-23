@@ -366,22 +366,19 @@ class HDRWorkflow(Workflow):
 			# Create the photos
 			for idx, photo in tqdm(enumerate(photos), desc="Aligning Images...", ncols=100):
 				# Create the path.
-				output_path = FilePath([self.aligned_path, f'aligned_{idx:04}.tif'])
+				output_path = FilePath([self.aligned_path, f'aligned_tmp_{idx:04}.tif'])
+
+				# Copy EXIF data using ExifTool
+				logger.debug('Copying exif data from %s to %s', photo.path, output_path)
+				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', output_path])
+
 				# Create a new file named {photo.filename}_aligned.{ext}
 				filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
 				aligned_path = FilePath([self.aligned_path, filename])
 				self.rename(output_path, aligned_path)
 
-				# Copy EXIF data using ExifTool
-				logger.debug('Copying exif data from %s to %s', photo.path, aligned_path)
-				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', aligned_path])
-
-				# Rename the file to remove _tmp
-				clean_path = FilePath(re.sub(r'aligned_tmp_', 'aligned_', aligned_path))
-				self.rename(aligned_path, clean_path)
-
 				# Add the photo to the list
-				aligned_photo = self.get_photo(clean_path)
+				aligned_photo = self.get_photo(aligned_path)
 				aligned_photos.append(aligned_photo)
 
 		except subprocess.CalledProcessError as e:
