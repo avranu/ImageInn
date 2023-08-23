@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -94,11 +94,8 @@ class Queue:
 			self.flag(photo, destination)
 			logger.warning(f"Checksums do not match for {photo.path} and {destination.path}")
 
-		# Get the destination directory
-		destination_dir = os.path.dirname(destination.path)
-
 		# Append it to the queue
-		self._queue.setdefault(destination_dir, []).append(photo)
+		self._queue.setdefault(destination.directory, []).append(photo)
 
 		return True
 
@@ -276,7 +273,7 @@ class Queue:
 
 		return count
 
-	def write(self, destination_folder: str, output_path: Optional[str] = None) -> str:
+	def write(self, destination_folder: str, output_path: Optional[str | list[str] | FilePath] = None) -> str:
 		"""
 		Save a portion of the queue to a file (for the given destination), one photo path per line.
 
@@ -290,11 +287,13 @@ class Queue:
 			str: The path the queue was saved to.
 		"""
 		if output_path is None:
-			output_path = f"copy_queue_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt"
+			output_path = FilePath(f"copy_queue_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.txt")
+		elif not isinstance(output_path, FilePath):
+			output_path = FilePath(output_path)
 
 		# If the file already exists, log a warning
-		if os.path.exists(output_path) and not output_path.lower().endswith(".txt"):
-				raise FileExistsError(f"Queue file already exists: {output_path}. Refusing to overwrite because it isn't a text file.")
+		if output_path.exists() and not output_path.extension == 'txt':
+			raise FileExistsError(f"Queue file already exists: {output_path}. Refusing to overwrite because it isn't a text file.")
 
 		photos_to_copy = self._queue.get(destination_folder, [])
 		with open(output_path, "w") as file:

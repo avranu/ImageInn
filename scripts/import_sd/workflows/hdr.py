@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -77,7 +77,7 @@ class HDRWorkflow(Workflow):
 	dry_run : bool
 	onconflict : OnConflict
 
-	def __init__(self, base_path : str, raw_extension : str = 'arw', onconflict : OnConflict = OnConflict.OVERWRITE, dry_run : bool = False):
+	def __init__(self, base_path : str | list[str] | FilePath, raw_extension : str = 'arw', onconflict : OnConflict = OnConflict.OVERWRITE, dry_run : bool = False):
 		self.base_path 		= base_path
 		self.raw_extension 	= raw_extension
 		self.dry_run 		= dry_run
@@ -88,21 +88,21 @@ class HDRWorkflow(Workflow):
 		"""
 		The path to the HDR directory.
 		"""
-		return DirPath([self.base_path, 'hdr'])
+		return self.base_path.child('hdr')
 
 	@property
 	def tiff_path(self) -> DirPath:
 		"""
 		The path to the tiff directory.
 		"""
-		return DirPath([self.hdr_path, 'tiff'])
+		return self.base_path.child('tiff')
 
 	@property
 	def aligned_path(self) -> DirPath:
 		"""
 		The path to the aligned directory.
 		"""
-		return DirPath([self.hdr_path, 'aligned'])
+		return self.base_path.child('aligned')
 
 	def run(self) -> bool:
 		"""
@@ -114,9 +114,7 @@ class HDRWorkflow(Workflow):
 		try:
 			result = self.process_brackets()
 		finally:
-			# Clean up empty directories
-			for directory in [self.tiff_path, self.aligned_path]:
-				self.rmdir(directory)
+			self.cleanup()
 
 		if result:
 			logger.info('HDR workflow completed successfully. %d HDRs created.', len(result))
@@ -124,6 +122,21 @@ class HDRWorkflow(Workflow):
 
 		logger.error('HDR workflow failed.')
 		return False
+	
+	def cleanup(self):
+		"""
+		Clean up any temporary files created by the workflow.
+		"""
+		# Remove all _tmp files in both tiff_path and aligned_path
+		for directory in [self.tiff_path, self.aligned_path]:
+			for file in directory.get_files():
+				if file.endswith('_tmp.tif'):
+					self.delete(file)
+				elif file.endswith('.tif_original'):
+					self.delete(file)
+
+			# Remove the directory if it is now empty
+			self.rmdir(directory)
 
 	def convert_to_tiff(self, files : list[Photo]) -> list[Photo]:
 		"""
@@ -185,7 +198,6 @@ class HDRWorkflow(Workflow):
 			tiff_path_escaped = FilePath(tmp_tiff_path.replace('\\', '/'))
 		'''
 
-
 		for i in range(MAX_RETRIES):
 			# Use the appropriate exe to convert the file
 			logger.debug('Creating tiff file %s from %s using %s', tmp_tiff_path, photo.path, exe)
@@ -195,7 +207,10 @@ class HDRWorkflow(Workflow):
 			if re.search(r'the database lock file', error, re.IGNORECASE):
 				# Wait a few seconds, then try again.
 				logger.info('Database lock file detected. Waiting 5 seconds and trying again. (%d/%d)', i+1, MAX_RETRIES)
-				time.sleep(5)
+
+				# Sleep a little longer each time, up to a maximum time.
+				sleep_time = min(60, 5 * (i+1))
+				time.sleep(sleep_time)
 				continue
 
 			# Otherwise, no need to loop more
@@ -237,7 +252,7 @@ class HDRWorkflow(Workflow):
 			tif = self._subprocess_single_tif(photo, exe)
 			results.append(tif)
 			# Wait for cleanup
-			time.sleep(1)
+			#time.sleep(1)
 		return results
 
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
@@ -320,7 +335,7 @@ class HDRWorkflow(Workflow):
 			logger.error('Could not align images -> %s', e)
 			# Clean up aligned photos we created
 			for aligned_photo in aligned_photos:
-				self.delete(aligned_photo.path)
+				self.delete(aligned_photo)
 			return []
 
 		finally:
@@ -328,11 +343,11 @@ class HDRWorkflow(Workflow):
 			for tiff in tiff_files:
 				# Ensure they end in .tif. This is technically unnecessary, but provides an extra layer of safety deleting files.
 				if not tiff.path.endswith('.tif'):
-					raise ValueError(f'Deleting tiff file {tiff.path}, but it does not end in .tif')
+					raise ValueError(f'Deleting tiff file {tiff}, but it does not end in .tif')
 
-				logger.debug('Deleting %s', tiff.path)
-				self.delete(tiff.path)
-				self.delete(tiff.path + '_original')
+				logger.debug('Deleting %s', tiff)
+				self.delete(tiff)
+				self.delete(FilePath(tiff.path + '_original'))
 
 			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
 
@@ -375,10 +390,9 @@ class HDRWorkflow(Workflow):
 
 		# Add ".tmp" to the end of the filename until it is finished
 		tmp_filepath = filepath.append_suffix('_tmp')
-		tmp_filename = tmp_filepath.filename
 
 		# If the file already exists, delete it
-		if os.path.exists(tmp_filepath):
+		if tmp_filepath.exists():
 			logger.debug('Deleting existing file "%s"', tmp_filepath)
 			self.delete(tmp_filepath)
 
@@ -395,7 +409,7 @@ class HDRWorkflow(Workflow):
 			return None
 
 		# Ensure the file was created
-		if not self.dry_run and not os.path.exists(tmp_filepath):
+		if not self.dry_run and not tmp_filepath.exists():
 			logger.error('Unable to create HDR image at %s', tmp_filepath)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_filepath)
 
@@ -450,7 +464,7 @@ class HDRWorkflow(Workflow):
 					raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. FilePath: {image.path}')
 
 				self.delete(image.path)
-				self.delete(image.path + '_original')
+				self.delete(FilePath(image.path + '_original'))
 
 			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
 
@@ -558,10 +572,10 @@ class HDRWorkflow(Workflow):
 			case OnConflict.RENAME:
 				logger.info('Renaming %s', path)
 				newpath = path
-				for i in range(1, 100):
-					newpath = path.filename.replace(f'.{path.extension}', f'_{i:02d}.{path.extension}')
-					if not os.path.exists(newpath):
-						return FilePath(newpath)
+				for i in range(100):
+					newpath = path.append_suffix(f'_{i:02d}')
+					if not newpath.exists():
+						newpath
 				raise RuntimeError('Unable to find a new filename for %s', path)
 
 			case OnConflict.FAIL:
@@ -571,13 +585,13 @@ class HDRWorkflow(Workflow):
 			case _:
 				raise ValueError(f'Unknown onconflict value {self.onconflict}')
 
-	def name_hdr(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str] = None, short : bool = False) -> str:
+	def name_hdr(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str | list[str] | DirPath] = None, short : bool = False) -> str:
 		"""
 		Create a new name for an HDR image based on a list of brackets that will be combined.
 
 		Args:
 			photos (list[Photo] | PhotoStack): The photos to combine.
-			output_dir (str, optional): The directory to save the HDR image to.
+			output_dir (str | DirPath, optional): The directory to save the HDR image to.
 			short (bool, optional): Whether to use the short filename or the long filename. Defaults to False (long).
 
 		Returns:
@@ -591,6 +605,8 @@ class HDRWorkflow(Workflow):
 
 		if not output_dir:
 			output_dir = self.hdr_path
+		elif not isinstance(output_dir, DirPath):
+			output_dir = DirPath(output_dir)
 
 		# Get the highest ISO
 		iso = max([p.iso for p in photos])
@@ -604,18 +620,18 @@ class HDRWorkflow(Workflow):
 		first = photos[0]
 
 		# Save the short filename no matter what, because we may use it later if the path is too long.
-		short_filename = f'{first.date.strftime("%Y%m%d")}_{first.number}_x{len(photos)}_{ev}EV_hdr.tif'
+		short_filename = f'{first.ymd}_{first.number}_x{len(photos)}_{ev}EV_hdr.tif'
 
 		if short:
 			filename = short_filename
 		else:
-			filename = f'{first.date.strftime("%Y%m%d")}_{first.camera}_{first.number}_x{len(photos)}_{brightness}B_{ev}EV_{iso}ISO_{ss}SS_{first.lens}_hdr.tif'
+			filename = f'{first.ymd}_{first.camera}_{first.number}_x{len(photos)}_{brightness}B_{ev}EV_{iso}ISO_{ss}SS_{first.lens}_hdr.tif'
 
 		# Replace spaces in the name with dashes
 		filename = filename.replace(' ', '-')
 
 		if short is False:
-			path = os.path.join(output_dir, filename)
+			path = FilePath([output_dir, filename])
 			if len(path) > 255:
 				logger.info('Filename is too long, shortening it: %s', path)
 				filename = short_filename

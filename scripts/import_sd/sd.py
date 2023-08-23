@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -36,27 +36,14 @@ from typing import Any, Dict, Optional, TypedDict
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
 from scripts.import_sd.folder import SDFolder
+from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
 
-class SDCard:
-	_path : str
-
-	def __init__(self, path: str):
-		self.path = path
-
-	@property
-	def path(self) -> str:
-		return self._path
-
-	@path.setter
-	def path(self, value: str):
-		# Ensure a trailing slash
-		self._path = os.path.join(os.path.normpath(value), '')
-
+class SDCard(DirPath):
 	@classmethod
-	def get_media_dir(cls) -> str:
+	def get_media_dir(cls) -> DirPath:
 		"""
 		Get the media directory for the current operating system.
 
@@ -76,25 +63,25 @@ class SDCard:
 
 		# Chromebook
 		if 'CHROMEOS' in os.environ and os.path.exists('/mnt/chromeos/MyFiles/Removable'):
-			return '/mnt/chromeos/MyFiles/Removable'
+			return DirPath('/mnt/chromeos/MyFiles/Removable')
 		if os.name == 'posix' and os.path.exists('/mnt/chromeos/removable'):
-			return '/mnt/chromeos/removable'
+			return DirPath('/mnt/chromeos/removable')
 		if os.name == 'posix' and os.path.exists('/media/removable'):
-			return '/media/removable'
+			return DirPath('/media/removable')
 
 		# Linux + Mac
 		if os.name == 'posix' or sys.platform == 'darwin':
 			if os.path.exists('/Volumes'):
-				return '/Volumes'
+				return DirPath('/Volumes')
 			if os.path.exists('/media'):
-				return '/media'
+				return DirPath('/media')
 			elif os.path.exists('/mnt'):
-				return '/mnt'
+				return DirPath('/mnt')
 
 		# Try media
 		if os.path.exists('/media'):
 			logger.warning('Unknown operating system, trying /media')
-			return '/media'
+			return DirPath('/media')
 
 		# Unsupported
 		raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), '/media')

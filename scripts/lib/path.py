@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -63,7 +63,7 @@ class Path(str, ABC):
 		if isinstance(value, list):
 			joined_path = os.path.join(*value)
 		else:
-			# Cast to string to convert Path() to string
+			# Cast to string to convert Path objects to string
 			joined_path = str(value)
 
 		# Eliminate double slashes
@@ -175,6 +175,34 @@ class Path(str, ABC):
 			Path('/media/pi/SD_CARD/DCIM/100MSDCF/')
 		"""
 		return self.__class__(re.sub(suffix + '$', '', self.path))
+	
+	def is_file(self) -> bool:
+		"""
+		Checks if the given file is a file.
+
+		Returns:
+			bool: True if the file is a file, False otherwise.
+
+		Examples:
+			>>> photo = FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.jpg')
+			>>> photo.is_file()
+			True
+		"""
+		return os.path.isfile(self.path)
+
+	def is_dir(self) -> bool:
+		"""
+		Checks if the given file is a directory.
+
+		Returns:
+			bool: True if the file is a directory, False otherwise.
+
+		Examples:
+			>>> photo = FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.jpg')
+			>>> photo.is_dir()
+			False
+		"""
+		return os.path.isdir(self.path)
 
 	def __str__(self) -> str:
 		return self.path
@@ -303,6 +331,37 @@ class FilePath(Path):
 
 		return FilePath(cleaned_path_and_name + '.' + extension)
 	
+	def change_extension(self, extension: str, suffix : Optional[str] = None) -> FilePath:
+		"""
+		Changes the extension of the file.
+
+		NOTE: This does not change this object. It creates a new FilePath object to return.
+
+		Args:
+			extension (str): The new extension.
+			suffix (str, optional): The suffix to append to the filename before the extension. Defaults to None.
+
+		Returns:
+			FilePath: The new path with the extension changed.
+
+		Examples:
+			>>> path = FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
+			>>> path.change_extension('jpg')
+			FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.jpg')
+			>>> path.change_extension('jpg', '_copy')
+			FilePath('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234_copy.jpg')
+		"""
+		name_suffix = extension if suffix is None else suffix + '.' + extension
+
+		# If there is no decimal, then there is no extension
+		if '.' not in self.path:
+			path_and_name = self.path
+		else:
+			# Split the path into the name and extension
+			path_and_name, old_extension = self.path.rsplit('.', 1)
+
+		return FilePath(path_and_name + name_suffix)
+	
 	def validate(self) -> bool:
 		# IF the path exists, check that it is a file
 		if self.exists() and not os.path.isfile(self.path):
@@ -331,7 +390,7 @@ class DirPath(Path):
 		if isinstance(value, list):
 			joined_path = os.path.join(*value)
 		else:
-			# Cast to string to convert Path() to string
+			# Cast to string to convert Path objects to string
 			joined_path = str(value)
 
 		# Ensure no double-slashes, and exactly 1 final slash
@@ -365,3 +424,65 @@ class DirPath(Path):
 			raise ValueError("The path %s is not a directory", self.path)
 		
 		return True
+	
+	def get_contents(self, sort : bool = True) -> list[Path]:
+		"""
+		Get the contents of this directory.
+
+		Args:
+			sort (bool, optional): Whether or not to sort the contents. Defaults to True.
+		
+		Returns:
+			list[Path]: The contents of this directory.
+		"""
+		contents = []
+		for filename in os.listdir(self.path):
+			path = os.path.join(self.path, filename)
+
+			if os.path.isfile(path):
+				contents.append(FilePath(path))
+			elif os.path.isdir(path):
+				contents.append(DirPath(path))
+			else:
+				logger.warning("Unknown file type for %s", path)
+
+		if sort:
+			contents.sort()
+
+		return contents
+	
+	def get_files(self, sort : bool = True) -> list[FilePath]:
+		"""
+		Get the files in this directory.
+
+		Args:
+			sort (bool, optional): Whether or not to sort the files. Defaults to True.
+
+		Returns:
+			list[FilePath]: The files in this directory.
+		"""
+		return [file for file in self.get_contents(sort) if isinstance(file, FilePath)]
+	
+	def get_subdirectories(self, sort : bool = True) -> list[DirPath]:
+		"""
+		Get the subdirectories of this directory.
+
+		Args:
+			sort (bool, optional): Whether or not to sort the subdirectories. Defaults to True.
+
+		Returns:
+			list[DirPath]: The subdirectories of this directory.
+		"""
+		results = [dir for dir in self.get_contents(sort) if isinstance(dir, DirPath)]
+	
+	def child(self, dir_name : str) -> DirPath:
+		"""
+		Get the child directory of this directory.
+
+		Args:
+			dir_name (str): The name of the child directory.
+
+		Returns:
+			DirPath: The child directory of this directory.
+		"""
+		return DirPath([self.path, dir_name])

@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -68,20 +68,17 @@ class Workflow:
 		return self._base_path
 
 	@base_path.setter
-	def base_path(self, base_path: str | list[str] | DirPath) -> None:
+	def base_path(self, value: str | list[str] | DirPath) -> None:
 		"""
 		Set the path to the network location to copy raw files from the SD Card to.
 
 		Args:
-			base_path (str): The path to the network location to copy raw files from the SD Card to.
+			value (str): The path to the network location to copy raw files from the SD Card to.
 		"""
-		if not isinstance(base_path, DirPath):
-			base_path = DirPath(base_path)
+		if not isinstance(value, DirPath):
+			value = DirPath(value)
 
-		if not Validator.is_dir(base_path):
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), base_path)
-		
-		self._base_path = self._normalize_path(base_path)
+		self._base_path = value
 
 	def get_photos(self, directory : Optional[DirPath] = None) -> list[Photo]:
 		"""
@@ -97,27 +94,14 @@ class Workflow:
 			directory = self.base_path
 
 		# Get all files in the directory (but not subdirectories), and sort them by their filename
-		files = os.listdir(directory.path)
-		files.sort()
+		files = directory.get_files(sort=True)
 
 		photos = []
 		for file in files:
-			if self.raw_extension and file.lower().endswith(self.raw_extension):
-				photos.append(Photo([directory, file]))
+			if file.extension == self.raw_extension:
+				photos.append(Photo(file))
 
 		return photos
-
-	def _normalize_path(self, path: str) -> DirPath:
-		"""
-		Normalize a path for the system, and ensure that it ends with a trailing slash (which is important for rsync)
-
-		Args:
-			path (str): The path to normalize.
-
-		Returns:
-			str: The normalized path.
-		"""
-		return DirPath([os.path.normpath(path), ''])
 
 	def _check_photo(self, photo: Photo, destinations: list[Photo]) -> tuple[bool, list[Photo]]:
 		"""
@@ -174,10 +158,10 @@ class Workflow:
 			>>> generate_name('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234.arw', properties={'number': 5678})
 			'20230805_a7r4-5678_-2 7_10EV_8.27B_800ISO_SAMYANG AF 12mm F2.0.arw'
 			"""
-		if isinstance(photo, str):
+		if not isinstance(photo, Photo):
 			# If properties['number'] is set, pass it to the constructor
 			if properties is not None and 'number' in properties:
-				photo = Photo(photo)
+				photo = Photo(photo, number=properties['number'])
 			else:
 				photo = Photo(photo)
 
@@ -235,7 +219,7 @@ class Workflow:
 			>>> generate_path('/media/pi/SD_CARD/DCIM/100MSDCF/JAM_1234.arw')
 			'/media/pi/NETWORK/2023/2023-08-05/20230805_a7r4-1234_-2 7_10EV_8.27B_800ISO_SAMYANG AF 12mm F2.0.arw'
 		"""
-		if isinstance(photo, str):
+		if not isinstance(photo, Photo):
 			photo = Photo(photo)
 
 		# Get the new filename
@@ -261,9 +245,8 @@ class Workflow:
 		else:
 			year = f'{photo.date:%Y}'
 			date = f'{photo.date:%Y-%m-%d}'
-		path = f'{self.base_path}/{year}/{date}/{filename}'
-
-		return FilePath(path)
+		
+		return FilePath([self.base_path,year,date,filename])
 
 	@classmethod
 	def ask_user_continue(cls, message : str = f"Errors were found:", errors : Optional[list] = None, continue_message : str = "Continue to the next step? [y/n]", throw_error : bool = True) -> bool:
@@ -305,7 +288,7 @@ class Workflow:
 		Args:
 			path (DirPath): The path to create.
 		"""
-		if not os.path.exists(path):
+		if not path.exists():
 			if self.dry_run:
 				logger.info('Would create directory "%s"', path)
 			else:
@@ -325,7 +308,7 @@ class Workflow:
 			else:
 				os.rename(path, destination)
 
-	def subprocess(self, command : str | list[str], cwd : DirPath = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
+	def subprocess(self, command : str | list[str], cwd : Optional[DirPath | str] = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
 		"""
 		Run a subprocess, printing the command and output to the user.
 
@@ -407,10 +390,10 @@ class Workflow:
 			OSError: If the directory is not empty.
 		"""
 		# If it doesn't exist, we're good to go
-		if not os.path.exists(path):
+		if not path.exists():
 			return True
 
-		if os.listdir(path):
+		if path.get_contents():
 			logger.info('Directory "%s" is not empty, so was not deleted.', path)
 			return False
 
@@ -421,7 +404,7 @@ class Workflow:
 
 		return True
 
-	def get_photo(self, path : str) -> Photo:
+	def get_photo(self, path : str | list[str] | FilePath) -> Photo:
 		"""
 		Turn a path into a Photo object.
 
