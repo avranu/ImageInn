@@ -292,7 +292,7 @@ class Workflow:
 			if self.dry_run:
 				logger.info('Would create directory "%s"', path)
 			else:
-				os.makedirs(path, exist_ok=exist_ok)
+				os.makedirs(path.path, exist_ok=exist_ok)
 
 	def rename(self, path : FilePath, destination : FilePath) -> None:
 		"""
@@ -306,7 +306,7 @@ class Workflow:
 			if self.dry_run:
 				logger.info('Would rename "%s" to "%s"', path, destination)
 			else:
-				os.rename(path, destination)
+				os.rename(path.path, destination.path)
 
 	def subprocess(self, command : str | list[str], cwd : Optional[DirPath | str] = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
 		"""
@@ -372,7 +372,7 @@ class Workflow:
 			logger.info('Would delete "%s"', path)
 		else:
 			try:
-				os.remove(path)
+				os.remove(path.path)
 			except FileNotFoundError:
 				logger.debug('File "%s" does not exist, so was not deleted.', path)
 
@@ -400,7 +400,7 @@ class Workflow:
 		if self.dry_run:
 			logger.info('Would delete directory "%s"', path)
 		else:
-			os.rmdir(path)
+			os.rmdir(path.path)
 
 		return True
 
