@@ -24,6 +24,7 @@ import logging
 from scripts.lib.path import FilePath
 from scripts.import_sd.providers.base import Provider
 from scripts.import_sd.photo import Photo
+from scripts.import_sd.photostack import PhotoStack
 
 logger = logging.getLogger(__name__)
 

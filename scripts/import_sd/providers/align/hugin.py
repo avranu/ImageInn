@@ -28,6 +28,7 @@ import tqdm
 from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.providers.align.base import AlignmentProvider
 from scripts.import_sd.photo import Photo
+from scripts.import_sd.photostack import PhotoStack
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class HuginProvider(AlignmentProvider):
 		super().__init__()
 		self.aligned_path = aligned_path
 
-	def next(self, photos: list[Photo]) -> list[Photo]:
+	def next(self, photos: list[Photo] | PhotoStack) -> list[Photo]:
 		"""
 		Align a single bracket of photos
 

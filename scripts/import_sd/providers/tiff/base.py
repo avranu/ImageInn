@@ -51,7 +51,7 @@ class TiffProvider(Provider, ABC):
 
 				tiff = self.next(photo, tmp_path)
 
-				if tiff is None:
+				if not tiff:
 					# Wait a few seconds, then try again.
 					# Sleep a little longer each time, up to a maximum time.
 					sleep_time = min(60, 5 * (i+1))
@@ -70,7 +70,7 @@ class TiffProvider(Provider, ABC):
 
 				# Rename the file to remove the _tmp suffix
 				self.rename(tiff, tiff_path)
-				results[photo] = tiff_path
+				results[photo] = Photo(tiff_path)
 				
 				# Done! No need to loop more
 				break

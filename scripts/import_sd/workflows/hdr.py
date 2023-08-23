@@ -267,6 +267,7 @@ class HDRWorkflow(Workflow):
 			return []
 
 		try:
+			logger.critical('Aligning photos of types: %s', [type(photo) for photo in photos])
 			aligned_photos = self.align_provider.run(tiff_files)
 		finally:
 			# Delete the tiff files
