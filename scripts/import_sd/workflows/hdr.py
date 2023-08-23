@@ -472,6 +472,13 @@ class HDRWorkflow(Workflow):
 
 		logger.debug('Found %d brackets, containing %d photos.', len(brackets), sum([len(bracket) for bracket in brackets]))
 
+		# Due to multithreading limitations in darktable, we can't run more than one darktable-cli process at a time.
+		hdrs = []
+		for bracket in brackets:
+			hdr = self.process_single_bracket(bracket)
+			hdrs.append(hdr)
+
+		'''
 		# Process each bracket using multithreading
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
 			futures = [executor.submit(self.process_single_bracket, bracket) for bracket in brackets]
@@ -486,6 +493,7 @@ class HDRWorkflow(Workflow):
 						logger.debug('HDR image was not created.')
 				except ConcurrentTimeoutError:
 					logger.error("Processing bracket timed out. Skipping this HDR.")
+		'''
 
 		logger.debug('Created %d HDR images', len(hdrs))
 
