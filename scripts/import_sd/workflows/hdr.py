@@ -277,6 +277,9 @@ class HDRWorkflow(Workflow):
 		Returns:
 			list[Photo]: The converted photos.
 		"""
+		# Darktable cannot be run in parallel, so we need to run it sequentially.
+		return [self._subprocess_single_tif(photo, exe) for photo in files]
+
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
 			futures = [executor.submit(self._subprocess_single_tif, photo, exe) for photo in files]
 			tiff_files = []
