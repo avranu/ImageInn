@@ -148,70 +148,6 @@ class HDRWorkflow(Workflow):
 
 		return tiff_files
 
-	@DeprecationWarning
-	def _subprocess_all_tifs(self, exe : str, files : list[Photo]) -> list[Photo]:
-		"""
-		Convert a list of raw photos to tiff using the specified exe.
-
-		NOTE: This does not use multithreading or implement timeouts. Use _subprocess_tif instead.
-
-		This is deprecated
-
-		Args:
-			exe (str): The executable to use to convert the files.
-			files (list[Photo]): The list of files to convert.
-
-		Returns:
-			list[Photo]: The list of converted files.
-		"""
-		logger.debug('Converting %d files to TIFF...', len(files))
-
-		# Create tiff directory
-		self.mkdir(self.tiff_path)
-
-		tiff_files = []
-		for arw in tqdm(files, desc="Converting RAW to TIFF...", ncols=100):
-			# Create a tiff filename
-			tiff_name = arw.filename.lower().replace('.arw', '.tif')
-			tiff_path = FilePath([self.tiff_path, tiff_name])
-
-			# Check if the file already exists
-			if tiff_path.exists():
-				tiff_path = self.handle_conflict(tiff_path)
-				if tiff_path is None:
-					logger.debug('Skipping existing file "%s"', arw.path)
-					continue
-
-			# Darktable-cli doesn't like backslashes for the tiff path
-			tiff_path_escaped = tiff_path
-			'''
-			if exe == 'darktable-cli':
-				logger.debug('Replacing backslashes with forward slashes for darktable in %s', tiff_path)
-				tiff_path_escaped = tiff_path.replace('\\', '/')
-			'''
-
-			# Use the appropriate exe to convert the file
-			logger.debug('Creating tiff file %s from %s using %s', tiff_path, arw.path, exe)
-			output, error = self.subprocess([exe, arw.path, tiff_path_escaped], check=False)
-
-			if error:
-				logger.error('Could not convert %s to tiff using %s -> %s', arw.path, exe, error)
-				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), arw.path)
-
-			# Check that it exists
-			if not os.path.exists(tiff_path):
-				logger.error('Could not find %s after conversion from %s using %s', tiff_path, arw.path, exe)
-				raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tiff_path)
-
-			# Copy EXIF data using ExifTool
-			logger.debug('Copying exif data from %s to %s', arw.path, tiff_path)
-			self.subprocess(['exiftool', '-TagsFromFile', arw.path, '-all', tiff_path])
-
-			# Add the tiff file to the list
-			tiff_files.append(Photo(tiff_path))
-
-		return tiff_files
-
 	def _subprocess_single_tif(self, photo : Photo, exe : str) -> Photo:
 		"""
 		Convert a single raw photo to a TIFF file.
@@ -281,6 +217,7 @@ class HDRWorkflow(Workflow):
 			list[Photo]: The converted photos.
 		"""
 		# Darktable cannot be run in parallel, so we need to run it sequentially.
+		# -- This can apparently be addressed with the library param: darktable-cli --library /path/to/library.db <input file> <output file>
 		return [self._subprocess_single_tif(photo, exe) for photo in files]
 
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
