@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -18,7 +18,7 @@
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
-import datetime
+from datetime import datetime
 from enum import Enum
 import errno
 import math
@@ -92,11 +92,11 @@ class Photo(FilePath):
 			logger.info('Path is not a string: %s. It is %s', self.path, type(self.path).__name__)
 			raise TypeError('Path must be a string. It is currently a %s' % type(self.path).__name__)
 
-		if not os.path.exists(self.path):
+		if self.exists():
 			logger.info('Path does not exist: %s', self.path)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
 
-		if not os.path.isfile(self.path):
+		if not self.is_file(self.path):
 			logger.info('Path is not a file: %s', self.path)
 			raise ValueError('Path must be a file')
 
@@ -176,7 +176,22 @@ class Photo(FilePath):
 		value = self.attr(ExifTag.DATE)
 		if not value:
 			return None
-		return datetime.datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+		return datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
+	
+	@property
+	def ymd(self) -> str:
+		"""
+		Get the date of the photo in YMD.
+
+		Returns:
+			str: The date of the photo in a human-readable format.
+
+		Examples:
+			>>> photo = Photo('/media/pi/SD_CARD/DCIM/100MSDCF/IMG_1234.arw')
+			>>> photo.ymd
+			'20200101'
+		"""
+		return self.date.strftime('%Y%m%d')
 
 	@property
 	def dimensions(self) -> Dict[str, int] | None:
@@ -571,10 +586,10 @@ class Photo(FilePath):
 			return self._number
 
 		# Start with the standard RAW format from a DSLR
-		matches = re.search(r'^_?[a-z0-9]+_(\d+)(\.[a-zA-Z]{1,5})?$', os.path.basename(self.path), re.IGNORECASE)
+		matches = re.search(r'^_?[a-z0-9]+_(\d+)(\.[a-zA-Z]{1,5})?$', self.filename, re.IGNORECASE)
 		if not matches:
 			# Try our custom format
-			matches = re.search(r'^\d{8}_[a-z0-9-]+_(\d+)', os.path.basename(self.path), re.IGNORECASE)
+			matches = re.search(r'^\d{8}_[a-z0-9-]+_(\d+)', self.filename, re.IGNORECASE)
 			if not matches:
 				return None
 
@@ -736,7 +751,7 @@ class FakePhoto(Photo):
 		"""
 		The FAKE date of the photo.
 		"""
-		return datetime.datetime.now()
+		return datetime.now()
 
 	@property
 	def exposure_bias(self) -> Decimal:
