@@ -60,11 +60,11 @@ class Path(str, ABC):
 		"""
 		Set the path
 		"""
-		if isinstance(value, str):
+		if isinstance(value, list):
+			joined_path = os.path.join(*value)
+		else:
 			# Cast to string to convert Path() to string
 			joined_path = str(value)
-		else:
-			joined_path = os.path.join(*value)
 
 		# Eliminate double slashes
 		self._path = os.path.normpath(joined_path)
@@ -316,7 +316,6 @@ class DirPath(Path):
 	
 	NOTE: This directory does not need to exist yet. os.path.exists() should not be assumed to be true.
 	"""
-
 	@property
 	def path(self) -> str:
 		"""
@@ -329,13 +328,14 @@ class DirPath(Path):
 		"""
 		Set the path
 		"""
-		if isinstance(value, str):
+		if isinstance(value, list):
+			joined_path = os.path.join(*value)
+		else:
 			# Cast to string to convert Path() to string
 			joined_path = str(value)
-		else:
-			joined_path = os.path.join(*value)
 
-		self._path = os.path.normpath(joined_path) + '/'
+		# Ensure no double-slashes, and exactly 1 final slash
+		self._path = os.path.join(os.path.normpath(joined_path), '')
 
 		self.validate()
 

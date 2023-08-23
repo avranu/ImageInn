@@ -65,11 +65,11 @@ class Photo(FilePath):
 		"""
 		The path to the photo, which must already exist.
 		"""
-		if isinstance(value, str):
+		if isinstance(value, list):
+			joined_path = os.path.join(*value)
+		else:
 			# Cast to string to convert FilePath() to string
 			joined_path = str(value)
-		else:
-			joined_path = os.path.join(*value)
 
 		self._path = os.path.normpath(joined_path)
 
