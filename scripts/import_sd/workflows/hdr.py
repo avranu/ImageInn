@@ -43,6 +43,7 @@ from scripts.import_sd.photo import Photo
 from scripts.import_sd.photostack import PhotoStack
 from scripts.import_sd.workflow import Workflow
 from scripts.import_sd.stackcollection import StackCollection
+from scripts.import_sd.providers import tiff, merge, align
 
 logger = logging.getLogger(__name__)
 
@@ -86,11 +87,17 @@ class HDRWorkflow(Workflow):
 	dry_run : bool
 	onconflict : OnConflict
 
+	tif_provider : tiff.TiffProvider
+	align_provider : align.AlignmentProvider
+	hdr_provider : merge.HDRProvider
+
 	def __init__(self, base_path : str | list[str] | FilePath, raw_extension : str = 'arw', onconflict : OnConflict = OnConflict.OVERWRITE, dry_run : bool = False):
 		self.base_path 		= base_path
 		self.raw_extension 	= raw_extension
 		self.dry_run 		= dry_run
 		self.onconflict 	= onconflict
+
+		self.tif_provider 	= tiff.DarktableProvider()
 
 	@property
 	def hdr_path(self) -> DirPath:
@@ -161,130 +168,34 @@ class HDRWorkflow(Workflow):
 			FileNotFoundError: If the converted file cannot be found.
 			FileFoundError: If self.onconflict is set to "fail" and the tif image already exists.
 		"""
-		# ImageMagick
-		#tiff_files = self._subprocess_tif('convert', files)
+		job = {}
+		# Determine an output path for each file
+		for photo in files:
+			# Create a tiff filename
+			tiff_name = re.sub(rf'\.{photo.extension}$', '.tif', photo.filename, flags=re.IGNORECASE)
+			tiff_path = FilePath([self.tiff_path, tiff_name])
 
-		# Darktable
-		tiff_files = self._subprocess_tif(files, TiffMethods.DARKTABLE)
+			# Handle conflicts
+			if tiff_path.exists():
+				tiff_path = self.handle_conflict(tiff_path)
+				if tiff_path is None:
+					logger.debug('Skipping existing file "%s"', photo.path)
+					continue
 
-		return tiff_files
+			# Add _tmp to the filename until it is finished converting
+			tmp_tiff_path = tiff_path.append_suffix('_tmp')
 
-	def _subprocess_single_tif(self, photo : Photo, method : Optional[TiffMethods.values] = None) -> Photo:
-		"""
-		Convert a single raw photo to a TIFF file.
+			# If the tmp file already exists, delete it
+			if tmp_tiff_path.exists():
+				logger.debug('Deleting existing tmp file %s', tmp_tiff_path)
+				self.delete(tmp_tiff_path)
 
-		Args:
-			photo (Photo): The photo to convert.
-			method (str): The method to use.
+			job[photo] = tmp_tiff_path
 
-		Returns:
-			Photo: The converted photo.
-		"""
-		# Create a tiff filename
-		tiff_name = re.sub(rf'\.{photo.extension}$', '.tif', photo.filename, flags=re.IGNORECASE)
-		tiff_path = FilePath([self.tiff_path, tiff_name])
+		# Run the conversion
+		results = self.tif_provider.run(job)
 
-		# Check if the file already exists
-		if tiff_path.exists():
-			tiff_path = self.handle_conflict(tiff_path)
-			if not tiff_path:
-				logger.debug('Skipping existing file "%s"', photo.path)
-				return None
-
-		# Add _tmp to the filename until it is finished converting
-		tmp_tiff_path = tiff_path.append_suffix('_tmp')
-
-		# If the tmp file already exists, delete it
-		if tmp_tiff_path.exists():
-			logger.debug('Deleting existing tmp file %s', tmp_tiff_path)
-			self.delete(tmp_tiff_path)
-
-		'''
-		# darktable-cli doesn't like backslashes for the tiff path
-		tiff_path_escaped = tmp_tiff_path
-		if exe == 'darktable-cli':
-			logger.debug('Replacing backslashes with forward slashes for darktable in %s', tmp_tiff_path)
-			tiff_path_escaped = FilePath(tmp_tiff_path.replace('\\', '/'))
-		'''
-
-		for i in range(MAX_RETRIES):
-			match method:
-				case TiffMethods.RAWPY:
-					tif = self.convert_tif_rawpy(photo, tmp_tiff_path)
-				case TiffMethods.DARKTABLE | None:
-					tif = self.convert_tif_darktable(photo, tmp_tiff_path)
-				case _:
-					raise ValueError(f'Unknown tiff conversion method {method}')
-
-			if tif is None:
-				# Wait a few seconds, then try again.
-				# Sleep a little longer each time, up to a maximum time.
-				sleep_time = min(60, 5 * (i+1))
-				logger.info('Waiting %d seconds and trying again. (%d/%d)', sleep_time, i+1, MAX_RETRIES)
-				time.sleep(sleep_time)
-				continue
-
-			# Otherwise, no need to loop more
-			break
-
-		# Check that it exists
-		if not tmp_tiff_path.exists():
-			logger.error('Could not find %s after conversion from %s using %s', tmp_tiff_path, photo.path, method)
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_tiff_path)
-
-		# Copy EXIF data using ExifTool
-		logger.debug('Copying exif data from %s to %s', photo.path, tmp_tiff_path)
-		self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', tmp_tiff_path])
-
-		# Rename the file to remove _tmp
-		self.rename(tmp_tiff_path, tiff_path)
-
-		# Return a photo object (ensuring the path exists) without the _tmp suffix.
-		return Photo(tiff_path)
-	
-	def convert_tif_rawpy(self, photo : Photo, tif_path : FilePath) -> Photo | None:
-		"""
-		Convert a single raw photo to a TIFF file using rawpy.
-
-		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors, 
-		this method will raise an exception.
-
-		Args:
-			photo (Photo): The photo to convert.
-			tif_path (FilePath): The path to the TIFF file to create.
-
-		Returns:
-			Photo: The converted photo. Returns None if an expected error occurred that we can retry.
-		"""
-		with rawpy.imread(photo) as raw:
-			rgb = raw.postprocess()
-		imageio.imsave(tif_path, rgb)
-
-		return Photo(tif_path)
-	
-	def convert_tif_darktable(self, photo : Photo, tiff_path : FilePath) -> Photo | None:
-		"""
-		Convert a single raw photo to a TIFF file using darktable.
-
-		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors, 
-		this method will raise an exception.
-		
-		Args:
-			photo (Photo): The photo to convert.
-			tif_path (FilePath): The path to the TIFF file to create.
-
-		Returns:
-			Photo: The converted photo.	Returns None if an expected error occurred that we can retry.
-		"""
-		logger.debug('Creating tiff file %s from %s using darktable-cli', tiff_path, photo.path)
-		output, error = self.subprocess(['darktable-cli', photo.path, tiff_path.path], check=False)
-
-		# DB still locked from last darktable process
-		if re.search(r'the database lock file', error, re.IGNORECASE):
-			logger.info('Database lock file detected for Darktable.')
-			return None
-
-		return Photo(tiff_path)
+		return results.values()
 
 	def _subprocess_tif(self, files: list[Photo], method : Optional[TiffMethods.values] = None) -> list[Photo]:
 		"""
