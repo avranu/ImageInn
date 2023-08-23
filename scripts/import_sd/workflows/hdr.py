@@ -35,6 +35,7 @@ import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as ConcurrentTimeoutError
 
 from scripts.lib.choices import Choices
+from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.path import FilePath
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.photostack import PhotoStack
@@ -51,8 +52,6 @@ class Timeout(Choices):
 	TIFF = 300			# 5 minutes
 	ALIGN = 300			# 5 minutes # TODO
 
-# TODO
-#MAX_RETRIES = 3
 MAX_THREADS = 4
 
 class OnConflict(Choices):
@@ -186,9 +185,21 @@ class HDRWorkflow(Workflow):
 			tiff_path_escaped = FilePath(tmp_tiff_path.replace('\\', '/'))
 		'''
 
-		# Use the appropriate exe to convert the file
-		logger.debug('Creating tiff file %s from %s using %s', tmp_tiff_path, photo.path, exe)
-		output, error = self.subprocess([exe, photo.path, tmp_tiff_path.path], check=False)
+
+		for i in range(MAX_RETRIES):
+			# Use the appropriate exe to convert the file
+			logger.debug('Creating tiff file %s from %s using %s', tmp_tiff_path, photo.path, exe)
+			output, error = self.subprocess([exe, photo.path, tmp_tiff_path.path], check=False)
+
+			# DB still locked from last darktable process
+			if re.search(r'the database lock file', error, re.IGNORECASE):
+				# Wait a few seconds, then try again.
+				logger.info('Database lock file detected. Waiting 5 seconds and trying again. (%d/%d)', i+1, MAX_RETRIES)
+				time.sleep(5)
+				continue
+
+			# Otherwise, no need to loop more
+			break
 
 		# Check that it exists
 		if not tmp_tiff_path.exists():
@@ -223,7 +234,10 @@ class HDRWorkflow(Workflow):
 		# -- update: this does not appear to be true.
 		results = []
 		for photo in files:
-			results.append(self._subprocess_single_tif(photo, exe))
+			tif = self._subprocess_single_tif(photo, exe)
+			results.append(tif)
+			# Wait for cleanup
+			time.sleep(1)
 		return results
 
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
