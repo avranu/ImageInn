@@ -366,7 +366,7 @@ class FilePath(Path):
 	
 	def validate(self) -> bool:
 		# IF the path exists, check that it is a file
-		if self.exists() and not os.path.isfile(self.path):
+		if self.exists() and not self.is_file():
 			raise ValueError("The path %s is not a file", self.path)
 		
 		return True
@@ -422,7 +422,7 @@ class DirPath(Path):
 			bool: True if the path is valid, False otherwise.
 		"""
 		# IF it exists, ensure it is a directory
-		if self.exists() and not os.path.isdir(self.path):
+		if self.exists() and not self.is_dir():
 			raise ValueError("The path %s is not a directory", self.path)
 		
 		return True
@@ -477,7 +477,7 @@ class DirPath(Path):
 		Returns:
 			list[DirPath]: The subdirectories of this directory.
 		"""
-		results = [dir for dir in self.get_contents(sort) if isinstance(dir, DirPath)]
+		return [dir for dir in self.get_contents(sort) if isinstance(dir, DirPath)]
 	
 	def child(self, dir_name : str) -> DirPath:
 		"""

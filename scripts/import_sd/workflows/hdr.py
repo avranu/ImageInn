@@ -165,7 +165,7 @@ class HDRWorkflow(Workflow):
 		#tiff_files = self._subprocess_tif('convert', files)
 
 		# Darktable
-		tiff_files = self._subprocess_tif(TiffMethods.DARKTABLE, files)
+		tiff_files = self._subprocess_tif(files, TiffMethods.DARKTABLE)
 
 		return tiff_files
 
