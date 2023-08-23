@@ -384,7 +384,10 @@ class Workflow:
 		if self.dry_run:
 			logger.info('Would delete "%s"', path)
 		else:
-			os.remove(path)
+			try:
+				os.remove(path)
+			except FileNotFoundError:
+				logger.debug('File "%s" does not exist, so was not deleted.', path)
 
 	def rmdir(self, path : FilePath) -> bool:
 		"""
