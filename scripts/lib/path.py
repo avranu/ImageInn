@@ -67,7 +67,7 @@ class Path(str, ABC):
 			# Cast to string to convert Path objects to string
 			joined_path = str(value)
 		elif isinstance(value, list):
-			joined_path = os.path.join(*value)
+			joined_path = os.path.join(*[str(part) for part in value])
 		else:
 			raise ValueError("The path must be a string or a list of strings")
 		
@@ -399,7 +399,7 @@ class DirPath(Path):
 			# Cast to string to convert Path objects to string
 			joined_path = str(value)
 		elif isinstance(value, list):
-			joined_path = os.path.join(*value)
+			joined_path = os.path.join(*[str(part) for part in value])
 		else:
 			raise ValueError("The path must be a string or a list of strings")
 
@@ -500,6 +500,7 @@ class DirPath(Path):
 		return DirPath([self.path, dir_name])
 	
 if __name__ == "__main__":
+	# Testing code, can be deleted
 	path = DirPath(['/mnt/Photography/Recent/Lightroom/2023/2023-08-05/hdr/', 'aligned'])
 	file = FilePath([path, 'IMG_1234.jpg'])
 	print(file)

@@ -69,7 +69,7 @@ class Photo(FilePath):
 			# Cast to string to convert Path objects to string
 			joined_path = str(value)
 		elif isinstance(value, list):
-			joined_path = os.path.join(*value)
+			joined_path = os.path.join(*[str(part) for part in value])
 		else:
 			raise ValueError("The path must be a string or a list of strings")
 
