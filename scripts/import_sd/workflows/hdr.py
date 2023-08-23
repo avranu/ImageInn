@@ -98,7 +98,7 @@ class HDRWorkflow(Workflow):
 		self.onconflict 	= onconflict
 
 		self.tif_provider 	= tiff.DarktableProvider()
-		self.align_provider = align.HuginProvider()
+		self.align_provider = align.HuginProvider(self.aligned_path)
 		self.hdr_provider 	= merge.EnfuseProvider()
 
 	@property
