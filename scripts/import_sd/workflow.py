@@ -315,11 +315,11 @@ class Workflow:
 			path (FilePath): The source path.
 			destination (FilePath): The destination path.
 		"""
-		if not os.path.exists(destination):
+		if not destination.exists():
 			if self.dry_run:
 				logger.info('Would rename "%s" to "%s"', path, destination)
 			else:
-				os.rename(path, destination)
+				os.rename(path.path, destination.path)
 
 	def subprocess(self, command : str | list[str], cwd : FilePath = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
 		"""
