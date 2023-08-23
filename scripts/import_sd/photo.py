@@ -92,7 +92,7 @@ class Photo(FilePath):
 			logger.info('Path is not a string: %s. It is %s', self.path, type(self.path).__name__)
 			raise TypeError('Path must be a string. It is currently a %s' % type(self.path).__name__)
 
-		if self.exists():
+		if not self.exists():
 			logger.info('Path does not exist: %s', self.path)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
 
