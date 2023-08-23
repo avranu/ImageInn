@@ -178,21 +178,23 @@ class HDRWorkflow(Workflow):
 			logger.debug('Deleting existing tmp file %s', tmp_tiff_path)
 			self.delete(tmp_tiff_path)
 
-		# Darktable-cli doesn't like backslashes for the tiff path
-		tiff_path_escaped = tmp_tiff_path
 		'''
+		# darktable-cli doesn't like backslashes for the tiff path
+		tiff_path_escaped = tmp_tiff_path
 		if exe == 'darktable-cli':
 			logger.debug('Replacing backslashes with forward slashes for darktable in %s', tmp_tiff_path)
 			tiff_path_escaped = FilePath(tmp_tiff_path.replace('\\', '/'))
 		'''
 
 		# Use the appropriate exe to convert the file
-		logger.debug('Creating tiff file %s from %s using %s', tiff_path_escaped, photo.path, exe)
-		output, error = self.subprocess([exe, photo.path, tiff_path_escaped.path], check=False)
+		logger.debug('Creating tiff file %s from %s using %s', tmp_tiff_path, photo.path, exe)
+		output, error = self.subprocess([exe, photo.path, tmp_tiff_path.path], check=False)
 
 		# Check that it exists
 		if not tmp_tiff_path.exists():
 			logger.error('Could not find %s after conversion from %s using %s', tmp_tiff_path, photo.path, exe)
+			logger.error('Output: %s', output)
+			logger.error('Error: %s', error)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_tiff_path)
 
 		# Copy EXIF data using ExifTool
@@ -419,7 +421,7 @@ class HDRWorkflow(Workflow):
 		images = self.align_images(photos)
 
 		if not images or len(images) != len(photos):
-			logger.error('Not enough aligned images were created, cannot create HDR')
+			logger.error('Not enough aligned images were created, cannot create HDR. Found %d, expected %d', len(images), len(photos))
 			return None
 
 		try:
