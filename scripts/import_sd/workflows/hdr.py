@@ -258,7 +258,7 @@ class HDRWorkflow(Workflow):
 
 		return aligned_photos
 
-	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[Photo] = None) -> Photo | None:
+	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[str] = None) -> Photo | None:
 		"""
 		Use enfuse to create the HDR image.
 
@@ -351,7 +351,7 @@ class HDRWorkflow(Workflow):
 			return None
 
 		try:
-			hdr = self.create_hdr(images, hdrpath)
+			hdr = self.create_hdr(images, hdrpath.filename)
 		finally:
 			# Clean up the aligned images
 			for image in tqdm(images, desc="Cleaning up aligned images...", ncols=100):
