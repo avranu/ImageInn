@@ -58,15 +58,14 @@ class HuginProvider(AlignmentProvider):
 
 		# Ensure aligned_path exists, and create it if not
 		self.aligned_path.ensure_exists()
-		logger.critical('Aligned path is %s -> exists: %s', self.aligned_path, self.aligned_path.exists())
+		logger.debug('Aligned path is %s -> exists: %s', self.aligned_path, self.aligned_path.exists())
 
 		aligned_photos : list[Photo] = []
 		expected_photos: dict[Photo, FilePath] = {}
 		idx : int
 		photo : Photo
 		for idx, photo in enumerate(photos):
-			output_path = FilePath([self.aligned_path, f'aligned_tmp_{idx:04}.tif'])
-			expected_photos[photo] = output_path
+			expected_photos[photo] = self.aligned_path.file(f'aligned_tmp_{idx:04}.tif')
 
 		try:
 			# TODO conflicts
@@ -95,6 +94,7 @@ class HuginProvider(AlignmentProvider):
 				# Create a new file named {photo.filename}_aligned.{ext}
 				final_path = photo.change_extension('tif', '_aligned')
 				final_path = aligned.rename(final_path.filename)
+				final_path = Photo(final_path)
 
 				# Add the photo to the list
 				aligned_photos.append(final_path)

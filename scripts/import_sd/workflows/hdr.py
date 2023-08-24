@@ -241,16 +241,18 @@ class HDRWorkflow(Workflow):
 		try:
 			logger.critical('Aligning photos of types: %s', [type(photo) for photo in photos])
 			aligned_photos = self.align_provider.run(tiff_files)
+			logger.critical('Aligned photos return types: %s', [type(photo) for photo in aligned_photos])
+
 		finally:
 			# Delete the tiff files
 			for tiff_file in tiff_files:
 				# Ensure they end in .tif. This is technically unnecessary, but provides an extra layer of safety deleting files.
-				if not tiff_file.path.endswith('.tif'):
+				if tiff_file.extension not in ['tif', 'tiff']:
 					raise ValueError(f'Deleting tiff file {tiff_file}, but it does not end in .tif')
 
 				logger.debug('Deleting %s', tiff_file)
-				self.delete(tiff_file)
-				self.delete(FilePath(tiff_file.path + '_original'))
+				tiff_file.delete()
+				FilePath(tiff_file.path + '_original').delete()
 
 			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
 
@@ -359,8 +361,8 @@ class HDRWorkflow(Workflow):
 					logger.critical('Attempted to clean up aligned image that was not as expected. This should never happen. FilePath: %s', image.path)
 					raise ValueError(f'Attempted to clean up aligned image that was not as expected. This should never happen. FilePath: {image.path}')
 
-				self.delete(image.path)
-				self.delete(FilePath(image.path + '_original'))
+				FilePath(image.path + '_original').delete()
+				image.delete()
 
 			# TODO: Remove any _tmp_ files that were created and not cleaned up. (Make sure to consider multithreading)
 
