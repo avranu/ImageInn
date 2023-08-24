@@ -473,6 +473,13 @@ class DirPath(Path):
 			raise ValueError(f"The path {self.path} is not a directory")
 
 		return True
+	
+	def ensure_exists(self) -> None:
+		"""
+		Ensure that this directory exists. Create it if it does not.
+		"""
+		if not self.exists():
+			os.makedirs(self.path, exist_ok=True)
 
 	def get_contents(self, sort : bool = True) -> list[Path]:
 		"""
