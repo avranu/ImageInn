@@ -32,7 +32,7 @@ class EnfuseProvider(HDRProvider):
 	"""
 	Combine photos into an HDR image using enfuse.
 	"""
-	def next(self, photos : list[Photo], output_path : Optional[FilePath]) -> Photo | None:
+	def next(self, photos : list[Photo], output_path : Optional[FilePath] = None) -> Photo | None:
 		"""
 		Use enfuse to create the HDR image.
 

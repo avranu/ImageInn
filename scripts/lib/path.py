@@ -406,6 +406,7 @@ class FilePath(Path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
 
 		absolute_path = os.path.join(self.directory.path, value)
+		
 		try:
 			os.rename(self.path, absolute_path)
 		except Exception as e:

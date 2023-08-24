@@ -27,45 +27,24 @@ from scripts.import_sd.photo import Photo
 
 logger = logging.getLogger(__name__)
 
-# Generic type that can be list[Photo] or Photo. This allows us to enforce the return type of a method matches its parameter
-BracketOrPhoto = TypeVar('BracketOrPhoto', List[Photo], Photo)
-
 class HDRProvider(Provider, ABC):
 	"""
 	This service provider merges a bracket of photos into an HDR image.
 	"""
-	def run(self, brackets: list[BracketOrPhoto], output_path : list[FilePath] | FilePath | None) -> list[BracketOrPhoto]:
+	def run(self, brackets: list[Photo], output_path : FilePath | None) -> Photo:
 		"""
-		Align the images in each bracket with the other images in the same bracket.
+		Merge the images in a bracket into a single HDR.
 
 		Args:
-			photos (list[Photo] | list[list[Photo]]): The photos to align.
+			photos (list[Photo]): The photos to merge
 
 		Returns:
-			list[Photo] | list[list[Photo]]:
-				The aligned photos.
-				If any of the photos cannot be aligned within a braket, an empty list will be returned for that bracket.
+			Photo:
+				The HDR Photo.
 		"""
-		if len(brackets) < 1:
-			logger.debug('No brackets to align.')
+		if len(brackets) < 2:
+			logger.debug('Insufficient photos to merge.')
 			return []
 
 		# Handle just one bracket and return a list of photos
-		if isinstance(brackets[0], Photo):
-			if isinstance(output_path, FilePath):
-				return self.next(brackets, output_path)
-			return self.next(brackets, output_path[0])
-
-		# Handle a group of brackets and return a list of lists of photos
-		results = []
-		for idx, bracket in enumerate(brackets):
-			hdr_file = None
-			if output_path is not None:
-				if isinstance(output_path, FilePath):
-					hdr_file = output_path
-				else:
-					hdr_file = output_path[idx]
-			aligned_bracket = self.next(bracket, hdr_file)
-			results.append(aligned_bracket)
-
-		return results
+		return self.next(brackets, output_path)
