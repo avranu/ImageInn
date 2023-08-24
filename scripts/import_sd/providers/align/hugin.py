@@ -61,7 +61,7 @@ class HuginProvider(AlignmentProvider):
 		try:
 			# TODO conflicts
 			# Create the command
-			command = ['align_image_stack', '-a', os.path.join(self.aligned_path, 'aligned_tmp_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
+			command = ['align_image_stack', '-a', os.path.join(self.aligned_path, 'aligned_tmp_'), '-m', '-v', '-C', '-c', '25', '-p', 'hugin.out', '-t', '3']
 			for photo in photos:
 				command.append(photo.path)
 			_output, _error = self.subprocess(command)
