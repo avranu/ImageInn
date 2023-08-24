@@ -39,7 +39,7 @@ class Path(str, ABC):
 		Args:
 			*path (str): The path, which can be specified in path parts to be joined
 		"""
-		if not path:
+		if not absolute_path:
 			raise ValueError("The path cannot be empty")
 
 		self.path = absolute_path
