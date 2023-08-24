@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: test_path.py
-		Project: tests
+		Project: imageinn
 		Created Date: 21 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -162,18 +162,18 @@ class TestFilePath(unittest.TestCase):
 			self.assertEqual(str(new_path), expected, msg="Failed removing suffix: {}".format(suffix))
 
 	@patch.object(Validator, 'calculate_checksum', return_value='12345')
-	def test_checksum(self, mock_checksum):
+	def test_checksum(self, _mock_checksum):
 		path = FilePath('/path/to/file.txt')
 		self.assertEqual(path.checksum, '12345')
 
 	@patch.object(Validator, 'calculate_checksum', return_value='12345')
-	def test_matches(self, mock_checksum):
+	def test_matches(self, _mock_checksum):
 		path1 = FilePath('/path/to/file1.txt')
 		path2 = FilePath('/path/to/file2.txt')
 		self.assertTrue(path1.matches(path2))
 
 	@patch.object(Validator, 'calculate_checksum', side_effect=['12345', '67890'])
-	def test_not_matches(self, mock_checksum):
+	def test_not_matches(self, _mock_checksum):
 		path1 = FilePath('/path/to/file1.txt')
 		path2 = FilePath('/path/to/file2.txt')
 		self.assertFalse(path1.matches(path2))

@@ -3,7 +3,7 @@
 	Metadata:
 
 		File: photo.py
-		Project: import_sd
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
@@ -19,15 +19,13 @@
 """
 from __future__ import annotations
 from datetime import datetime
-from enum import Enum
 import errno
-import math
 import math
 import os
 import re
 import logging
 from decimal import Decimal
-from typing import Any, Dict, Optional, TypedDict
+from typing import Dict, Optional
 import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 from scripts.import_sd.exif import ExifTag
 from scripts.import_sd.validator import Validator
@@ -92,7 +90,7 @@ class Photo(FilePath):
 		"""
 		if not isinstance(self.path, str):
 			logger.info('Path is not a string: %s. It is %s', self.path, type(self.path).__name__)
-			raise TypeError('Path must be a string. It is currently a %s' % type(self.path).__name__)
+			raise TypeError(f'Path must be a string. It is currently a {type(self.path).__name__}')
 
 		if not self.exists():
 			logger.info('Path does not exist: %s', self.path)
@@ -100,7 +98,7 @@ class Photo(FilePath):
 
 		if not self.is_file():
 			logger.info('Path is not a file: %s', self.path)
-			raise ValueError('Path must be a file')
+			raise ValueError(f'Path must be a file: {self.path}')
 
 		return True
 
@@ -179,7 +177,7 @@ class Photo(FilePath):
 		if not value:
 			return None
 		return datetime.strptime(value, '%Y:%m:%d %H:%M:%S')
-	
+
 	@property
 	def ymd(self) -> str:
 		"""
@@ -702,7 +700,7 @@ class Photo(FilePath):
 			>>> photo.is_jpg()
 			True
 		"""
-		return self.extension == 'jpg' or self.extension == 'jpeg'
+		return self.extension in ['jpg', 'jpeg']
 
 	def __str__(self):
 		return self.path

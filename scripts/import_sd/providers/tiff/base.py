@@ -1,26 +1,25 @@
 """
-	
+
 	Metadata:
-	
+
 		File: base.py
-		Project: tiff
+		Project: imageinn
 		Created Date: 23 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
 import os
-from typing import List, Dict, Any, Union, Optional
 import logging
 import time
 from scripts.lib.path import FilePath
@@ -31,7 +30,9 @@ from scripts.import_sd.photo import Photo
 logger = logging.getLogger(__name__)
 
 class TiffProvider(Provider, ABC):
-
+	"""
+	Convert raw photos to TIFF files.
+	"""
 	def run(self, files : dict[Photo, FilePath]) -> dict[Photo, Photo]:
 		"""
 		Convert a list of raw photos to TIFF files.
@@ -71,7 +72,7 @@ class TiffProvider(Provider, ABC):
 				# Rename the file to remove the _tmp suffix
 				self.rename(tiff, tiff_path)
 				results[photo] = Photo(tiff_path)
-				
+
 				# Done! No need to loop more
 				break
 
@@ -86,9 +87,9 @@ class TiffProvider(Provider, ABC):
 		"""
 		Convert a single raw photo to a TIFF file using darktable.
 
-		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors, 
+		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors,
 		this method will raise an exception.
-		
+
 		Args:
 			photo (Photo): The photo to convert.
 			tif_path (FilePath): The path to the TIFF file to create.
@@ -97,7 +98,7 @@ class TiffProvider(Provider, ABC):
 			Photo: The converted photo.	Returns None if an expected error occurred that we can retry.
 		"""
 		raise NotImplementedError("TiffProvider.run() must be implemented in a subclass.")
-	
+
 	def rename(self, path: FilePath, destination: FilePath) -> bool:
 		"""
 		Rename a file, if it doesn't already exist.

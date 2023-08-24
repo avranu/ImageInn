@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: test_import_sd.py
-		Project: tests
+		Project: imageinn
 		Created Date: 08 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----

@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: stackcollection.py
-		Project: import_sd
+		Project: imageinn
 		Created Date: 18 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Sat Aug 19 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -25,6 +25,9 @@ from scripts.import_sd.photostack import PhotoStack
 logger = logging.getLogger(__name__)
 
 class StackCollection:
+	"""
+	Represents a collection of stacks.
+	"""
 	def __init__(self):
 		self.stacks = []
 		self.photos = PhotoStack()
@@ -48,14 +51,14 @@ class StackCollection:
 		Returns:
 			bool: True if the previous stack was saved, False otherwise.
 		"""
-		logger.debug(f'Finishing stack: ')
+		logger.debug('Finishing stack')
 		if len(self.photos) > 2:
 			self.append(self.photos)
 			self.photos = PhotoStack()
-			logger.debug(f'Saved previous stack and started New Stack: ')
+			logger.debug('Saved previous stack and started New Stack')
 			return True
 
-		logger.debug(f'Started New Stack without saving previous stack: Photos in previous stack were {len(self.photos)}')
+		logger.debug('Started New Stack without saving previous stack: Photos in previous stack were %d', len(self.photos))
 		self.photos = PhotoStack()
 		return False
 

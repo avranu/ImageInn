@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: workflow.py
-		Project: workflows
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -19,22 +19,18 @@
 """
 from __future__ import annotations
 import argparse
-import datetime
-from enum import Enum
 import errno
 import os
-import re
 import sys
 import subprocess
 import logging
 import time
-from typing import Any, Dict, Optional, TypedDict
-import exifread, exifread.utils, exifread.tags.exif, exifread.classes
+from typing import Optional
 
+from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.operations import CopyOperation
 from scripts.import_sd.validator import Validator
-from scripts.lib.path import Path
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.queue import Queue
 from scripts.import_sd.sd import SDCard
@@ -46,11 +42,11 @@ class CopyWorkflow(Workflow):
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
 	"""
-	_base_path: str
-	_jpg_path: str
-	_backup_path: str
+	_base_path: DirPath
+	_jpg_path: DirPath
+	_backup_path: DirPath
 	_sd_card : SDCard = None
-	_bucket_path : str = None
+	_bucket_path : DirPath = None
 	raw_extension : str
 	dry_run : bool = False
 
@@ -110,71 +106,80 @@ class CopyWorkflow(Workflow):
 			self._sd_card = SDCard(sd_card)
 
 	@property
-	def base_path(self) -> str:
+	def base_path(self) -> DirPath:
 		"""
 		The path to the network location to copy raw files from the SD Card to.
 		"""
 		return self._base_path
 
 	@base_path.setter
-	def base_path(self, base_path: str) -> None:
+	def base_path(self, base_path: DirPath | str | list[str]) -> None:
 		"""
 		Set the path to the network location to copy raw files from the SD Card to.
 
 		Args:
 			base_path (str): The path to the network location to copy raw files from the SD Card to.
 		"""
-		if not Validator.is_dir(base_path):
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), base_path)
-		self._base_path = self._normalize_path(base_path)
+		if isinstance(base_path, DirPath):
+			self._base_path = base_path
+		elif isinstance(base_path, str):
+			self._base_path = DirPath(base_path)
+		else:
+			self._base_path = DirPath(*base_path)
 
 	@property
-	def jpg_path(self) -> str:
+	def jpg_path(self) -> DirPath:
 		"""
 		The path to the network location to copy jpg files from the SD Card to.
 		"""
 		return self._jpg_path
 
 	@jpg_path.setter
-	def jpg_path(self, jpg_path: str) -> None:
+	def jpg_path(self, jpg_path: DirPath | str | list[str]) -> None:
 		"""
 		Set the path to the network location to copy jpg files from the SD Card to.
 
 		Args:
 			jpg_path (str): The path to the network location to copy jpg files from the SD Card to.
 		"""
-		if not Validator.is_dir(jpg_path):
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), jpg_path)
-		self._jpg_path = self._normalize_path(jpg_path)
+		if isinstance(jpg_path, DirPath):
+			self._jpg_path = jpg_path
+		elif isinstance(jpg_path, str):
+			self._jpg_path = DirPath(jpg_path)
+		else:
+			self._jpg_path = DirPath(*jpg_path)
 
 	@property
-	def backup_path(self) -> str:
+	def backup_path(self) -> DirPath:
 		"""
 		The path to the backup network location to copy the SD card to.
 		"""
 		return self._backup_path
 
 	@backup_path.setter
-	def backup_path(self, backup_path: str) -> None:
+	def backup_path(self, backup_path: DirPath | str | list[str]) -> None:
 		"""
 		Set the path to the backup network location to copy the SD card to.
 
 		Args:
 			backup_path (str): The path to the backup network location to copy the SD card to.
 		"""
-		if not Validator.is_dir(backup_path):
-			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), backup_path)
-		self._backup_path = self._normalize_path(backup_path)
+		if isinstance(backup_path, DirPath):
+			self._backup_path = backup_path
+		elif isinstance(backup_path, str):
+			self._backup_path = DirPath(backup_path)
+		else:
+			self._backup_path = DirPath(*backup_path)
 
 	@property
-	def bucket_path(self) -> str:
+	def bucket_path(self) -> DirPath:
 		"""
 		The path to the temporary directory to copy the SD card to.
 		"""
 		if not self._bucket_path:
 			# Create an "Import Bucket" folder in the base_path
-			self._bucket_path = os.path.join(self.base_path, 'Import Bucket')
-			if not Validator.is_dir(self._bucket_path):
+			self._bucket_path = DirPath([self.base_path, 'Import Bucket'])
+			if not self._bucket_path.exists():
 				os.makedirs(self._bucket_path, exist_ok=True)
 
 			if not Validator.is_writeable(self._bucket_path):
@@ -241,7 +246,7 @@ class CopyWorkflow(Workflow):
 		# Validate checksums after teracopy
 		if not Validator.validate_checksum_list(queue.get_checksums(), files):
 			logger.critical('Checksum validation failed on operation %s', operation)
-			errors.append('Checksum validation failed on operation %s' % operation)
+			errors.append('Checksum validation failed on operation %s', operation)
 
 		# Verify that the number of files copied is equal to the number of photos on the SD card
 		sd_photos = self.count_sd_photos()
@@ -395,7 +400,7 @@ class CopyWorkflow(Workflow):
 
 		# Look in the DCIM folder, and all subfolders
 		path = os.path.join(self.sd_card.path, 'DCIM')
-		for root, _, files in os.walk(path):
+		for _root, _, files in os.walk(path):
 			for file in files:
 				if os.path.splitext(file)[1].lower() in extensions:
 					count += 1
@@ -519,7 +524,7 @@ class CopyWorkflow(Workflow):
 		results = {}
 
 		# Verify the paths exist
-		if not all([os.path.exists(path) for path in [self.bucket_path, self.base_path]]):
+		if not all(os.path.exists(path) for path in [self.bucket_path, self.base_path]):
 			logger.info('One or more of the paths provided does not exist: "%s", "%s"', self.bucket_path, self.base_path)
 			raise FileNotFoundError('One or more of the paths provided does not exist.')
 

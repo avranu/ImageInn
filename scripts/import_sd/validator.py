@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: validator.py
-		Project: import_sd
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Sun Aug 13 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -22,13 +22,15 @@ import errno
 import hashlib
 import os
 import logging
-from typing import Any, Dict, Optional, TypedDict
-import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
 logger = logging.getLogger(__name__)
 
 class Validator:
-
+	"""
+	Provides methods for validating files and directories.
+	
+	Probably depreecated.
+	"""
 	@classmethod
 	def is_dir(cls, path: str) -> bool:
 		"""
@@ -170,7 +172,7 @@ class Validator:
 		checksums_after = cls.calculate_checksums(destination_path)
 		mismatches = 0
 
-		with open(os.path.join(destination_path, 'checksum.txt'), 'w') as f:
+		with open(os.path.join(destination_path, 'checksum.txt'), 'w', encoding='utf-8') as f:
 			for file_path, checksum_before in checksums_before.items():
 				# Get the destination path, based on the filename of the source
 				filename = os.path.basename(file_path)

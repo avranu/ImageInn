@@ -1,25 +1,25 @@
 """
-	
+
 	Metadata:
-	
+
 		File: base.py
-		Project: merge
+		Project: imageinn
 		Created Date: 23 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, TypeVar, Union, Optional
+from abc import ABC
+from typing import List, TypeVar
 import logging
 from scripts.lib.path import FilePath
 from scripts.import_sd.providers.base import Provider
@@ -31,7 +31,9 @@ logger = logging.getLogger(__name__)
 BracketOrPhoto = TypeVar('BracketOrPhoto', List[Photo], Photo)
 
 class HDRProvider(Provider, ABC):
-
+	"""
+	This service provider merges a bracket of photos into an HDR image.
+	"""
 	def run(self, brackets: list[BracketOrPhoto]) -> list[BracketOrPhoto]:
 		"""
 		Align the images in each bracket with the other images in the same bracket.
@@ -40,14 +42,14 @@ class HDRProvider(Provider, ABC):
 			photos (list[Photo] | list[list[Photo]]): The photos to align.
 
 		Returns:
-			list[Photo] | list[list[Photo]]: 
-				The aligned photos. 
+			list[Photo] | list[list[Photo]]:
+				The aligned photos.
 				If any of the photos cannot be aligned within a braket, an empty list will be returned for that bracket.
 		"""
 		if len(brackets) < 1:
 			logger.debug('No brackets to align.')
 			return []
-		
+
 		# Handle just one bracket and return a list of photos
 		if isinstance(brackets[0], Photo):
 			return self.next(brackets)
@@ -59,18 +61,3 @@ class HDRProvider(Provider, ABC):
 			results.append(aligned_bracket)
 
 		return results
-
-	def run(self, photos: list[Photo]) -> Photo | None:
-		"""
-		Merge a single bracket into an HDR image.
-
-		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors, 
-		this method will raise an exception.
-		
-		Args:
-			photos (list[Photo]): The photos to merge.
-
-		Returns:
-			Photo: The converted photo.	Returns None if an expected error occurred that we can retry.
-		"""
-		raise NotImplementedError("HDRProvider.run() must be implemented in a subclass.")

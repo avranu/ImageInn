@@ -1,30 +1,29 @@
 """
-	
+
 	Metadata:
-	
+
 		File: base.py
-		Project: align
+		Project: imageinn
 		Created Date: 23 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, TypeVar, Union, Optional
+from typing import List, TypeVar
 import logging
 from scripts.lib.path import FilePath
 from scripts.import_sd.providers.base import Provider
 from scripts.import_sd.photo import Photo
-from scripts.import_sd.photostack import PhotoStack
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,9 @@ logger = logging.getLogger(__name__)
 BracketOrPhoto = TypeVar('BracketOrPhoto', List[Photo], Photo)
 
 class AlignmentProvider(Provider, ABC):
-
+	"""
+	This service provider Aligns a bracket of photos.
+	"""
 	def run(self, brackets: list[BracketOrPhoto]) -> list[BracketOrPhoto]:
 		"""
 		Align the images in each bracket with the other images in the same bracket.
@@ -41,14 +42,14 @@ class AlignmentProvider(Provider, ABC):
 			photos (list[Photo] | list[list[Photo]]): The photos to align.
 
 		Returns:
-			list[Photo] | list[list[Photo]]: 
-				The aligned photos. 
+			list[Photo] | list[list[Photo]]:
+				The aligned photos.
 				If any of the photos cannot be aligned within a braket, an empty list will be returned for that bracket.
 		"""
 		if len(brackets) < 1:
 			logger.debug('No brackets to align.')
 			return []
-		
+
 		# Handle just one bracket and return a list of photos
 		if isinstance(brackets[0], Photo):
 			return self.next(brackets)
@@ -70,8 +71,8 @@ class AlignmentProvider(Provider, ABC):
 			photo (list[Photo]): The photos to align.
 
 		Returns:
-			list[Photo]: 
-				The aligned photos. 
+			list[Photo]:
+				The aligned photos.
 				If ANY of the photos cannot be aligned, an empty list will be returned.
 		"""
 		raise NotImplementedError("AlignmentProvider.next() must be implemented in a subclass.")

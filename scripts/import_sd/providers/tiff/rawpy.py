@@ -1,24 +1,23 @@
 """
-	
+
 	Metadata:
-	
+
 		File: rawpy.py
-		Project: tiff
+		Project: imageinn
 		Created Date: 23 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
-from typing import List, Dict, Any, Union, Optional
 import rawpy
 import imageio
 from scripts.lib.path import FilePath
@@ -26,11 +25,14 @@ from scripts.import_sd.providers.tiff.base import TiffProvider
 from scripts.import_sd.photo import Photo
 
 class RawpyProvider(TiffProvider):
-	def next(self, photo: Photo, tif_path: FilePath) -> Photo | None:
+	"""
+	Convert raw photos to TIFF files using rawpy.
+	"""
+	def next(self, photo: Photo, tiff_path: FilePath) -> Photo | None:
 		"""
 		Convert a single raw photo to a TIFF file using rawpy.
 
-		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors, 
+		On expected errors that can be retried, this method will return None. On unexpected or unrecoverable errors,
 		this method will raise an exception.
 
 		Args:
@@ -42,6 +44,6 @@ class RawpyProvider(TiffProvider):
 		"""
 		with rawpy.imread(photo) as raw:
 			rgb = raw.postprocess()
-		imageio.imsave(tif_path, rgb)
+		imageio.imsave(tiff_path, rgb)
 
-		return Photo(tif_path)
+		return Photo(tiff_path)

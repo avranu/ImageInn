@@ -1,17 +1,37 @@
+"""
+
+	Metadata:
+
+		File: fix_created.py
+		Project: imageinn
+		Created Date: 21 Aug 2023
+		Author: Jess Mann
+		Email: jess.a.mann@gmail.com
+
+		-----
+
+		Last Modified: Wed Aug 23 2023
+		Modified By: Jess Mann
+
+		-----
+
+		Copyright (c) 2023 Jess Mann
+"""
 import argparse
 import os
 from datetime import datetime
 import sys
-import rawpy
 import exifread
-import piexif
 
 class TimestampUpdater:
+	"""
+	Update the created and modified timestamps of a series of photos.
+	"""
 	def change_timestamp(self, filename, new_year, new_month, new_day):
 		self.change_system_timestamp(filename, new_year, new_month, new_day)
-		#self.change_exif_timestamp(filename, new_year, new_month, new_day)
+		# self.change_exif_timestamp(filename, new_year, new_month, new_day)
 
-	def change_system_timestamp(self,filename, new_year, new_month, new_day):
+	def change_system_timestamp(self, filename, new_year, new_month, new_day):
 		try:
 			# Get the current modified and created timestamps
 			modified_time = os.path.getmtime(filename)
@@ -47,6 +67,7 @@ class TimestampUpdater:
 		"""
 		raise NotImplementedError("This method is not yet implemented for raw photos.")
 
+		"""
 		# Load the EXIF data from the image file
 		exif_data = piexif.load(filename)
 
@@ -79,6 +100,7 @@ class TimestampUpdater:
 			print(f"EXIF data updated for file: {filename}")
 		else:
 			print(f"EXIF data not found for file: {filename}")
+		"""
 
 	def get_exif_from_raw(self, filename : str) -> dict[str, str]:
 		"""
@@ -102,6 +124,7 @@ class TimestampUpdater:
 		except Exception as e:
 			print(f"An error occurred while processing {filename}: {str(e)}")
 
+		return {}
 
 def main():
 	# Get a path using argparse
@@ -115,7 +138,7 @@ def main():
 
 	if not os.path.isdir(path):
 		print("The path provided is not a valid directory.")
-		exit(1)
+		sys.exit(1)
 
 	# Parse the date into year/month/day
 	try:
@@ -125,7 +148,7 @@ def main():
 		new_day = int(new_day)
 	except Exception as e:
 		print(f"An error occurred while parsing the date: {str(e)}")
-		exit(1)
+		sys.exit(1)
 
 	files = []
 	for f in os.listdir(path):
@@ -133,7 +156,7 @@ def main():
 			fpath = os.path.join(path, f)
 			if os.path.isfile(fpath):
 				files.append(fpath)
-		except OSError as e:
+		except OSError:
 			continue
 
 	# Iterate through files and update the timestamps

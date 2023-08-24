@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: workflow.py
-		Project: workflows
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -19,17 +19,12 @@
 """
 from __future__ import annotations
 import argparse
-import datetime
-from enum import Enum
-import errno
 import os
-import re
 import sys
 import logging
-import time
-from typing import Any, Dict, Optional, TypedDict
-import exifread, exifread.utils, exifread.tags.exif, exifread.classes
+from scripts.import_sd.workflow import Workflow
 
+"""
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.operations import CopyOperation
 from scripts.import_sd.validator import Validator
@@ -37,11 +32,14 @@ from scripts.lib.path import Path
 from scripts.import_sd.photo import Photo
 from scripts.import_sd.queue import Queue
 from scripts.import_sd.sd import SDCard
-from scripts.import_sd.workflow import Workflow
+"""
 
 logger = logging.getLogger(__name__)
 
 class PanoramaWorkflow(Workflow):
+	"""
+	Workflow for creating panoramas.
+	"""
 	raw_extension : str
 	dry_run : bool = False
 

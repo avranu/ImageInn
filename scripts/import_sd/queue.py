@@ -3,7 +3,7 @@
 	Metadata:
 
 		File: queue.py
-		Project: import_sd
+		Project: imageinn
 		Created Date: 12 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
@@ -18,14 +18,12 @@
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
-import os
 from typing import Optional
 from datetime import datetime
 import logging
 
 from scripts.lib.path import FilePath
 from scripts.import_sd.photo import Photo
-from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
 
@@ -292,11 +290,11 @@ class Queue:
 			output_path = FilePath(output_path)
 
 		# If the file already exists, log a warning
-		if output_path.exists() and not output_path.extension == 'txt':
+		if output_path.exists() and output_path.extension != 'txt':
 			raise FileExistsError(f"Queue file already exists: {output_path}. Refusing to overwrite because it isn't a text file.")
 
 		photos_to_copy = self._queue.get(destination_folder, [])
-		with open(output_path, "w") as file:
+		with open(output_path, "w", encoding="utf-8") as file:
 			for photo in photos_to_copy:
 				file.write(f"{photo.path}\n")
 

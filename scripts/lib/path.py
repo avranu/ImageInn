@@ -3,7 +3,7 @@
 	Metadata:
 
 		File: photo.py
-		Project: lib
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
@@ -19,18 +19,11 @@
 """
 from __future__ import annotations
 from abc import ABC, abstractmethod
-import datetime
-from enum import Enum
 import errno
 import os
 import re
 import logging
-from typing import Any, Dict, Optional, Self, TypedDict
-import exifread
-import exifread.utils
-import exifread.tags.exif
-import exifread.classes
-from scripts.import_sd.exif import ExifTag
+from typing import Optional, Self
 from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
@@ -41,15 +34,15 @@ class Path(str, ABC):
 	"""
 	_path: str
 
-	def __init__(self, path: str | list[str]):
+	def __init__(self, absolute_path: str | list[str]):
 		"""
 		Args:
 			*path (str): The path, which can be specified in path parts to be joined
 		"""
 		if not path:
 			raise ValueError("The path cannot be empty")
-		
-		self.path = path
+
+		self.path = absolute_path
 
 	@property
 	def path(self) -> str:
@@ -70,7 +63,7 @@ class Path(str, ABC):
 			joined_path = os.path.join(*[str(part) for part in value])
 		else:
 			raise ValueError("The path must be a string or a list of strings")
-		
+
 		# Eliminate double slashes
 		self._path = os.path.normpath(joined_path)
 
@@ -104,7 +97,7 @@ class Path(str, ABC):
 	@abstractmethod
 	def checksum(self) -> str:
 		raise NotImplementedError("Checksumming must be implemented by child classes")
-	
+
 	def exists(self) -> bool:
 		"""
 		Checks if the given file exists.
@@ -118,9 +111,9 @@ class Path(str, ABC):
 			True
 		"""
 		return os.path.exists(self.path)
-	
 
-	def matches(self, file : Path) -> bool:
+
+	def matches(self, filepath : Path) -> bool:
 		"""
 		Compares the given photo to this photo.
 
@@ -137,11 +130,11 @@ class Path(str, ABC):
 			False
 		"""
 		# Both must exist
-		if not self.exists() or not file.exists():
+		if not self.exists() or not filepath.exists():
 			return False
 
-		return self.checksum == file.checksum
-	
+		return self.checksum == filepath.checksum
+
 	def append_suffix(self, suffix: str) -> Self:
 		"""
 		Appends the given suffix from the path.
@@ -161,7 +154,7 @@ class Path(str, ABC):
 		"""
 		# return a new object that is the same type as this object, even if we are dealing with a child
 		return self.__class__(self.path + suffix)
-	
+
 	def remove_suffix(self, suffix: str) -> Self:
 		"""
 		Removes the given suffix from the path.
@@ -180,7 +173,7 @@ class Path(str, ABC):
 			Path('/media/pi/SD_CARD/DCIM/100MSDCF/')
 		"""
 		return self.__class__(re.sub(suffix + '$', '', self.path))
-	
+
 	def is_file(self) -> bool:
 		"""
 		Checks if the given file is a file.
@@ -217,8 +210,8 @@ class Path(str, ABC):
 
 class FilePath(Path):
 	"""
-	Represents a path to a file. 
-	
+	Represents a path to a file.
+
 	NOTE: This file does not need to exist yet. os.path.exists() should not be assumed to be true.
 	"""
 	@property
@@ -261,7 +254,7 @@ class FilePath(Path):
 			'JAM_1234'
 		"""
 		return os.path.splitext(self.filename)[0]
-	
+
 	@property
 	def checksum(self) -> str:
 		"""
@@ -325,8 +318,8 @@ class FilePath(Path):
 		"""
 		# If there is no decimal, then there is no extension. Remove this suffix ONLY from the end of the path.
 		if '.' not in self.path:
-			path = re.sub(suffix + '$', '', self.path)
-			return FilePath(path)
+			cleaned_path = re.sub(suffix + '$', '', self.path)
+			return FilePath(cleaned_path)
 
 		# Split the path into the name and extension
 		path_and_name, extension = self.path.rsplit('.', 1)
@@ -335,7 +328,7 @@ class FilePath(Path):
 		cleaned_path_and_name = re.sub(suffix + '$', '', path_and_name)
 
 		return FilePath(cleaned_path_and_name + '.' + extension)
-	
+
 	def change_extension(self, extension: str, suffix : Optional[str] = None) -> FilePath:
 		"""
 		Changes the extension of the file.
@@ -363,28 +356,28 @@ class FilePath(Path):
 			path_and_name = self.path
 		else:
 			# Split the path into the name and extension
-			path_and_name, old_extension = self.path.rsplit('.', 1)
+			path_and_name, _old_extension = self.path.rsplit('.', 1)
 
 		return FilePath(path_and_name + name_suffix)
-	
+
 	def validate(self) -> bool:
 		# IF the path exists, check that it is a file
 		if self.exists() and not self.is_file():
-			raise ValueError("The path %s is not a file", self.path)
-		
+			raise ValueError(f"The path {self.path} is not a file")
+
 		return True
-	
+
 	def delete(self, require_success : bool = False) -> bool:
 		"""
 		Delete the file.
-		
+
 		Returns:
 			bool: True if the file was deleted, False otherwise.
 		"""
 		# If the file doesnt exist, return True
 		if not self.exists():
 			return True
-		
+
 		try:
 			os.remove(self.path)
 			return True
@@ -392,12 +385,12 @@ class FilePath(Path):
 			logger.error("Could not delete file %s -> %s", self.path, e)
 			if require_success:
 				raise e from e
-			
+
 		if require_success and self.exists():
-			raise Exception(f"Could not delete file {self.path}")
-		
+			raise FileExistsError(f'Could not delete file at {self.path}')
+
 		return False
-	
+
 	def rename(self, value : str) -> Self:
 		"""
 		Rename the file.
@@ -411,19 +404,19 @@ class FilePath(Path):
 		# If the file doesnt exist, return True
 		if not self.exists():
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
-		
+
 		try:
 			os.rename(self.path, value)
 		except Exception as e:
 			logger.error("Could not rename file %s -> %s", self.path, e)
 			raise e from e
-		
+
 		return self.__class__([self.directory, value])
 
 class DirPath(Path):
 	"""
 	Represents a path to a directory.
-	
+
 	NOTE: This directory does not need to exist yet. os.path.exists() should not be assumed to be true.
 	"""
 	@property
@@ -440,7 +433,7 @@ class DirPath(Path):
 		"""
 		if not value:
 			raise ValueError("The path cannot be empty")
-		
+
 		if isinstance(value, (Path, str)):
 			# Cast to string to convert Path objects to string
 			joined_path = str(value)
@@ -460,7 +453,7 @@ class DirPath(Path):
 		The name of the directory.
 		"""
 		return os.path.basename(self.path)
-	
+
 	@property
 	def checksum(self) -> str:
 		"""
@@ -477,38 +470,38 @@ class DirPath(Path):
 		"""
 		# IF it exists, ensure it is a directory
 		if self.exists() and not self.is_dir():
-			raise ValueError("The path %s is not a directory", self.path)
-		
+			raise ValueError(f"The path {self.path} is not a directory")
+
 		return True
-	
+
 	def get_contents(self, sort : bool = True) -> list[Path]:
 		"""
 		Get the contents of this directory.
 
 		Args:
 			sort (bool, optional): Whether or not to sort the contents. Defaults to True.
-		
+
 		Returns:
 			list[Path]: The contents of this directory.
 		"""
 		contents = []
 
-		if self.exists():	
+		if self.exists():
 			for filename in os.listdir(self.path):
-				path = os.path.join(self.path, filename)
+				childpath = os.path.join(self.path, filename)
 
-				if os.path.isfile(path):
-					contents.append(FilePath(path))
-				elif os.path.isdir(path):
-					contents.append(DirPath(path))
+				if os.path.isfile(childpath):
+					contents.append(FilePath(childpath))
+				elif os.path.isdir(childpath):
+					contents.append(DirPath(childpath))
 				else:
-					logger.warning("Unknown file type for %s", path)
+					logger.warning("Unknown file type for %s", childpath)
 
 			if sort:
 				contents.sort()
 
 		return contents
-	
+
 	def get_files(self, sort : bool = True) -> list[FilePath]:
 		"""
 		Get the files in this directory.
@@ -520,7 +513,7 @@ class DirPath(Path):
 			list[FilePath]: The files in this directory.
 		"""
 		return [file for file in self.get_contents(sort) if isinstance(file, FilePath)]
-	
+
 	def get_subdirectories(self, sort : bool = True) -> list[DirPath]:
 		"""
 		Get the subdirectories of this directory.
@@ -532,7 +525,7 @@ class DirPath(Path):
 			list[DirPath]: The subdirectories of this directory.
 		"""
 		return [dir for dir in self.get_contents(sort) if isinstance(dir, DirPath)]
-	
+
 	def child(self, dir_name : str) -> DirPath:
 		"""
 		Get the child directory of this directory.
@@ -544,7 +537,19 @@ class DirPath(Path):
 			DirPath: The child directory of this directory.
 		"""
 		return DirPath([self.path, dir_name])
-	
+
+	def file(self, filename : str) -> FilePath:
+		"""
+		Get a path to a file within this directory. NOTE: The file does not need to exist.
+
+		Args:
+			filename (str): The name of the file.
+
+		Returns:
+			FilePath: The path to the file.
+		"""
+		return FilePath([self.path, filename])
+
 if __name__ == "__main__":
 	# Testing code, can be deleted
 	path = DirPath(['/mnt/Photography/Recent/Lightroom/2023/2023-08-05/hdr/', 'aligned'])

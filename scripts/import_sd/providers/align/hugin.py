@@ -1,29 +1,28 @@
 """
-	
+
 	Metadata:
-	
+
 		File: hugin.py
-		Project: align
+		Project: imageinn
 		Created Date: 23 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
-	
+
 		-----
-	
+
 		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
-	
+
 		-----
-	
+
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
 import os
 import subprocess
-from typing import List, Dict, Any, Union, Optional
 import logging
 import re
-import tqdm
+from tqdm import tqdm
 
 from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.providers.align.base import AlignmentProvider
@@ -33,6 +32,9 @@ from scripts.import_sd.photostack import PhotoStack
 logger = logging.getLogger(__name__)
 
 class HuginProvider(AlignmentProvider):
+	"""
+	Align images using Hugin's align_image_stack command.
+	"""
 	aligned_path : DirPath
 
 	def __init__(self, aligned_path : DirPath) -> None:
@@ -51,15 +53,18 @@ class HuginProvider(AlignmentProvider):
 				The aligned photos.
 				If ANY of the photos cannot be aligned, an empty list will be returned.
 		"""
+		if isinstance(photos, PhotoStack):
+			photos = photos.get_photos()
+
 		aligned_photos : list[Photo] = []
-		
+
 		try:
 			# TODO conflicts
 			# Create the command
 			command = ['align_image_stack', '-a', os.path.join(self.aligned_path, 'aligned_tmp_'), '-m', '-v', '-C', '-c', '100', '-g', '5', '-p', 'hugin.out', '-t', '0.3']
 			for photo in photos:
 				command.append(photo.path)
-			output, error = self.subprocess(command)
+			_output, _error = self.subprocess(command)
 
 			# Create the photos
 			idx : int
@@ -86,5 +91,5 @@ class HuginProvider(AlignmentProvider):
 			for aligned_photo in aligned_photos:
 				aligned_photo.delete()
 			return []
-		
+
 		return aligned_photos

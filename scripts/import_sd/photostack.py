@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: stack.py
-		Project: import_sd
+		Project: imageinn
 		Created Date: 18 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Sat Aug 19 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -19,7 +19,6 @@
 """
 from __future__ import annotations
 import datetime
-from math import fabs as abs
 from typing import Dict, Optional, Tuple
 import logging
 from decimal import Decimal

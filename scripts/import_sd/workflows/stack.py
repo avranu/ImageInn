@@ -3,7 +3,7 @@
 	Metadata:
 
 		File: workflow.py
-		Project: workflows
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
@@ -22,9 +22,10 @@ import argparse
 import os
 import sys
 import logging
-from typing import Any, Dict, Optional, TypedDict
-import exifread, exifread.utils, exifread.tags.exif, exifread.classes
+from scripts.import_sd.workflow import Workflow
+from scripts.import_sd.stackcollection import StackCollection
 
+"""
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.operations import CopyOperation
 from scripts.import_sd.validator import Validator
@@ -34,10 +35,14 @@ from scripts.import_sd.queue import Queue
 from scripts.import_sd.sd import SDCard
 from scripts.import_sd.workflow import Workflow
 from scripts.import_sd.stackcollection import StackCollection
+"""
 
 logger = logging.getLogger(__name__)
 
 class StackWorkflow(Workflow):
+	"""
+	Workflow for stacking photos.
+	"""
 	raw_extension : str
 	dry_run : bool = False
 

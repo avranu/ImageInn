@@ -3,7 +3,7 @@
 	Metadata:
 
 		File: workflow.py
-		Project: import_sd
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
@@ -19,18 +19,13 @@
 """
 from __future__ import annotations
 import argparse
-import datetime
 from enum import Enum
-import errno
 import os
 import logging, logging.config
 import subprocess
 import sys
-from typing import Any, Dict, Optional, TypedDict
-import exifread, exifread.utils, exifread.tags.exif, exifread.classes
+from typing import Any,  Optional
 
-from scripts.import_sd.config import MAX_RETRIES
-from scripts.import_sd.validator import Validator
 from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.photo import Photo, FakePhoto
 from scripts.import_sd.sd import SDCard
@@ -230,7 +225,8 @@ class Workflow:
 		if buffer < 1:
 			# No room for even a truncated filename
 			raise ValueError(f'FilePath is too long: {self.base_path}')
-		elif buffer < len(filename):
+
+		if buffer < len(filename):
 			# First, try re-generating a name without the camera model or lens, and a shortened date.
 			filename = self.generate_name(photo, short=True)
 
@@ -245,11 +241,11 @@ class Workflow:
 		else:
 			year = f'{photo.date:%Y}'
 			date = f'{photo.date:%Y-%m-%d}'
-		
+
 		return FilePath([self.base_path,year,date,filename])
 
 	@classmethod
-	def ask_user_continue(cls, message : str = f"Errors were found:", errors : Optional[list] = None, continue_message : str = "Continue to the next step? [y/n]", throw_error : bool = True) -> bool:
+	def ask_user_continue(cls, message : str = "Errors were found:", errors : Optional[list] = None, continue_message : str = "Continue to the next step? [y/n]", throw_error : bool = True) -> bool:
 		"""
 		Ask the user if they want to continue copying the SD card, given the errors that occurred, using the CLI.
 
@@ -275,11 +271,11 @@ class Workflow:
 		if choice.lower() == 'y':
 			logger.info('User decided to continue.')
 			return True
-		else:
-			logger.info('User decided to abort.')
-			if throw_error:
-				raise KeyboardInterrupt('User decided to abort. Prompt was "%s"', message)
-			return False
+
+		logger.info('User decided to abort.')
+		if throw_error:
+			raise KeyboardInterrupt(f'User decided to abort. Prompt was "{message}"')
+		return False
 
 	def mkdir(self, path : DirPath, exist_ok : bool = True) -> None:
 		"""
@@ -342,8 +338,8 @@ class Workflow:
 
 			if check:
 				raise e from e
-			else:
-				return getattr(output, 'stdout', ''), e.stderr
+
+			return e.stdout, e.stderr
 
 		if output.stdout:
 			logger.debug(output.stdout)

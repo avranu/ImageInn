@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: workflow.py
-		Project: workflows
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Tue Aug 22 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -19,17 +19,12 @@
 """
 from __future__ import annotations
 import argparse
-import datetime
-from enum import Enum
 import errno
 import os
 import re
 import sys
 import logging
-import time
 from tqdm import tqdm
-from typing import Any, Dict, Optional, TypedDict
-import exifread, exifread.utils, exifread.tags.exif, exifread.classes
 
 from scripts.import_sd.validator import Validator
 from scripts.lib.path import FilePath, DirPath
@@ -38,6 +33,9 @@ from scripts.import_sd.workflow import Workflow
 logger = logging.getLogger(__name__)
 
 class RenameWorkflow(Workflow):
+	"""
+	Workflow to rename files from the old naming scheme to the new naming scheme.
+	"""
 	_base_path: DirPath
 	raw_extension : str
 	dry_run : bool = False
@@ -77,8 +75,8 @@ class RenameWorkflow(Workflow):
 
 		if not Validator.is_dir(base_path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), base_path)
-		
-		self._base_path = self._normalize_path(base_path)
+
+		self._base_path = base_path
 
 	def run(self) -> dict[str, str]:
 		"""

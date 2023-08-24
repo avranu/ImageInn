@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: test_workflow.py
-		Project: tests
+		Project: imageinn
 		Created Date: 12 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Fri Aug 18 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -43,6 +43,7 @@ class TestWorkflow(unittest.TestCase):
 		self.empty_path = os.path.join(self.test_data_path, 'empty')
 		self.backup_path = os.path.join(self.test_data_path, 'backup_network')
 		self.list_path = os.path.join(self.test_data_path, 'file_list.txt')
+		
 		# Ensure sd_card_path, network_path and backup_network_path all exist
 		os.makedirs(self.data_path, exist_ok=True)
 		os.makedirs(self.test_data_path, exist_ok=True)
@@ -131,7 +132,6 @@ class TestWorkflow(unittest.TestCase):
 			self.workflow.backup_path = os.path.join(self.empty_path, 'non_existent_folder')
 
 	def test_bucket_path_property_fail(self):
-		bucket_path = os.path.join(self.empty_path, 'Import Bucket')
 		with patch.object(Validator, 'is_writeable', return_value=False):
 			with self.assertRaises(PermissionError):
 				_ = self.workflow.bucket_path

@@ -3,7 +3,7 @@
 	Metadata:
 
 		File: sd.py
-		Project: import_sd
+		Project: imageinn
 		Created Date: 11 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
@@ -18,30 +18,25 @@
 		Copyright (c) 2023 Jess Mann
 """
 from __future__ import annotations
-import argparse
-import datetime
-from enum import Enum
 import errno
-import hashlib
-import math
 import os
 import re
 import sys
 import shutil
-import subprocess
 import logging
-import time
-from typing import Any, Dict, Optional, TypedDict
-
-import exifread, exifread.utils, exifread.tags.exif, exifread.classes
+from typing import Optional
 
 from scripts.import_sd.folder import SDFolder
-from scripts.lib.path import FilePath, DirPath
+from scripts.lib.path import DirPath
 from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
 
 class SDCard(DirPath):
+	"""
+	Represents an SD card.
+	"""
+
 	@classmethod
 	def get_media_dir(cls) -> DirPath:
 		"""
@@ -75,7 +70,7 @@ class SDCard(DirPath):
 				return DirPath('/Volumes')
 			if os.path.exists('/media'):
 				return DirPath('/media')
-			elif os.path.exists('/mnt'):
+			if os.path.exists('/mnt'):
 				return DirPath('/mnt')
 
 		# Try media
@@ -143,8 +138,8 @@ class SDCard(DirPath):
 		sd_cards = []
 
 		# Loop over all directories in the media_path, but not subdirectories
-		for dir in os.listdir(media_path):
-			sd_directory = SDFolder(os.path.join(media_path, dir))
+		for child in os.listdir(media_path):
+			sd_directory = SDFolder(os.path.join(media_path, child))
 			sd_cards.append(sd_directory)
 
 		return sd_cards
@@ -242,8 +237,8 @@ class SDCard(DirPath):
 			>>> SDCards.determine_subpath('/media/pi/SD/DCIM/100CANON/IMG_0001.JPG')
 			'100CANON'
 		"""
-		logger.critical('filepath: ' + str(filepath))
-		logger.critical('selfpath: ' + str(self.path))
+		logger.critical('filepath: %s', str(filepath))
+		logger.critical('selfpath: %s', str(self.path))
 		# Remove "{self.path}/DCIM from the beginning, and {filename} from the end
 		prefix = os.path.join(self.path, 'DCIM', '')
 		result = re.sub(r'^' + prefix, '', os.path.dirname(filepath))

@@ -3,14 +3,14 @@
 	Metadata:
 
 		File: exif.py
-		Project: import_sd
+		Project: imageinn
 		Created Date: 17 Aug 2023
 		Author: Jess Mann
 		Email: jess.a.mann@gmail.com
 
 		-----
 
-		Last Modified: Thu Aug 17 2023
+		Last Modified: Wed Aug 23 2023
 		Modified By: Jess Mann
 
 		-----
@@ -21,6 +21,9 @@ from __future__ import annotations
 from enum import Enum
 
 class ExifTag(str, Enum):
+	"""
+	Enum of EXIF tags.
+	"""
 	A = 'EXIF MaxApertureValue'
 	APERTURE = 'EXIF MaxApertureValue'
 	B = 'EXIF BrightnessValue'
