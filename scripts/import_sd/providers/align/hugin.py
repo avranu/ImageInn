@@ -56,6 +56,10 @@ class HuginProvider(AlignmentProvider):
 		if isinstance(photos, PhotoStack):
 			photos = photos.get_photos()
 
+		# Ensure aligned_path exists, and create it if not
+		if not self.aligned_path.exists():
+			os.makedirs(self.aligned_path, exist_ok=True)
+
 		aligned_photos : list[Photo] = []
 		expected_photos: dict[Photo, FilePath] = {}
 		idx : int
@@ -75,7 +79,7 @@ class HuginProvider(AlignmentProvider):
 			# Ensure the right number of photos were created
 			for photo, output_photo in expected_photos.items():
 				if not output_photo.exists():
-					logger.error('Could not align %s', photo.path)
+					logger.error('Could not find file after alignment: %s', photo.path)
 					return []
 
 			# Add exif data to the aligned photos
