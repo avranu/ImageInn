@@ -57,6 +57,12 @@ class HuginProvider(AlignmentProvider):
 			photos = photos.get_photos()
 
 		aligned_photos : list[Photo] = []
+		expected_photos: dict[Photo, FilePath] = {}
+		idx : int
+		photo : Photo
+		for idx, photo in enumerate(photos):
+			output_path = FilePath([self.aligned_path, f'aligned_tmp_{idx:04}.tif'])
+			expected_photos[photo] = output_path
 
 		try:
 			# TODO conflicts
@@ -66,30 +72,32 @@ class HuginProvider(AlignmentProvider):
 				command.append(photo.path)
 			_output, _error = self.subprocess(command)
 
-			# Create the photos
-			idx : int
-			photo : Photo
-			for idx, photo in tqdm(enumerate(photos), desc="Aligning Images...", ncols=100):
-				# Create the path.
-				output_path = FilePath([self.aligned_path, f'aligned_tmp_{idx:04}.tif'])
+			# Ensure the right number of photos were created
+			for photo, output_photo in expected_photos.items():
+				if not output_photo.exists():
+					logger.error('Could not align %s', photo.path)
+					return []
 
+			# Add exif data to the aligned photos
+			for photo, aligned in tqdm(expected_photos.items(), desc="Aligning Images...", ncols=100):
 				# Copy EXIF data using ExifTool
-				logger.debug('Copying exif data from %s to %s', photo.path, output_path)
-				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', output_path])
+				logger.debug('Copying exif data from %s to %s', photo, aligned)
+				self.subprocess(['exiftool', '-TagsFromFile', photo.path, '-all', aligned.path])
 
 				# Create a new file named {photo.filename}_aligned.{ext}
-				filename = re.sub(rf'\.{photo.extension}$', '_aligned.tif', photo.filename)
-				aligned_path = output_path.rename(filename)
+				final_path = photo.change_extension('tif', '_aligned')
+				final_path = aligned.rename(final_path.filename)
 
 				# Add the photo to the list
-				aligned_photo = Photo(aligned_path)
-				aligned_photos.append(aligned_photo)
+				aligned_photos.append(final_path)
 
 		except subprocess.CalledProcessError as e:
 			logger.error('Could not align images -> %s', e)
+			return []
+		
+		finally:
 			# Clean up aligned photos we created
 			for aligned_photo in aligned_photos:
 				aligned_photo.delete()
-			return []
 
 		return aligned_photos
