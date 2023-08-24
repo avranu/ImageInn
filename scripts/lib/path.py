@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Wed Aug 23 2023
+		Last Modified: Thu Aug 24 2023
 		Modified By: Jess Mann
 
 		-----
@@ -405,13 +405,14 @@ class FilePath(Path):
 		if not self.exists():
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
 
+		absolute_path = os.path.join(self.directory.path, value)
 		try:
-			os.rename(self.path, value)
+			os.rename(self.path, absolute_path)
 		except Exception as e:
-			logger.error("Could not rename file %s -> %s", self.path, e)
+			logger.error("Could not rename file %s -> %s: %s", self.path, absolute_path, e)
 			raise e from e
 
-		return self.__class__([self.directory, value])
+		return self.__class__(absolute_path)
 
 class DirPath(Path):
 	"""

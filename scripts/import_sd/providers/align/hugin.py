@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Wed Aug 23 2023
+		Last Modified: Thu Aug 24 2023
 		Modified By: Jess Mann
 
 		-----
@@ -102,11 +102,5 @@ class HuginProvider(AlignmentProvider):
 		except subprocess.CalledProcessError as e:
 			logger.error('Could not align images -> %s', e)
 			return []
-		
-		finally:
-			# Clean up aligned photos we created
-			for aligned_photo in aligned_photos:
-				logger.critical('Deleting %s. Exists %s', aligned_photo, aligned_photo.exists())
-				aligned_photo.delete()
 
 		return aligned_photos
