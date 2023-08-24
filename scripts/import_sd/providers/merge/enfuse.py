@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Wed Aug 23 2023
+		Last Modified: Thu Aug 24 2023
 		Modified By: Jess Mann
 
 		-----
@@ -20,6 +20,7 @@
 from __future__ import annotations
 import subprocess
 import logging
+from typing import Optional
 
 from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.providers.merge.base import HDRProvider
@@ -31,7 +32,7 @@ class EnfuseProvider(HDRProvider):
 	"""
 	Combine photos into an HDR image using enfuse.
 	"""
-	def next(self, photos : list[Photo], output_path : FilePath) -> Photo | None:
+	def next(self, photos : list[Photo], output_path : Optional[FilePath]) -> Photo | None:
 		"""
 		Use enfuse to create the HDR image.
 
@@ -48,6 +49,10 @@ class EnfuseProvider(HDRProvider):
 		"""
 		if not photos or len(photos) < 2:
 			raise ValueError(f'Not enough photos provided to create HDR at {output_path}')
+		
+		# If no output path, create one based on the first photo name
+		if not output_path:
+			output_path = photos[0].append_suffix('_HDR')
 
 		# Create the command
 		command = ['enfuse', '-o', output_path.path, '-v']

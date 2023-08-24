@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Wed Aug 23 2023
+		Last Modified: Thu Aug 24 2023
 		Modified By: Jess Mann
 
 		-----
@@ -34,7 +34,7 @@ class HDRProvider(Provider, ABC):
 	"""
 	This service provider merges a bracket of photos into an HDR image.
 	"""
-	def run(self, brackets: list[BracketOrPhoto]) -> list[BracketOrPhoto]:
+	def run(self, brackets: list[BracketOrPhoto], output_path : list[FilePath] | FilePath | None) -> list[BracketOrPhoto]:
 		"""
 		Align the images in each bracket with the other images in the same bracket.
 
@@ -52,12 +52,20 @@ class HDRProvider(Provider, ABC):
 
 		# Handle just one bracket and return a list of photos
 		if isinstance(brackets[0], Photo):
-			return self.next(brackets)
+			if isinstance(output_path, FilePath):
+				return self.next(brackets, output_path)
+			return self.next(brackets, output_path[0])
 
 		# Handle a group of brackets and return a list of lists of photos
 		results = []
-		for bracket in brackets:
-			aligned_bracket = self.next(bracket)
+		for idx, bracket in enumerate(brackets):
+			hdr_file = None
+			if output_path is not None:
+				if isinstance(output_path, FilePath):
+					hdr_file = output_path
+				else:
+					hdr_file = output_path[idx]
+			aligned_bracket = self.next(bracket, hdr_file)
 			results.append(aligned_bracket)
 
 		return results
