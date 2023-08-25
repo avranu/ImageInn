@@ -29,7 +29,7 @@ from tqdm import tqdm
 
 from scripts.lib.choices import Choices
 from scripts.lib.path import FilePath, DirPath
-from scripts.import_sd.photo import Photo
+from scripts.import_sd.photo import Photo, FakePhoto
 from scripts.import_sd.photostack import PhotoStack
 from scripts.import_sd.workflow import Workflow
 from scripts.import_sd.stackcollection import StackCollection
@@ -239,9 +239,9 @@ class HDRWorkflow(Workflow):
 			return []
 
 		try:
-			logger.critical('Aligning photos of types: %s', [type(photo) for photo in photos])
+			logger.debug('Aligning photos of types: %s', [type(photo) for photo in photos])
 			aligned_photos = self.align_provider.run(tiff_files)
-			logger.critical('Aligned photos return types: %s', [type(photo) for photo in aligned_photos])
+			logger.debug('Aligned photos return types: %s', [type(photo) for photo in aligned_photos])
 
 		finally:
 			# Delete the tiff files
@@ -283,15 +283,14 @@ class HDRWorkflow(Workflow):
 
 		# Name the file after the first photo
 		if filename is None:
-			filename = self.name_hdr(photos)
-		filepath = FilePath([self.hdr_path, filename])
+			filepath = self.name_hdr(photos)
+			filename = filepath.filename
+		else:
+			filepath = self.hdr_path.file(filename)
 
-		# Handle conflicts
-		if filepath.exists():
-			filepath = self.handle_conflict(filepath)
-			if filepath is None:
-				logger.debug('Skipping existing file "%s"', filepath)
-				return None
+		# If we skipped, return nothing.
+		if not filepath:
+			return None
 
 		# Add ".tmp" to the end of the filename until it is finished
 		tmp_filepath = filepath.append_suffix('_tmp')
@@ -299,12 +298,16 @@ class HDRWorkflow(Workflow):
 		# If the file already exists, delete it
 		if tmp_filepath.exists():
 			logger.debug('Deleting existing file "%s"', tmp_filepath)
-			self.delete(tmp_filepath)
+			tmp_filepath.delete()
+
+		if self.dry_run:
+			logger.info('Dry run: would create HDR image at %s', tmp_filepath)
+			return FakePhoto(tmp_filepath)
 
 		hdr = self.hdr_provider.run(photos, tmp_filepath)
 
 		# Ensure the file was created
-		if not self.dry_run and not hdr.exists():
+		if not hdr.exists():
 			logger.error('Unable to create HDR image at %s', tmp_filepath)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), tmp_filepath)
 
@@ -346,15 +349,26 @@ class HDRWorkflow(Workflow):
 
 		images = self.align_images(photos)
 
-		if not images or len(images) != len(photos):
+		if not images or len(images) < 2:
 			logger.error('Not enough aligned images were created, cannot create HDR. Found %d, expected %d', len(images), len(photos))
 			return None
+		
+		# Rename it if we only got a partial alignment result.
+		if len(images) != len(photos):
+			hdrpath = hdrpath.append_suffix('_partial')
+			if hdrpath.exists():
+				newpath = self.handle_conflict(hdrpath)
+				if not newpath:
+					logger.debug('Skipping bracket, because partial HDR already exists: "%s"', hdrpath)
+					return self.get_photo(hdrpath)
+
+				hdrpath = newpath
 
 		try:
 			hdr = self.create_hdr(images, hdrpath.filename)
 		finally:
 			# Clean up the aligned images
-			for image in tqdm(images, desc="Cleaning up aligned images...", ncols=100):
+			for image in images:
 				# Ensure the filename ends with _aligned.tif
 				# This is unnecessary, but we're going to be completely safe
 				if not image.filename.endswith('_aligned.tif'):
@@ -389,6 +403,7 @@ class HDRWorkflow(Workflow):
 		for bracket in brackets:
 			hdr = self.process_single_bracket(bracket)
 			if hdr:
+				logger.info('DONE -- Created HDR image at %s', hdr.path)
 				hdrs.append(hdr)
 
 		'''
@@ -459,7 +474,7 @@ class HDRWorkflow(Workflow):
 
 		match self.onconflict:
 			case OnConflict.SKIP:
-				logger.info('Skipping %s', path)
+				logger.debug('Skipping %s', path)
 				return None
 
 			case OnConflict.OVERWRITE:
@@ -484,7 +499,7 @@ class HDRWorkflow(Workflow):
 			case _:
 				raise ValueError(f'Unknown onconflict value {self.onconflict}')
 
-	def name_hdr(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str | list[str] | DirPath] = None, short : bool = False) -> str:
+	def generate_hdr_name(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str | list[str] | DirPath] = None, short : bool = False) -> str:
 		"""
 		Create a new name for an HDR image based on a list of brackets that will be combined.
 
@@ -536,6 +551,32 @@ class HDRWorkflow(Workflow):
 				filename = short_filename
 
 		return filename
+	
+	def name_hdr(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str | list[str] | DirPath] = None, short : bool = False) -> FilePath:
+		"""
+		Creates a unique name for the HDR image based on the photos that will be combined.
+		
+		This method uses self.generate_hdr_name() and calls self.handle_conflict() if it exists.
+
+		Args:
+			photos (list[Photo] | PhotoStack): The photos to combine.
+			output_dir (str | DirPath, optional): The directory to save the HDR image to.
+			short (bool, optional): Whether to use the short filename or the long filename. Defaults to False (long).
+
+		Returns:
+			FilePath: The path to the new filename.
+		"""
+		filename = self.generate_hdr_name(photos, output_dir, short)
+		filepath = self.hdr_path.file(filename)
+		if filepath.exists():
+			newpath = self.handle_conflict(filepath)
+			if not newpath:
+				logger.debug('Skipping bracket, because HDR already exists: "%s"', filepath)
+				return filepath
+			
+			filepath = newpath
+
+		return filepath
 
 def main():
 	"""

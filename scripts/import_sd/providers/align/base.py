@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Wed Aug 23 2023
+		Last Modified: Thu Aug 24 2023
 		Modified By: Jess Mann
 
 		-----
@@ -52,18 +52,19 @@ class AlignmentProvider(Provider, ABC):
 
 		# Handle just one bracket and return a list of photos
 		if isinstance(brackets[0], Photo):
-			return self.next(brackets)
+			results = self.next(brackets)
+			return list(results.values())
 
 		# Handle a group of brackets and return a list of lists of photos
 		results = []
 		for bracket in brackets:
 			aligned_bracket = self.next(bracket)
-			results.append(aligned_bracket)
+			results.append(list(aligned_bracket.values()))
 
 		return results
 
 	@abstractmethod
-	def next(self, photos: list[Photo]) -> list[Photo]:
+	def next(self, photos: list[Photo]) -> dict[Photo, Photo]:
 		"""
 		Align a single bracket of photos
 
@@ -71,8 +72,6 @@ class AlignmentProvider(Provider, ABC):
 			photo (list[Photo]): The photos to align.
 
 		Returns:
-			list[Photo]:
-				The aligned photos.
-				If ANY of the photos cannot be aligned, an empty list will be returned.
+			dict[Photo, Photo]: A dictionary of the original photos and their aligned counterparts.
 		"""
 		raise NotImplementedError("AlignmentProvider.next() must be implemented in a subclass.")
