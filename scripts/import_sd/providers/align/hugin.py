@@ -10,7 +10,7 @@
 
 		-----
 
-		Last Modified: Thu Aug 24 2023
+		Last Modified: Fri Aug 25 2023
 		Modified By: Jess Mann
 
 		-----
@@ -78,7 +78,7 @@ class HuginProvider(AlignmentProvider):
 		# If alignment failed, return an empty list
 		if not results:
 			logger.error('Could not align photos %s', photos)
-			return []
+			return {}
 
 		# Add exif data to the aligned photos
 		aligned_photos = {}
