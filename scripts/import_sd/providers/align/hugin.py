@@ -1,22 +1,22 @@
-"""
-
-	Metadata:
-
-		File: hugin.py
-		Project: imageinn
-		Created Date: 23 Aug 2023
-		Author: Jess Mann
-		Email: jess.a.mann@gmail.com
-
-		-----
-
-		Last Modified: Fri Aug 25 2023
-		Modified By: Jess Mann
-
-		-----
-
-		Copyright (c) 2023 Jess Mann
-"""
+"""*****************************************************************************
+ *                                                                             *
+ * Metadata:                                                                   *
+ *                                                                             *
+ * 	File: hugin.py                                                             *
+ * 	Project: imageinn                                                          *
+ * 	Created: 23 Aug 2023                                                       *
+ * 	Author: Jess Mann                                                          *
+ * 	Email: jess.a.mann@gmail.com                                               *
+ *                                                                             *
+ * 	-----                                                                      *
+ *                                                                             *
+ * 	Last Modified: Fri Sep 01 2023                                             *
+ * 	Modified By: Jess Mann                                                     *
+ *                                                                             *
+ * 	-----                                                                      *
+ *                                                                             *
+ * 	Copyright (c) 2023 Jess Mann                                               *
+ ****************************************************************************"""
 from __future__ import annotations
 import os
 import subprocess
@@ -116,8 +116,10 @@ class HuginProvider(AlignmentProvider):
 
 		try:
 			# TODO conflicts
+			# Log named after first photo
+			log_path = f'hugin_{photos[0].filename}.out'
 			# Create the command
-			command = ['align_image_stack', '-a', self.aligned_path.file('aligned_tmp_').path, '-m', '-v', '-C', '-c', '25', '-p', 'hugin.out', '-t', '1']
+			command = ['align_image_stack', '-a', self.aligned_path.file('aligned_tmp_').path, '-m', '-v', '-C', '-c', '25', '-p', log_path, '-t', '1']
 			for photo in photos:
 				command.append(photo.path)
 			_output, _error = self.subprocess(command)
