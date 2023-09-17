@@ -1,22 +1,22 @@
-"""
-
-	Metadata:
-
-		File: photo.py
-		Project: imageinn
-		Created Date: 11 Aug 2023
-		Author: Jess Mann
-		Email: jess.a.mann@gmail.com
-
-		-----
-
-		Last Modified: Wed Aug 23 2023
-		Modified By: Jess Mann
-
-		-----
-
-		Copyright (c) 2023 Jess Mann
-"""
+"""*****************************************************************************
+ *                                                                             *
+ * Metadata:                                                                   *
+ *                                                                             *
+ * 	File: photo.py                                                             *
+ * 	Project: imageinn                                                          *
+ * 	Created: 21 Aug 2023                                                       *
+ * 	Author: Jess Mann                                                          *
+ * 	Email: jess.a.mann@gmail.com                                               *
+ *                                                                             *
+ * 	-----                                                                      *
+ *                                                                             *
+ * 	Last Modified: Sat Sep 16 2023                                             *
+ * 	Modified By: Jess Mann                                                     *
+ *                                                                             *
+ * 	-----                                                                      *
+ *                                                                             *
+ * 	Copyright (c) 2023 Jess Mann                                               *
+ ****************************************************************************"""
 from __future__ import annotations
 from datetime import datetime
 import errno
@@ -589,7 +589,7 @@ class Photo(FilePath):
 		matches = re.search(r'^_?[a-z0-9]+_(\d+)(\.[a-zA-Z]{1,5})?$', self.filename, re.IGNORECASE)
 		if not matches:
 			# Try our custom format
-			matches = re.search(r'^\d{8}_[a-z0-9-]+_(\d+)', self.filename, re.IGNORECASE)
+			matches = re.search(r'^\d{8}[_-][a-z0-9-]+[_-](\d+)', self.filename, re.IGNORECASE)
 			if not matches:
 				return None
 
