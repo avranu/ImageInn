@@ -117,8 +117,8 @@ class IGImageProcessor:
 
             # Add a black border to the scaled image
             logger.debug('Adding border to scaled image')
-            border_img = ImageOps.expand(scaled_img, border=4, fill='black')
-            canvas.paste(border_img, (x_offset - 4, y_offset - 4), border_img)
+            border_img = ImageOps.expand(scaled_img, border=4, fill='black').convert("RGB")
+            canvas.paste(border_img, (x_offset - 4, y_offset - 4))
 
             logger.debug('Saving processed image')
             output_path = self.input_dir / f"processed_{file_path.name}"
