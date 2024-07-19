@@ -39,3 +39,8 @@ notes/
 *.sqlite3-journal
 *db.sqlite3
 pgsql
+
+# Images
+*.jpg
+*.jpeg
+*.png
