@@ -39,12 +39,14 @@ Examples:
 from __future__ import annotations
 import logging
 from pathlib import Path
+import time
 from PIL import Image, ImageFilter, ImageEnhance, ImageOps
 import argparse
 from typing import Any, Protocol, runtime_checkable
 from tqdm import tqdm
 from dataclasses import dataclass, field
 from decimal import Decimal
+import numpy as np
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -55,11 +57,19 @@ class Number(Protocol):
     def __float__(self) -> float:
         ...
 
-DEFAULT_BLUR : int = 20
+DEFAULT_CANVAS_SIZE : int = 2160
+DEFAULT_MARGIN : int = 100
+DEFAULT_BLUR : int = 100
 DEFAULT_BRIGHTNESS : Number = 1.8
 DEFAULT_CONTRAST : Number = 0.5
-DEFAULT_SATURATION : Number = 0.6
-DEFAULT_BORDER : int = 4
+DEFAULT_SATURATION : Number = 0.5
+DEFAULT_BORDER : int = 8
+
+class IGImage:
+    """
+    Stores data about the image we are processing, including the original image, the scaled image, and the blurred image, the canvas size, margins, and so on.
+    """
+    
 
 @dataclass
 class IGImageProcessor:
@@ -80,8 +90,8 @@ class IGImageProcessor:
         target_size (int): Target size for the scaled images.
     """
     input_dir: Path
-    margin: int = 100
-    canvas_size: int = 2160
+    margin: int = DEFAULT_MARGIN
+    canvas_size: int = DEFAULT_CANVAS_SIZE
     blur_amount: Number = DEFAULT_BLUR
     brightness_factor: Number = DEFAULT_BRIGHTNESS
     contrast_factor: Number = DEFAULT_CONTRAST
@@ -89,10 +99,23 @@ class IGImageProcessor:
     border_size: int = DEFAULT_BORDER
     file_suffix: str = '_ig'
     max_errors: int = 5
-    target_size: int = field(init=False)
+    make_image_adjustments: bool = False
 
-    def __post_init__(self):
-        self.target_size = self.canvas_size - 2 * self.margin
+    def get_canvas_area(self, image: Image.Image) -> tuple[int, int]:
+        """
+        Calculate the area of the canvas and the area the image can take up on the canvas.
+        """
+        canvas_size = self.canvas_size
+        margin_size = self.margin
+        target_size = self.canvas_size - (2 * self.margin)
+        
+        # If the original image is smaller than the target size, halve the canvas size
+        if max(image.width, image.height) < target_size:
+            canvas_size = max(1080, canvas_size // 2)
+            margin_size = max(50, margin_size // 2)
+            target_size = canvas_size - (2 * margin_size)
+
+        return canvas_size, target_size
 
     def process_images(self) -> None:
         """
@@ -100,21 +123,28 @@ class IGImageProcessor:
 
         Ignore any that end in "_ig"
         """
-        images = list(self.input_dir.glob('*.jpg'))
+        count : int = 0
+        images = [img for img in self.input_dir.glob('*.jpg') if img.is_file() and not img.stem.endswith(self.file_suffix)]
         error_count : int = 0
+
+        # Check if any files will be overwritten
+        existing_files = [str(img) for img in images if (self.input_dir / f"{img.stem}{self.file_suffix}.jpg").exists()]
+        if existing_files:
+            logger.warning(f"{len(existing_files)} files will be overwritten. Waiting for 5 seconds before continuing: {'\n'.join(existing_files)}")
+            time.sleep(5)
+        
         for file_path in tqdm(images, desc="Processing images"):
-            if file_path.stem.endswith(self.file_suffix):
-                logger.debug('Skipping processed image: {file_path}')
-                continue
-            
             try:
                 self.process_image(file_path)
+                count += 1
             except Exception as e:
                 logger.error(f"Failed to process {file_path}: {e}")
                 error_count += 1
                 if error_count >= self.max_errors:
                     logger.error(f"Reached maximum error count ({self.max_errors}). Stopping.")
                     break
+
+        logger.info(f"Processed {count} images")
 
     def process_image(self, file_path: Path) -> None:
         """
@@ -127,19 +157,20 @@ class IGImageProcessor:
         original_img = Image.open(file_path)
 
         # If the original image is smaller than the target size, halve the canvas size
-        canvas_size = self.canvas_size
-        if max(original_img.width, original_img.height) < self.target_size:
-            canvas_size = self.canvas_size // 2
+        canvas_size, target_size = self.get_canvas_area(original_img)
 
         logger.debug('Creating canvas')
         canvas = Image.new('RGB', (canvas_size, canvas_size), (255, 255, 255))
 
-        scaled_img = self.scale_image(original_img)
+        scaled_img = self.scale_image(original_img, target_size)
+        if self.make_image_adjustments:
+            scaled_img = self.adjust_image(scaled_img)
+            
         blurred_img = self.create_blurred_background(original_img, canvas_size)
 
         self.apply_edits(canvas, blurred_img, scaled_img, file_path)
 
-    def scale_image(self, image: Image.Image) -> Image.Image:
+    def scale_image(self, image: Image.Image, target_size : int) -> Image.Image:
         """
         Scale the image to fit within the target size, maintaining aspect ratio.
         
@@ -148,13 +179,13 @@ class IGImageProcessor:
         
         Returns:
             Image.Image: Scaled image.
-        """
-        img_ratio = min(self.target_size / image.width, self.target_size / image.height)
+        """ 
+        img_ratio = min(target_size / image.width, target_size / image.height)
         new_size = (int(image.width * img_ratio), int(image.height * img_ratio))
         logger.debug(f"Scaling image to {new_size}")
         return image.resize(new_size)
 
-    def create_blurred_background(self, image: Image.Image, canvas_size: int = 0) -> Image.Image:
+    def create_blurred_background(self, image: Image.Image, canvas_size: int) -> Image.Image:
         """
         Create a blurred and enhanced version of the image for background.
         
@@ -164,11 +195,10 @@ class IGImageProcessor:
         Returns:
             Image.Image: Processed background image.
         """
-        if not canvas_size:
-            canvas_size = self.canvas_size
-
         logger.debug('Resizing blurred background image')
-        blurred_img = image.copy().resize((canvas_size, canvas_size))
+        img_ratio = max(canvas_size / image.width, canvas_size / image.height)
+        new_size = (int(image.width * img_ratio), int(image.height * img_ratio))
+        blurred_img = image.copy().resize(new_size)
         
         logger.debug('Applying blur to background image')
         blurred_img = blurred_img.filter(ImageFilter.GaussianBlur(self.blur_amount))
@@ -186,6 +216,72 @@ class IGImageProcessor:
         logger.debug('Background image processing complete')
 
         return blurred_img
+
+    def adjust_image(self, image: Image.Image) -> Image.Image:
+        """
+        Adjust the image's saturation, highlights, and shadows based on histogram analysis.
+        
+        Args:
+            image (Image.Image): Image to adjust.
+        
+        Returns:
+            Image.Image: Adjusted image.
+        """
+        logger.debug('Analyzing image histogram for adjustments')
+
+        # Convert to numpy array for analysis
+        img_array = np.array(image)
+        hist, _ = np.histogram(img_array, bins=256, range=(0, 255))
+        
+        # Calculate saturation
+        hsv_img = image.convert("HSV")
+        h, s, v = hsv_img.split()
+        saturation = np.array(s)
+        luminance = np.array(v)
+        #saturation_hist, _ = np.histogram(saturation, bins=256, range=(0, 255))
+
+        mean_saturation = np.mean(saturation)
+        if mean_saturation > 200:
+            logger.info('Reducing saturation')
+            image = ImageEnhance.Color(image).enhance(0.7)
+
+        mean_luminance = np.mean(luminance)
+        if mean_luminance < 50:
+            logger.info('Brightening image')
+            image = ImageEnhance.Brightness(image).enhance(1.2)
+        elif mean_luminance > 200:
+            logger.info('Darkening image')
+            image = ImageEnhance.Brightness(image).enhance(0.8)
+
+        # Calculate highlights and shadows
+        dark_pixels = np.sum(hist[:50]) # dark pixels
+        light_pixels = np.sum(hist[205:])  # light pixels
+
+        """
+        if dark_pixels > len(img_array) * 0.3:
+            logger.debug('Brightening shadows')
+            image = ImageEnhance.Brightness(image).enhance(1.2)
+
+        if light_pixels > len(img_array) * 0.3:  # Arbitrary threshold for too many light pixels
+            logger.debug('Reducing highlights')
+            image = ImageEnhance.Contrast(image).enhance(0.8)
+        """
+
+        """
+        # Sharpen slightly
+        logger.debug('Sharpening image')
+        image = image.filter(ImageFilter.UnsharpMask(radius=1, percent=50, threshold=4))
+
+        logger.info('Adjusted image with %d mean sat, %d mean lum, %d darks, %d lights', 
+                    round(mean_saturation), 
+                    round(mean_luminance), 
+                    dark_pixels, 
+                    light_pixels)
+        """
+
+        
+        logger.debug('Image adjustments complete')
+        return image
 
     def apply_edits(self, canvas: Image.Image, blurred_img: Image.Image, scaled_img: Image.Image, file_path: Path) -> None:
         """
@@ -219,9 +315,9 @@ class IGImageProcessor:
         logger.debug('Saving processed image')
         output_path = self.input_dir / f"{file_path.stem}{self.file_suffix}.jpg"
         if output_path.exists():
-            logger.warning(f"Overwriting processed image: {output_path}")
+            logger.debug(f"Overwriting processed image: {output_path}")
         canvas.save(output_path)
-        logger.info(f"Processed image saved as {output_path}")
+        logger.debug(f"Processed image saved as {output_path}")
 
 def main() -> None:
     """Main function to parse arguments and start the image processing."""
@@ -230,14 +326,15 @@ def main() -> None:
                     applyies a blurred and enhanced version of the image as the background, and saving the 
                     processed image with a suffix.''')
     parser.add_argument('input_dir', type=Path, help='Path to the input directory containing JPG images.')
-    parser.add_argument('--margin', '-m', type=int, default=100, help='Margin size for the canvas.')
-    parser.add_argument('--size', '-s', type=int, default=2160, help='Canvas size for the output images.')
+    parser.add_argument('--margin', '-m', type=int, default=DEFAULT_MARGIN, help='Margin size for the canvas.')
+    parser.add_argument('--size', '-s', type=int, default=DEFAULT_CANVAS_SIZE, help='Canvas size for the output images.')
     parser.add_argument('--blur', '-b', type=Decimal, default=DEFAULT_BLUR, help='Amount of Gaussian blur to apply.')
     parser.add_argument('--brightness', '-br', type=Decimal, default=DEFAULT_BRIGHTNESS, help='Brightness factor for the background.')
     parser.add_argument('--contrast', '-c', type=Decimal, default=DEFAULT_CONTRAST, help='Contrast factor for the background.')
     parser.add_argument('--saturation', '-sat', type=Decimal, default=DEFAULT_SATURATION, help='Saturation factor for the background.')
     parser.add_argument('--border', type=int, default=DEFAULT_BORDER, help='Border size for the scaled image.')
     parser.add_argument('--suffix', type=str, default='_ig', help='Suffix to add to the processed images.')
+    parser.add_argument('--adjust-image', action='store_true', help='Adjust the image based on histogram analysis.')
     args = parser.parse_args()
 
     processor = IGImageProcessor(
@@ -249,7 +346,8 @@ def main() -> None:
         contrast_factor = args.contrast,
         saturation_factor = args.saturation,
         border_size = args.border,
-        file_suffix = args.suffix
+        file_suffix = args.suffix,
+        make_image_adjustments = args.adjust_image
     )
     processor.process_images()
 
