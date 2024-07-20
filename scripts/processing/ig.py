@@ -41,20 +41,25 @@ import logging
 from pathlib import Path
 from PIL import Image, ImageFilter, ImageEnhance, ImageOps
 import argparse
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 from tqdm import tqdm
 from dataclasses import dataclass, field
 from decimal import Decimal
-from numbers import Number
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-DEFAULT_BLUR = 20
-DEFAULT_BRIGHTNESS = 1.8
-DEFAULT_CONTRAST = 0.5
-DEFAULT_SATURATION = 0.6
-DEFAULT_BORDER = 4
+# Define typealias for Number
+@runtime_checkable
+class Number(Protocol):
+    def __float__(self) -> float:
+        ...
+
+DEFAULT_BLUR : int = 20
+DEFAULT_BRIGHTNESS : Number = 1.8
+DEFAULT_CONTRAST : Number = 0.5
+DEFAULT_SATURATION : Number = 0.6
+DEFAULT_BORDER : int = 4
 
 @dataclass
 class IGImageProcessor:
