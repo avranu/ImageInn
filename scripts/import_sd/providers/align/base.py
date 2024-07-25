@@ -26,7 +26,6 @@ import logging
 
 from tqdm import tqdm
 import concurrent.futures
-from scripts.lib.path import FilePath
 from scripts.import_sd.providers.base import Provider
 from scripts.import_sd.photo import Photo
 

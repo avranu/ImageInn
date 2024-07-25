@@ -19,7 +19,6 @@
 """
 from __future__ import annotations
 from abc import ABC
-from typing import List, TypeVar
 import logging
 from scripts.lib.path import FilePath
 from scripts.import_sd.providers.base import Provider

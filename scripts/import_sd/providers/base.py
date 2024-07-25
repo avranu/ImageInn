@@ -22,7 +22,7 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 import subprocess
 import logging
-from scripts.lib.path import FilePath, DirPath
+from scripts.lib.path import DirPath
 
 logger = logging.getLogger(__name__)
 

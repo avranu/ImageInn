@@ -1,1 +1,1 @@
-from .ig import IGImageProcessor
+from scripts.processing.ig import IGImageProcessor, IGImage

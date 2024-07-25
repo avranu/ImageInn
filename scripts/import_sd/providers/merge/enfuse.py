@@ -22,7 +22,7 @@ import subprocess
 import logging
 from typing import Optional
 
-from scripts.lib.path import FilePath, DirPath
+from scripts.lib.path import FilePath
 from scripts.import_sd.providers.merge.base import HDRProvider
 from scripts.import_sd.photo import Photo
 

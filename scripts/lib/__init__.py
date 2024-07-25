@@ -17,3 +17,4 @@
 
 		Copyright (c) 2023 Jess Mann
 """
+from scripts.lib.types import Number

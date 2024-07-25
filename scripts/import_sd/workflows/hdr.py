@@ -23,9 +23,9 @@ import errno
 import os
 import re
 import sys
-import logging, logging.config
+import logging
+import logging.config
 from typing import Optional
-from tqdm import tqdm
 
 from scripts.lib.choices import Choices
 from scripts.lib.path import FilePath, DirPath

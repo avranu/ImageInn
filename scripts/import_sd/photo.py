@@ -26,7 +26,10 @@ import re
 import logging
 from decimal import Decimal
 from typing import Dict, Optional
-import exifread, exifread.utils, exifread.tags.exif, exifread.classes
+import exifread
+import exifread.utils
+import exifread.tags.exif
+import exifread.classes
 from scripts.import_sd.exif import ExifTag
 from scripts.import_sd.validator import Validator
 from scripts.lib.path import FilePath, Path

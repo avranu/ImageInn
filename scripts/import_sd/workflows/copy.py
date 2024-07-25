@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Optional
 
-from scripts.lib.path import FilePath, DirPath
+from scripts.lib.path import DirPath
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.operations import CopyOperation
 from scripts.import_sd.validator import Validator

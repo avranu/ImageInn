@@ -25,7 +25,6 @@ import subprocess
 import shutil
 
 from scripts.import_sd.workflow import Workflow
-from scripts.import_sd.photo import Photo
 from scripts.import_sd.validator import Validator
 from scripts.import_sd.sd import SDCard
 from scripts.import_sd.queue import Queue

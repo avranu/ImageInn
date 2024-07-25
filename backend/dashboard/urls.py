@@ -1,7 +1,7 @@
 # Generic imports
 from __future__ import annotations
 # Django imports
-from django.urls import path, include, re_path
+from django.urls import path, include
 # 3rd Party imports
 from rest_framework import routers
 # App Imports

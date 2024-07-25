@@ -22,7 +22,6 @@ import unittest
 from unittest.mock import patch
 import shutil
 import tempfile
-import unittest
 from scripts.lib.path import FilePath
 from scripts.import_sd.validator import Validator
 

@@ -17,7 +17,6 @@
 
 		Copyright (c) 2023 Jess Mann
 """
-import os
 import unittest
 from unittest.mock import patch
 from decimal import Decimal

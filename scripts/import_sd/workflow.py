@@ -21,7 +21,8 @@ from __future__ import annotations
 import argparse
 from enum import Enum
 import os
-import logging, logging.config
+import logging
+import logging.config
 import subprocess
 import sys
 from typing import Any,  Optional

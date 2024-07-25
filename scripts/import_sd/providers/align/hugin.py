@@ -18,10 +18,8 @@
  * 	Copyright (c) 2023 Jess Mann                                               *
  ****************************************************************************"""
 from __future__ import annotations
-import os
 import subprocess
 import logging
-import re
 from tqdm import tqdm
 
 from scripts.lib.path import FilePath, DirPath

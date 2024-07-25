@@ -24,7 +24,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch, MagicMock, mock_open
+from unittest.mock import patch, mock_open
 from scripts.import_sd import SDCards, CopyOperation
 
 MOCK_CHECKSUM_VALUE = "mock_valid_checksum"
