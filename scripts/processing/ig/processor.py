@@ -206,7 +206,7 @@ class IGImageProcessor:
             self.update_progress(f'Cleaning up: {topaz_file_path.name}')
             topaz_file_path.unlink()
 
-    def apply_topaz(self, image_path : Path) -> Path | None:
+    def apply_topaz(self, image_path : Path, timeout : int = 300) -> Path | None:
         """
         Apply Topaz DeNoise AI to the image.
 
@@ -229,8 +229,8 @@ class IGImageProcessor:
         cmd = [str(topaz_path), input_path, '--output', output_path]
         logger.debug(f"Running command: {cmd}")
         
-        # Timeout set to 5 minutes
-        subprocess.run(cmd, capture_output=True, check=True, timeout=300)
+        # Default Timeout set to 5 minutes
+        subprocess.run(cmd, capture_output=True, check=True, timeout=timeout)
 
         # Check for output. Original filename in the output_path dir
         topaz_output = self.topaz_output_dir / f"{image_path.stem}.jpg"
