@@ -12,17 +12,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class JPGSyncer:
-    source_dir : Path
-    target_dir : Path
-    dry_run : bool
-    
-    def __init__(self, source_dir: Path, target_dir: Path, dry_run : bool = False):
-        self.source_dir = source_dir
+    target_dir: Path
+    dry_run: bool
+
+    def __init__(self, target_dir: Path, dry_run: bool = False):
         self.target_dir = target_dir
         self.dry_run = dry_run
 
-    def find_jpg_files(self):
-        return [file for file in self.source_dir.rglob("*.jpg", case_sensitive=False)]
+    def find_jpg_files(self, source_dir: Path):
+        return [file for file in source_dir.rglob("*") if file.suffix.lower() == ".jpg"]
 
     def get_file_structure(self, file: Path) -> Path:
         mod_time = datetime.fromtimestamp(file.stat().st_mtime)
@@ -85,8 +83,11 @@ class JPGSyncer:
             logger.error(f"Failed to copy {src} to {dest}: {e}")
         return False
 
-    def sync(self):
-        jpg_files = self.find_jpg_files()
+    def sync(self, source_dirs: list[Path]):
+        jpg_files = []
+        for source_dir in source_dirs:
+            jpg_files.extend(self.find_jpg_files(source_dir))
+        
         total = len(jpg_files)
 
         if not total:
@@ -115,7 +116,7 @@ def main():
 
     try:
         parser = argparse.ArgumentParser(description="Sync JPG files with defined structure.")
-        parser.add_argument("source", type=Path, help="Source directory to search for JPG files.")
+        parser.add_argument("sources", type=Path, nargs='+', help="Source directories to search for JPG files.")
         if target_dir:
             parser.add_argument("--target", '-t', type=Path, default=Path(target_dir), help="Target directory to copy JPG files to.")
         else:
@@ -127,8 +128,8 @@ def main():
         if not args.target:
             parser.error("Target directory is required. Set it using the CLOUD_THUMBNAILS_DIR environment variable, or pass it as an argument using the --target option.")
 
-        syncer = JPGSyncer(args.source, args.target, args.dry_run)
-        syncer.sync()
+        syncer = JPGSyncer(args.target, args.dry_run)
+        syncer.sync(args.sources)
     except KeyboardInterrupt:
         logger.info("Sync interrupted by user.")
 
