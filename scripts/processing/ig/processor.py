@@ -218,8 +218,6 @@ class IGImageProcessor:
         
         self.update_progress(f'Applying Topaz DeNoise AI: {image_path.name}')
 
-        # Create temporary 'topaz' directory next to image_path
-
         # Convert paths to windows format for Topaz CLI
         input_path = to_windows_path(image_path)
         output_path = to_windows_path(self.topaz_output_dir)
