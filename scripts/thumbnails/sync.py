@@ -20,7 +20,13 @@ class JPGSyncer:
         self.dry_run = dry_run
 
     def find_jpg_files(self, source_dir: Path):
-        return [file for file in source_dir.rglob("*") if file.suffix.lower() == ".jpg"]
+        jpg_files = []
+        for file in source_dir.rglob("*"):
+            if file.suffix.lower() == ".jpg":
+                dest_path = self.get_file_structure(file)
+                if not self.should_skip_file(file, dest_path):
+                    jpg_files.append(file)
+        return jpg_files
 
     def get_file_structure(self, file: Path) -> Path:
         mod_time = datetime.fromtimestamp(file.stat().st_mtime)
@@ -35,15 +41,28 @@ class JPGSyncer:
                 hash_func.update(chunk)
         return hash_func.hexdigest()
 
-    def check_and_copy(self, src: Path, dest: Path) -> bool:
-        if dest.exists():
-            if self.generate_file_hash(src) == self.generate_file_hash(dest):
-                logger.debug(f"Skipping {src} as it already exists with the same content.")
-                return False
+    def should_skip_file(self, src: Path, dest: Path) -> bool:
+        if dest.exists() and self.generate_file_hash(src) == self.generate_file_hash(dest):
+            logger.debug(f"Skipping {src} as it already exists with the same content.")
+            return True
+        return False
 
-            dest = self.resolve_collision(dest)
+    def get_filename(self, src: Path, dest: Path) -> Path | None:
+        if self.should_skip_file(src, dest):
+            return None
+        return self.resolve_collision(dest) if dest.exists() else dest
+
+    def check_and_copy(self, src: Path, dest: Path) -> bool:
+        destination = self.get_filename(src, dest)
+
+        if not destination:
+            return True
+
+        # If windows, rsync isn't available, so copy with shutil
+        if os.name == 'nt':
+            return self.copy_with_shutil(src, destination)
                 
-        return self.copy_with_rsync(src, dest)
+        return self.copy_with_rsync(src, destination)
 
     def resolve_collision(self, dest: Path) -> Path:
         dest_dir = dest.parent
