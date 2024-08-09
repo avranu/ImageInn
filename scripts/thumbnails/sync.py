@@ -3,6 +3,26 @@ Sync JPG files to a thumbnails directory, so that there are no duplicates.
 
 This script is useful for collecting all the jpg files scattered throughout a filesystem so that they can be 
 uploaded to a cloud provider without making a mess.
+
+Usage:
+    sync.py [-h] [--target TARGET] [--threads THREADS] [--dry-run] sources [sources ...]
+
+    Sync JPG files with defined structure.
+
+    positional arguments:
+        sources               Source directories to search for JPG files.
+
+    options:
+        -h, --help            show this help message and exit
+        --target TARGET, -t TARGET
+                                Target directory to copy JPG files to.
+        --threads THREADS, -w THREADS
+                                Number of threads to use for processing files.
+        --dry-run             Perform a dry run without making any changes.
+
+Examples:
+    echo CLOUD_THUMBNAILS_DIR="/mnt/c/Users/username/Pictures/Thumbnails" > .env
+    python -m scripts.thumbnails.sync /mnt/i/Photos /mnt/j/Photos
 """
 from __future__ import annotations
 import os
