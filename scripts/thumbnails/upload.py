@@ -82,7 +82,7 @@ class Immich:
             else:
                 ignore_patterns.append(f'*.{ext}')
 
-        if large_files := self.find_large_files():
+        if large_files := self.find_large_files(directory):
             logger.warning("%d Large files found, which will be skipped.", len(large_files))
             ignore_patterns.extend([file.as_posix() for file in large_files])
 
