@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Union
 import subprocess
 import os
 import logging
@@ -8,18 +10,23 @@ import argparse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Type: list[str | Path] | str | Path | None
+PathParts = Union[list[str | Path], str, Path]
+
 class Immich:
     url : str
     api_key : str
     thumbnails_dir : Path
     _ignore_extensions : list[str]
+    _ignore_paths : list[str]
     _authenticated : bool = False
     
-    def __init__(self, url: str, api_key: str, thumbnails_dir : Path | str, ignore_extensions : list[str] | None = None):
+    def __init__(self, url: str, api_key: str, thumbnails_dir : Path | str, ignore_extensions : list[str] | None = None, ignore_paths : PathParts | None = None):
         self.url = url
         self.api_key = api_key
         self.thumbnails_dir = Path(thumbnails_dir)
         self.ignore_extensions = ignore_extensions or []
+        self.ignore_paths = ignore_paths or []
 
         if not self.thumbnails_dir.exists():
             logger.error(f"Thumbnails directory {self.thumbnails_dir} does not exist.")
@@ -40,6 +47,26 @@ class Immich:
             return
         
         self._ignore_extensions = value
+
+    @property
+    def ignore_paths(self) -> list[str]:
+        return self._ignore_paths
+
+    @ignore_paths.setter
+    def ignore_paths(self, value: PathParts | None):
+        if not value:
+            self._ignore_paths = []
+            return
+
+        if isinstance(value, Path):
+            self._ignore_paths = [str(value)]
+            return
+        
+        if isinstance(value, str):
+            self._ignore_paths = [value]
+            return
+        
+        self._ignore_paths = [str(path) for path in value]
 
     def authenticate(self):
         if self._authenticated:
@@ -63,30 +90,35 @@ class Immich:
                 large_files.append(file)
         return large_files
 
-    def upload_files(self, recursive: bool = True, ignore_extensions : list[str] | None = None, directory : Path | None = None):
-        if not self._authenticated:
-            self.authenticate()
-            
-        ignore_extensions = ignore_extensions or []
-        directory = directory or self.thumbnails_dir
-
-        command = ["immich", "upload"]
-
-        # Ignore files 
+    def _compile_ignore_patterns(self, directory : Path) -> list[str]:
         ignore_patterns = []
         
-        for ext in ignore_extensions:
+        for ext in self.ignore_extensions:
             # Handle not (!)
             if ext.startswith("!"):
                 ignore_patterns.append(f'!*.{ext[1:]}')
             else:
                 ignore_patterns.append(f'*.{ext}')
 
+        for path in self.ignore_paths:
+            ignore_patterns.append(path)
+
         if large_files := self.find_large_files(directory):
             logger.warning("%d Large files found, which will be skipped.", len(large_files))
             ignore_patterns.extend([file.as_posix() for file in large_files])
 
-        if ignore_patterns:
+        return ignore_patterns
+
+    def upload_files(self, recursive: bool = True, directory : Path | None = None):
+        if not self._authenticated:
+            self.authenticate()
+            
+        directory = directory or self.thumbnails_dir
+
+        command = ["immich", "upload"]
+
+        # Ignore files 
+        if ignore_patterns := self._compile_ignore_patterns(directory):
             ignore_string = "|".join(ignore_patterns)
             command.extend(["-i", f'({ignore_string})'])
 
@@ -114,14 +146,15 @@ def main():
         parser.add_argument("--url", help="Immich URL", default=url)
         parser.add_argument("--api-key", help="Immich API key", default=api_key)
         parser.add_argument("--thumbnails-dir", '-d', help="Cloud thumbnails directory", default=thumbnails_dir)
-        parser.add_argument("--ignore-extensions", "-i", help="Ignore files with these extensions", nargs='+')
+        parser.add_argument("--ignore-extensions", "-e", help="Ignore files with these extensions", nargs='+')
+        parser.add_argument('--ignore-paths', '-i', help="Ignore files with these paths", nargs='+')
         args = parser.parse_args()
 
         if not args.url or not args.api_key or not args.thumbnails_dir:
             logger.error("IMMICH_URL, IMMICH_API_KEY, and CLOUD_THUMBNAILS_DIR must be set.")
             exit(1)
 
-        immich = Immich(args.url, args.api_key, args.thumbnails_dir, args.ignore_extensions)
+        immich = Immich(args.url, args.api_key, args.thumbnails_dir, args.ignore_extensions, args.ignore_paths)
         immich.authenticate()
         immich.upload_files()
     except KeyboardInterrupt:
