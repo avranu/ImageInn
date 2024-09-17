@@ -24,7 +24,7 @@ class FileOrganizer:
     - If a file with the same name already exists in the target directory, a unique filename is generated.
     """
     directory : Path
-    pattern : str
+    file_prefix : str
     dry_run : bool
     files_moved : list[Path]
     files_deleted : list[Path]
@@ -35,9 +35,9 @@ class FileOrganizer:
     _files : list[Path]
     _file_count : int = 0
     
-    def __init__(self, directory: str = '.', pattern: str = 'PXL_*', batch_size : int = -1, dry_run: bool = False):
+    def __init__(self, directory: str = '.', file_prefix: str = 'PXL_', batch_size : int = -1, dry_run: bool = False):
         self.directory = Path(directory)
-        self.pattern = pattern
+        self.file_prefix = file_prefix
         self.dry_run = dry_run
         self.files_moved = []
         self.files_deleted = []
@@ -55,7 +55,7 @@ class FileOrganizer:
             if self.batch_size > 0:
                 logger.debug(f"Limiting files to {self.batch_size}")
                 files_found = []
-                for f in self.directory.glob(self.pattern):
+                for f in self.directory.glob(f'{self.file_prefix}*'):
                     if f.is_file():
                         files_found.append(f)
                         if len(files_found) >= self.batch_size:
@@ -63,7 +63,7 @@ class FileOrganizer:
                 return files_found
 
             # Grab everything
-            self._files = [f for f in self.directory.glob(self.pattern) if f.is_file()]
+            self._files = [f for f in self.directory.glob(f'{self.file_prefix}*') if f.is_file()]
         except Exception as e:
             raise ShouldTerminateException(f"Error accessing directory {self.directory}") from e
 
@@ -134,7 +134,7 @@ class FileOrganizer:
                     logger.error(f"Error processing file {file}: {e}")
                 finally:
                     self.progress.update(1)
-                    self.progress.set_description(f"Organizing... {self.directories_created} directories created, {len(self.files_moved)} files moved, {len(self.files_deleted)} files deleted, {self.duplicates_found} duplicates found")
+                    self.progress.set_description(f"Organizing... {len(self.files_moved)} files moved, {len(self.files_deleted)} files deleted, {self.duplicates_found} duplicates found, {self.directories_created} directories created")
 
         self.report('Finished organizing.')
 
@@ -173,8 +173,9 @@ class FileOrganizer:
         """
         if isinstance(filename, Path):
             filename = filename.name
-            
-        if not (match := re.match(r'^PXL_(\d{8})_', str(filename))):
+
+        # TODO use self.file_prefix
+        if not (match := re.match(r'^PXL_20(\d{6})_', str(filename))):
             raise OneFileException(f"Invalid filename format: {filename}")
 
         # Subdir name
@@ -214,7 +215,7 @@ class FileOrganizer:
 
         return directory
         
-    def delete_file(self, file: Path, message : str = "Deleted file") -> bool:
+    def delete_file(self, file: Path, message : str = "Deleted file", use_trash : bool = True) -> bool:
         """
         Delete a file.
 
@@ -230,7 +231,12 @@ class FileOrganizer:
         """
         try:
             if not self.dry_run:
-                file.unlink()
+                if use_trash:
+                    trash = self.directory / '.trash'
+                    trash.mkdir(exist_ok=True)
+                    file.rename(trash / file.name)
+                else:
+                    file.unlink()
                 
             self.info(f"{message}: {file}")
             self.files_deleted.append(file)
@@ -256,10 +262,16 @@ class FileOrganizer:
             ShouldTerminateException: If the checksums do not match after moving the file.
         """
         source_hash = self.hash(source)
+
+        # Destination must be absolute for Path.rename to be consistent
+        if not destination.is_absolute():
+            logger.debug(f"Making destination path absolute: {destination}")
+            destination = self.directory / destination
         
         if not self.dry_run:
             try:
-                shutil.move(str(source), str(destination))
+                #shutil.move(str(source), str(destination))
+                source.rename(destination)
             except Exception as e:
                 raise OneFileException(f'Error moving file {source} to {destination}') from e
 
@@ -464,16 +476,16 @@ def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize PXL_ files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')
-    parser.add_argument('-p', '--pattern', default='PXL_*', help='File pattern to match (default: PXL_*)')
-    parser.add_argument('--dry-run', action='store_true', help='Simulate the file organization without moving files')
-    parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
+    parser.add_argument('-p', '--prefix', default='PXL_', help='File prefix to match (default: PXL_)')
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
+    parser.add_argument('--dry-run', action='store_true', help='Simulate the file organization without moving files')
     args = parser.parse_args()
 
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
-    organizer = FileOrganizer(directory=args.directory, pattern=args.pattern, batch_size=args.limit, dry_run=args.dry_run)
+    organizer = FileOrganizer(directory=args.directory, file_prefix=args.prefix, batch_size=args.limit, dry_run=args.dry_run)
 
     try:
         organizer.organize_files()
