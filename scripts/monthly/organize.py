@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import os
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, validator
 import re
 import hashlib
 import shutil
@@ -15,7 +15,8 @@ from scripts.monthly.exceptions import ShouldTerminateException, OneFileExceptio
 
 logger = logging.getLogger(__name__)
 
-class FileOrganizer:
+
+class FileOrganizer(BaseModel):
     """
     Organize files into monthly directories based on the filename.
 
@@ -23,72 +24,74 @@ class FileOrganizer:
     - Files are moved to a directory named 'YYYY-MM' under the specified directory.
     - If a file with the same name already exists in the target directory, a unique filename is generated.
     """
-    directory : Path
-    file_prefix : str
-    dry_run : bool
-    duplicates_found : int = 0
-    directories_created : int = 0
-    _files_moved : list[Path]
-    _count_files_moved : int = 0
-    _files_deleted : list[Path]
-    _count_files_deleted : int = 0
-    _batch_size : int
-    _progress : tqdm | None = None
-    _files : list[Path]
-    _file_count : int = 0
-    
-    def __init__(self, directory: str = '.', file_prefix: str = 'PXL_', batch_size : int = -1, dry_run: bool = False):
-        self.directory = Path(directory)
-        self.file_prefix = file_prefix
-        self.dry_run = dry_run
-        self._files_moved = []
-        self._files_deleted = []
-        self._files = []
-        self._batch_size = batch_size
+    directory: Path = Field(default=Path('.'))
+    file_prefix: str = 'PXL_'
+    dry_run: bool = False
+    batch_size: int = -1
+
+    duplicates_found: int = 0
+    directories_created: int = 0
+
+    # Private attributes
+    _files_moved: list[Path] = PrivateAttr(default_factory=list)
+    _count_files_moved: int = PrivateAttr(default=0)
+    _files_deleted: list[Path] = PrivateAttr(default_factory=list)
+    _count_files_deleted: int = PrivateAttr(default=0)
+    _files: list[Path] = PrivateAttr(default_factory=list)
+    _count_files: int = PrivateAttr(default=0)
+    _progress: tqdm | None = PrivateAttr(default=None)
+    _filename_pattern : re.Pattern | None = PrivateAttr(default=None)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @field_validator('directory', mode='before')
+    def validate_directory(cls, v):
+        return Path(v)
 
     @property
     def files(self) -> list[Path]:
         # Cache it
-        if self._files:
-            return self._files
+        if not self._files:
         
-        try:
-            if self.batch_size > 0:
-                # Optimize in the case of a limited batch size, since glob is a generator
-                logger.debug(f"Limiting files to {self.batch_size}")
-                self._files = []
-                for f in self.directory.glob(f'{self.file_prefix}*'):
-                    if f.is_file():
-                        self.append_file(f)
-                        if self.file_count >= self.batch_size:
-                            break
-            else:
-                # Grab everything
-                self._files = [f for f in self.directory.glob(f'{self.file_prefix}*') if f.is_file()]
-                self._file_count = len(self._files)
-        except Exception as e:
-            raise ShouldTerminateException(f"Error accessing directory {self.directory}") from e
+            try:
+                if self.batch_size > 0:
+                    # Optimize in the case of a limited batch size, since glob is a generator
+                    logger.debug(f"Limiting files to {self.batch_size}")
+                    self._files = []
+                    for f in self.directory.glob(f'{self.file_prefix}*'):
+                        if f.is_file():
+                            self.append_file(f)
+                            if self.file_count >= self.batch_size:
+                                break
+                else:
+                    # Grab everything
+                    self._files = [f for f in self.directory.glob(f'{self.file_prefix}*') if f.is_file()]
+                    self._count_files = len(self._files)
+            except Exception as e:
+                raise ShouldTerminateException(f"Error accessing directory {self.directory}") from e
 
         return self._files
 
     @property
+    def filename_pattern(self) -> re.Pattern:
+        if not self._filename_pattern:
+            self._filename_pattern = re.compile(rf'^{re.escape(self.file_prefix)}(20\d{{6}})_')
+        return self._filename_pattern
+
+    @property
     def file_count(self) -> int:
         # Cache it
-        if not self._file_count:
-            self._file_count = len(self.files)
+        if not self._count_files:
+            self._count_files = len(self.files)
 
-        return self._file_count
+        return self._count_files
 
     @property
     def progress(self) -> tqdm:
         if self._progress is None:
-            self._progress = tqdm(total=self.file_count, desc='Processing files')
+            self._progress = tqdm(total=self.file_count, desc='Processing files', leave=False, unit='file', miniters=1000, mininterval=1)
             
         return self._progress
-
-    @property
-    def batch_size(self) -> int:
-        return self._batch_size
 
     @property
     def files_moved(self) -> list[Path]:
@@ -108,7 +111,7 @@ class FileOrganizer:
 
     def append_file(self, file: Path) -> None:
         self._files.append(file)
-        self._file_count += 1
+        self._count_files += 1
 
     def append_moved_file(self, file: Path) -> None:
         self._files_moved.append(file)
@@ -119,7 +122,7 @@ class FileOrganizer:
         self._count_files_deleted += 1
 
     @lru_cache(maxsize=1024)
-    def hash(self, filename: str | Path) -> str:
+    def hash_file(self, filename: str | Path) -> str:
         """
         Calculate the MD5 hash of a file.
 
@@ -154,7 +157,7 @@ class FileOrganizer:
         if self.dry_run:
             logger.info('Dry run mode enabled; no files will be moved')
 
-        with tqdm(total=self.file_count, desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1) as self._progress:
+        with tqdm(total=self.file_count, desc='Processing files', leave=False, unit='file', miniters=1000, mininterval=1) as self._progress:
             for file in self.files:
                 try:
                     self.process_file(file)
@@ -218,8 +221,7 @@ class FileOrganizer:
         if isinstance(filename, Path):
             filename = filename.name
 
-        # TODO use self.file_prefix
-        if not (match := re.match(r'^PXL_(20\d{6})_', str(filename))):
+        if not (match := self.filename_pattern.match(str(filename))):
             raise OneFileException(f"Invalid filename format: {filename}")
 
         # Subdir name
@@ -305,7 +307,7 @@ class FileOrganizer:
             OneFileException: If an error occurs while moving the file, or hashing either file.
             ShouldTerminateException: If the checksums do not match after moving the file.
         """
-        source_hash = self.hash(source)
+        source_hash = self.hash_file(source)
 
         # Destination must be absolute for Path.rename to be consistent
         if not destination.is_absolute():
@@ -319,7 +321,7 @@ class FileOrganizer:
             except Exception as e:
                 raise OneFileException(f'Error moving file {source} to {destination}') from e
 
-            destination_hash = self.hash(destination)
+            destination_hash = self.hash_file(destination)
             if source_hash != destination_hash:
                 logger.critical(f"Checksum mismatch after moving {source} to {destination}")
                 raise ShouldTerminateException('Checksum mismatch after moving')
@@ -374,8 +376,8 @@ class FileOrganizer:
         if not destination.exists():
             return False
                 
-        source_hash = self.hash(source_file)
-        destination_hash = self.hash(destination)
+        source_hash = self.hash_file(source_file)
+        destination_hash = self.hash_file(destination)
 
         return source_hash == destination_hash
 
@@ -508,6 +510,9 @@ class FileOrganizer:
             case _:
                 logger.debug('Invalid log level: %s', level)
                 logger.info(message)
+
+    def __hash__(self) -> int:
+        return hash(self.directory)
 
 def main():
     # Customize logger

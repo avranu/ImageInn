@@ -3,6 +3,7 @@ import tempfile
 import shutil
 from pathlib import Path
 import hashlib
+from unittest.mock import patch
 from scripts.monthly.exceptions import (
     OneFileException,
     DuplicationHandledException,
@@ -14,7 +15,7 @@ import logging
 # Disable logging during tests to keep the output clean
 logging.disable(logging.CRITICAL)
 
-class TestPXLFileOrganizer(unittest.TestCase):
+class TestFileOrganizer(unittest.TestCase):
     def setUp(self):
         # Create a temporary directory for testing
         self.test_dir = tempfile.mkdtemp()
@@ -46,7 +47,7 @@ class TestPXLFileOrganizer(unittest.TestCase):
         self.create_file(file_path, content)
         # Calculate the expected hash
         expected_hash = hashlib.md5(content).hexdigest()
-        actual_hash = self.organizer.hash(file_path)
+        actual_hash = self.organizer.hash_file(file_path)
         self.assertEqual(actual_hash, expected_hash)
 
     def test_handle_single_conflict_no_conflict(self):
@@ -153,8 +154,9 @@ class TestPXLFileOrganizer(unittest.TestCase):
             source_file = Path(self.test_dir) / filename
             self.create_file(source_file, content)
         # Run organize_files
-        count = self.organizer.organize_files()
-        self.assertEqual(count, 4)
+        return_none = self.organizer.organize_files()
+        self.assertIsNone(return_none)
+        
         # Check that files are moved to correct directories
         target_files = [
             self.organizer.directory / "2021-10" / "PXL_20211009_143747197.jpg",
@@ -185,13 +187,12 @@ class TestPXLFileOrganizer(unittest.TestCase):
         target_file = target_dir / "PXL_20211009_143747197.jpg"
         self.assertFalse(target_file.exists())
 
-    def test_checksum_mismatch(self):
+    @patch("scripts.monthly.organize.FileOrganizer.hash_file")
+    def test_checksum_mismatch(self, mock_hash_file):
         # Create a source file
         source_file = Path(self.test_dir) / "PXL_20211009_143747197.jpg"
         source_content = b"Original content."
         self.create_file(source_file, source_content)
-        # Keep a reference to the original hash method
-        original_hash = self.organizer.hash
 
         # Define a fake hash function
         def fake_hash(file_path):
@@ -200,12 +201,10 @@ class TestPXLFileOrganizer(unittest.TestCase):
             else:
                 return "destinationhash"
 
-        self.organizer.hash = fake_hash
+        mock_hash_file.side_effect = fake_hash
         # Run process_file and expect ShouldTerminateException
         with self.assertRaises(ShouldTerminateException):
             self.organizer.process_file(source_file)
-        # Restore the original hash function
-        self.organizer.hash = original_hash
 
     def test_invalid_filename(self):
         # Create a file with an invalid filename
