@@ -112,7 +112,7 @@ class FileOrganizer:
         except IOError as e:
             raise OneFileException(f"Error reading file {filename}") from e
 
-    def organize_files(self) -> int:
+    def organize_files(self) -> None:
         """
         Organize files into subdirectories based on their date.
 
@@ -136,9 +136,7 @@ class FileOrganizer:
                     self.progress.update(1)
                     self.progress.set_description(f"Organizing... {self.directories_created} directories created, {len(self.files_moved)} files moved, {len(self.files_deleted)} files deleted, {self.duplicates_found} duplicates found")
 
-        self.report('Finished organizing files.')
-
-        return len(self.files_moved)
+        self.report('Finished organizing.')
 
     def process_file(self, file: Path) -> Path | None:
         """
@@ -478,10 +476,10 @@ def main():
     organizer = FileOrganizer(directory=args.directory, pattern=args.pattern, batch_size=args.limit, dry_run=args.dry_run)
 
     try:
-        count = organizer.organize_files()
-        logger.info(f"Organized {count} files")
+        organizer.organize_files()
     except ShouldTerminateException as e:
         logger.critical(f"Critical error: {e}")
+        organizer.report('Before error:')
         sys.exit(1)
     except KeyboardInterrupt:
         logger.warning("Operation interrupted by user")
