@@ -26,10 +26,12 @@ class FileOrganizer:
     directory : Path
     file_prefix : str
     dry_run : bool
-    files_moved : list[Path]
-    files_deleted : list[Path]
     duplicates_found : int = 0
     directories_created : int = 0
+    _files_moved : list[Path]
+    _count_files_moved : int = 0
+    _files_deleted : list[Path]
+    _count_files_deleted : int = 0
     _batch_size : int
     _progress : tqdm | None = None
     _files : list[Path]
@@ -39,8 +41,8 @@ class FileOrganizer:
         self.directory = Path(directory)
         self.file_prefix = file_prefix
         self.dry_run = dry_run
-        self.files_moved = []
-        self.files_deleted = []
+        self._files_moved = []
+        self._files_deleted = []
         self._files = []
         self._batch_size = batch_size
 
@@ -51,19 +53,19 @@ class FileOrganizer:
             return self._files
         
         try:
-            # Optimize in the case of a limited batch size, since glob is a generator
             if self.batch_size > 0:
+                # Optimize in the case of a limited batch size, since glob is a generator
                 logger.debug(f"Limiting files to {self.batch_size}")
-                files_found = []
+                self._files = []
                 for f in self.directory.glob(f'{self.file_prefix}*'):
                     if f.is_file():
-                        files_found.append(f)
-                        if len(files_found) >= self.batch_size:
+                        self.append_file(f)
+                        if self.file_count >= self.batch_size:
                             break
-                return files_found
-
-            # Grab everything
-            self._files = [f for f in self.directory.glob(f'{self.file_prefix}*') if f.is_file()]
+            else:
+                # Grab everything
+                self._files = [f for f in self.directory.glob(f'{self.file_prefix}*') if f.is_file()]
+                self._file_count = len(self._files)
         except Exception as e:
             raise ShouldTerminateException(f"Error accessing directory {self.directory}") from e
 
@@ -87,6 +89,34 @@ class FileOrganizer:
     @property
     def batch_size(self) -> int:
         return self._batch_size
+
+    @property
+    def files_moved(self) -> list[Path]:
+        return self._files_moved
+
+    @property
+    def count_files_moved(self) -> int:
+        return self._count_files_moved
+
+    @property
+    def files_deleted(self) -> list[Path]:
+        return self._files_deleted
+
+    @property
+    def count_files_deleted(self) -> int:
+        return self._count_files_deleted
+
+    def append_file(self, file: Path) -> None:
+        self._files.append(file)
+        self._file_count += 1
+
+    def append_moved_file(self, file: Path) -> None:
+        self._files_moved.append(file)
+        self._count_files_moved += 1
+
+    def append_deleted_file(self, file: Path) -> None:
+        self._files_deleted.append(file)
+        self._count_files_deleted += 1
 
     @lru_cache(maxsize=1024)
     def hash(self, filename: str | Path) -> str:
@@ -124,7 +154,7 @@ class FileOrganizer:
         if self.dry_run:
             logger.info('Dry run mode enabled; no files will be moved')
 
-        with tqdm(total=self.file_count, desc='Processing files') as self._progress:
+        with tqdm(total=self.file_count, desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1) as self._progress:
             for file in self.files:
                 try:
                     self.process_file(file)
@@ -133,10 +163,24 @@ class FileOrganizer:
                 except OneFileException as e:
                     logger.error(f"Error processing file {file}: {e}")
                 finally:
-                    self.progress.update(1)
-                    self.progress.set_description(f"Organizing... {len(self.files_moved)} files moved, {len(self.files_deleted)} files deleted, {self.duplicates_found} duplicates found, {self.directories_created} directories created")
-
+                    self._update_progress()
+                    
         self.report('Finished organizing.')
+
+    def _update_progress(self, increase_progress_bar : int = 1) -> None:
+        description = f'Organizing... {self.count_files_moved} files moved'
+        if self.count_files_deleted > 0:
+            description = f'{description}, {self.count_files_deleted} deleted'
+        """
+        if self.duplicates_found > 0:
+            description = f'{description}, {self.duplicates_found} duplicates'
+        """
+        if self.directories_created > 0:
+            description = f'{description}, {self.directories_created} directories created'
+        self.progress.set_description(description)
+
+        if increase_progress_bar > 0:
+            self.progress.update(increase_progress_bar)
 
     def process_file(self, file: Path) -> Path | None:
         """
@@ -175,7 +219,7 @@ class FileOrganizer:
             filename = filename.name
 
         # TODO use self.file_prefix
-        if not (match := re.match(r'^PXL_20(\d{6})_', str(filename))):
+        if not (match := re.match(r'^PXL_(20\d{6})_', str(filename))):
             raise OneFileException(f"Invalid filename format: {filename}")
 
         # Subdir name
@@ -239,7 +283,7 @@ class FileOrganizer:
                     file.unlink()
                 
             self.info(f"{message}: {file}")
-            self.files_deleted.append(file)
+            self.append_deleted_file(file)
         except Exception as e:
             raise OneFileException('Error deleting file') from e
 
@@ -280,7 +324,7 @@ class FileOrganizer:
                 logger.critical(f"Checksum mismatch after moving {source} to {destination}")
                 raise ShouldTerminateException('Checksum mismatch after moving')
 
-        self.files_moved.append(destination)
+        self.append_moved_file(destination)
         if message:
             self.debug(f"{message}: {source} to {destination.relative_to(self.directory)}")
             
@@ -373,8 +417,8 @@ class FileOrganizer:
             
         logger.info('%s %s files moved, %s files deleted, %s duplicates found, %s directories created', 
                     message_prefix or '', 
-                    len(self.files_moved), 
-                    len(self.files_deleted), 
+                    self.count_files_moved, 
+                    self.count_files_deleted, 
                     self.duplicates_found, 
                     self.directories_created
         )
