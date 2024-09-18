@@ -1,4 +1,12 @@
 #!/usr/bin/env python3
+"""
+Version 1.0
+Date: 2024-09-17
+Working
+
+Example:
+    python -m scripts.monthly.organize -d /mnt/i/Phone/
+"""
 
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import re
