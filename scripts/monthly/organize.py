@@ -7,23 +7,22 @@ Working
 Example:
     python -m scripts.monthly.organize -d /mnt/i/Phone/
 """
-
+from __future__ import annotations
 import sys
 import os
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import re
 import hashlib
-import shutil
 from pathlib import Path
 import logging
 import argparse
 from functools import lru_cache
 from typing import Literal
 from tqdm import tqdm
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from scripts.monthly.exceptions import ShouldTerminateException, OneFileException, DuplicationHandledException
 
 logger = logging.getLogger(__name__)
