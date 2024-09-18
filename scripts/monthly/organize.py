@@ -8,6 +8,12 @@ Example:
     python -m scripts.monthly.organize -d /mnt/i/Phone/
 """
 
+import sys
+import os
+
+# Add the root directory of the project to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import re
 import hashlib
@@ -16,7 +22,6 @@ from pathlib import Path
 import logging
 import argparse
 from functools import lru_cache
-import sys
 from typing import Literal
 from tqdm import tqdm
 from scripts.monthly.exceptions import ShouldTerminateException, OneFileException, DuplicationHandledException
