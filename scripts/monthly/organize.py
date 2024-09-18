@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import re
 import hashlib
 import shutil
@@ -284,7 +284,7 @@ class FileOrganizer(BaseModel):
                 else:
                     file.unlink()
                 
-            self.info(f"{message}: {file}")
+            self.debug(f"{message}: {file}")
             self.append_deleted_file(file)
         except Exception as e:
             raise OneFileException('Error deleting file') from e
@@ -418,11 +418,10 @@ class FileOrganizer(BaseModel):
         if self.dry_run:
             message_prefix = f"[DRY RUN] {message_prefix}"
             
-        logger.info('%s %s files moved, %s files deleted, %s duplicates found, %s directories created', 
+        logger.info('%s %s files moved, %s files deleted, %s directories created', 
                     message_prefix or '', 
                     self.count_files_moved, 
                     self.count_files_deleted, 
-                    self.duplicates_found, 
                     self.directories_created
         )
 
