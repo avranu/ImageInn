@@ -1,3 +1,15 @@
+#!/usr/bin/env python3
+"""
+Version 1.0
+Date: 2024-09-17
+Working
+
+Example:
+    >>> python upload.py
+    >>> python upload.py -d /mnt/i/Phone
+    # bash_aliases defines `upload` to run this script for the current dir
+    >>> upload
+"""
 from __future__ import annotations
 from typing import Union
 import subprocess
