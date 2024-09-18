@@ -5,7 +5,10 @@ Date: 2024-09-17
 Working
 
 Example:
-    python -m scripts.monthly.organize -d /mnt/i/Phone/
+    >>> python -m scripts.monthly.organize -d /mnt/i/Phone/
+    >>> python /mnt/c/Users/jessa/Work/ImageInn/scripts/monthly/organize.py
+    # bash_aliases defines 'organize' as an alias for the above command
+    >>> organize
 """
 from __future__ import annotations
 import sys
