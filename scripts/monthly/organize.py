@@ -291,7 +291,7 @@ class FileOrganizer(BaseModel):
 
         return not file.exists()
 
-    def move_file(self, source: Path, destination: Path, message : str | None = "Moved file") -> Path:
+    def move_file(self, source: Path, destination: Path, message : str | None = "Moved file", verify : bool = False) -> Path:
         """
         Move a file to a new location.
 
@@ -307,24 +307,25 @@ class FileOrganizer(BaseModel):
             OneFileException: If an error occurs while moving the file, or hashing either file.
             ShouldTerminateException: If the checksums do not match after moving the file.
         """
-        source_hash = self.hash_file(source)
-
         # Destination must be absolute for Path.rename to be consistent
         if not destination.is_absolute():
             logger.debug(f"Making destination path absolute: {destination}")
             destination = self.directory / destination
         
         if not self.dry_run:
+            if verify:
+                source_hash = self.hash_file(source)
+            
             try:
-                #shutil.move(str(source), str(destination))
                 source.rename(destination)
             except Exception as e:
                 raise OneFileException(f'Error moving file {source} to {destination}') from e
 
-            destination_hash = self.hash_file(destination)
-            if source_hash != destination_hash:
-                logger.critical(f"Checksum mismatch after moving {source} to {destination}")
-                raise ShouldTerminateException('Checksum mismatch after moving')
+            if verify:
+                destination_hash = self.hash_file(destination)
+                if source_hash != destination_hash:
+                    logger.critical(f"Checksum mismatch after moving {source} to {destination}")
+                    raise ShouldTerminateException('Checksum mismatch after moving')
 
         self.append_moved_file(destination)
         if message:
