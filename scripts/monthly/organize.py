@@ -246,6 +246,7 @@ class FileOrganizer(BaseModel):
         # Handle potential filename collisions
         target_file = self.handle_collision(file, target_dir / filename)
 
+        # TODO: Check file and target file are same drive. If not, verify=True
         return self.move_file(file, target_file)
 
     def _update_progress(self, increase_progress_bar : int = 1) -> None:
