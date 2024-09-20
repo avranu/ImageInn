@@ -30,9 +30,10 @@ from functools import lru_cache
 from typing import Literal
 from tqdm import tqdm
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+from scripts import setup_logging
 from scripts.monthly.exceptions import ShouldTerminateException, OneFileException, DuplicationHandledException
 
-logger = logging.getLogger(__name__)
+logger = setup_logging()
 
 
 class FileOrganizer(BaseModel):
@@ -565,14 +566,7 @@ class FileOrganizer(BaseModel):
     def __hash__(self) -> int:
         return hash(self.directory)
 
-def main():
-    # Customize logger
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler()]
-    )
-    
+def main():    
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize PXL_ files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')

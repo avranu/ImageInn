@@ -15,20 +15,22 @@ TODO:
     
 """
 from __future__ import annotations
-import subprocess
 import os
-import logging
-from pathlib import Path
 import sys
+
+# Add the root directory of the project to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+import subprocess
+from pathlib import Path
 from dotenv import load_dotenv
 import argparse
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 from typing import Iterable, List
 import tqdm
-import colorlog
+from scripts import setup_logging
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = setup_logging()
 
 class AuthenticationError(Exception):
     pass
@@ -275,40 +277,8 @@ class Immich(BaseModel):
         except subprocess.CalledProcessError as e:
             logger.error(f"File upload failed: {e}")
 
-def setup_logging():
-    # Define a custom formatter class to supress info level names
-    class CustomFormatter(colorlog.ColoredFormatter):
-        def format(self, record):
-            if record.levelno == logging.INFO:
-                # Exclude the level name for INFO messages
-                self._style._fmt = '%(message)s'
-            else:
-                # Include the level name for other levels
-                self._style._fmt = '%(log_color)s%(levelname)s:%(reset)s %(message)s'
-            return super().format(record)
-
-    # Configure colored logging with the custom formatter
-    handler = colorlog.StreamHandler()
-    handler.setFormatter(CustomFormatter(
-        # Initial format string (will be overridden in the formatter)
-        '',
-        log_colors={
-            'DEBUG':    'green',
-            'INFO':     'blue',
-            'WARNING':  'yellow',
-            'ERROR':    'red',
-            'CRITICAL': 'red,bg_white',
-        }
-    ))
-
-    root_logger = logging.getLogger()
-    root_logger.handlers = []  # Clear existing handlers
-    root_logger.addHandler(handler)
-    root_logger.setLevel(logging.INFO)
-
 def main():
     load_dotenv()
-    setup_logging()
 
     url = os.getenv("IMMICH_URL")
     api_key = os.getenv("IMMICH_API_KEY")
