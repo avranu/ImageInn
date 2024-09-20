@@ -35,15 +35,15 @@ class AuthenticationError(Exception):
 
 ALLOWED_EXTENSIONS = [
     # Images
-    'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'heic', 'heif',
+    'jpg', 'jpeg', 'png', 'gif', 'tiff', 'webp',
     # RAW
-    'arw', 'cr2', 'cr3', 'dng', 'nef', 'nrw', 'orf', 'pef', 'raf', 'rw2', 'srw',
+    'arw', 'dng', 'nef',
     # Videos
-    'mp4', 'mov', 'm4a', 'wmv', 'avi', 'mkv', 'flv', 'webm', '3gp', '3g2',
+    'mp4', 'mov', 'm4a', 'wmv', 'avi', 'mkv', 'flv', 'webm',
     # Audio
-    'mp3', 'wav', 'flac', 'm4a', 'ogg', 'opus', 'wma', 'aiff', 'alac',
+    'mp3', 'wav', 'm4a', 'ogg',
     # Photo editing
-    'psd', 'xcf', 'ai', 'svg', 'eps',
+    'psd', 'svg',
 ]
 
 class Immich(BaseModel):
@@ -99,13 +99,15 @@ class Immich(BaseModel):
     def should_ignore_file(self, file: Path) -> bool:
         if not file.is_file():
             return True
+
+        suffix = file.suffix.lstrip('.').lower()
         
         # Ignore non-image extensions
-        if file.suffix.lstrip('.').lower() not in ALLOWED_EXTENSIONS:
+        if suffix not in ALLOWED_EXTENSIONS:
             logger.debug("Ignoring non-media file due to extension: %s", file)
             return True
         
-        if file.suffix.lstrip('.').lower() in self.ignore_extensions:
+        if suffix in self.ignore_extensions:
             logger.debug("Ignoring file due to extension: %s", file)
             return True
         
@@ -193,13 +195,11 @@ class Immich(BaseModel):
             status = self.load_status_file(directory)
             try:
                 for file in tqdm.tqdm(directory.glob('*'), desc="Files", leave=False):
-                    if not file.is_file():
-                        continue
-
                     filename = file.name
                     if filename in status and status[filename] == 'success':
                         logger.debug(f"Skipping already uploaded file {file}")
                         continue
+                    
                     if self.should_ignore_file(file):
                         continue
 
