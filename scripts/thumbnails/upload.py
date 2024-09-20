@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 import argparse
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 from typing import Iterable, List
-import tqdm
+from tqdm import tqdm
 from scripts import setup_logging
 
 logger = setup_logging()
@@ -186,17 +186,18 @@ class Immich(BaseModel):
         if not self._authenticated:
             self.authenticate()
 
-        directories = [self.directory]
         if recursive:
             logger.info('Searching %s recursively for directories.', self.directory.absolute())
-            directories.extend([d for d in self.directory.rglob('*') if d.is_dir()])
+            directories = list(Path(dirpath) for dirpath, dirnames, _ in os.walk(self.directory))
+        else:
+            directories = [self.directory]
 
         logger.info("Uploading files from %s directories.", len(directories))
 
-        for directory in tqdm.tqdm(directories, desc="Directories"):
+        for directory in tqdm(directories, desc="Directories"):
             status = self.load_status_file(directory)
             try:
-                for file in tqdm.tqdm(directory.glob('*'), desc="Files", leave=False):
+                for file in tqdm(directory.glob('*'), desc="Files", leave=False):
                     filename = file.name
                     if filename in status and status[filename] == 'success':
                         logger.debug(f"Skipping already uploaded file {file}")
@@ -278,13 +279,15 @@ class Immich(BaseModel):
             logger.error(f"File upload failed: {e}")
 
 def main():
-    load_dotenv()
-
-    url = os.getenv("IMMICH_URL")
-    api_key = os.getenv("IMMICH_API_KEY")
-    thumbnails_dir = os.getenv("CLOUD_THUMBNAILS_DIR", '.')
-
+    
     try:
+        load_dotenv()
+
+        url = os.getenv("IMMICH_URL")
+        api_key = os.getenv("IMMICH_API_KEY")
+        thumbnails_dir = os.getenv("CLOUD_THUMBNAILS_DIR", '.')
+
+    
         parser = argparse.ArgumentParser(description="Upload files to Immich.")
         parser.add_argument("--url", help="Immich URL", default=url)
         parser.add_argument("--api-key", help="Immich API key", default=api_key)
