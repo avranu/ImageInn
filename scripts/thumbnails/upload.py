@@ -252,6 +252,8 @@ class Immich(BaseModel):
         """
         if not self._authenticated:
             self.authenticate()
+
+        logger.warning('Using upload_directory() is not recommended. Use upload_files() instead.')
             
         directory = directory or self.directory
 
