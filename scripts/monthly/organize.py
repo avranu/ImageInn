@@ -9,6 +9,10 @@ Example:
     >>> python /mnt/c/Users/jessa/Work/ImageInn/scripts/monthly/organize.py
     # bash_aliases defines 'organize' as an alias for the above command
     >>> organize
+
+TODO:
+    Check for symlinks
+    Cron
 """
 from __future__ import annotations
 import sys

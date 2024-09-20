@@ -9,6 +9,11 @@ Example:
     >>> python upload.py -d /mnt/i/Phone
     # bash_aliases defines `upload` to run this script for the current dir
     >>> upload
+
+TODO:
+    Status report (txt file) for resuming progress
+    Pydantic
+    
 """
 from __future__ import annotations
 from typing import Union
