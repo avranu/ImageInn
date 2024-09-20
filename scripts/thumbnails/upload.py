@@ -9,10 +9,6 @@ Example:
     >>> python upload.py -d /mnt/i/Phone
     # bash_aliases defines `upload` to run this script for the current dir
     >>> upload
-
-TODO:
-    concurrency
-    
 """
 from __future__ import annotations
 import os
@@ -31,6 +27,7 @@ from tqdm import tqdm
 from scripts import setup_logging
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from abc import ABC, abstractmethod
 
 logger = setup_logging()
 
@@ -50,7 +47,7 @@ ALLOWED_EXTENSIONS = [
     'psd', 'svg',
 ]
 
-class Immich(BaseModel):
+class ImmichInterface(BaseModel, ABC):
     url: str
     api_key: str
     directory: Path
@@ -65,8 +62,8 @@ class Immich(BaseModel):
         # Allow str and list[str]
         v = Path(v)
         if not v.exists():
-            logger.error(f"Thumbnails directory {v} does not exist.")
-            raise FileNotFoundError(f"Thumbnails directory {v} does not exist.")
+            logger.error(f"Directory {v} does not exist.")
+            raise FileNotFoundError(f"Directory {v} does not exist.")
         return v
 
     @field_validator('ignore_extensions', mode="before")
@@ -100,7 +97,13 @@ class Immich(BaseModel):
             logger.error(f"Authentication failed: {e}")
             raise AuthenticationError("Authentication failed.") from e
 
-    def should_ignore_file(self, file: Path, status : dict[str, str] | None = None, status_lock : threading.Lock | None = None) -> bool:
+    @abstractmethod
+    def upload(self, directory: Path | None = None, recursive: bool = True):
+        """Abstract method to upload files."""
+        pass
+
+    # Shared methods
+    def should_ignore_file(self, file: Path, status: dict[str, str] | None = None, status_lock: threading.Lock | None = None) -> bool:
         if not file.is_file():
             return True
 
@@ -157,13 +160,15 @@ class Immich(BaseModel):
 
         return status
 
-    def save_status_file(self, directory: Path, status: dict[str, str], status_lock : threading.Lock):
+    def save_status_file(self, directory: Path, status: dict[str, str], status_lock: threading.Lock):
         with status_lock:
             status_file = directory / 'upload_status.txt'
             logger.debug(f"Saving status file {status_file}")
             with status_file.open('w') as f:
                 for filename, file_status in status.items():
                     f.write(f'{filename}\t{file_status}\n')
+
+class ImmichProgressiveUploader(ImmichInterface):
 
     def upload_file(self, file: Path) -> bool:
         command = ["immich", "upload", file.as_posix()]
@@ -199,7 +204,7 @@ class Immich(BaseModel):
 
     def upload_file_threadsafe(self, file: Path, status: dict[str, str], status_lock: threading.Lock) -> bool:
         filename = file.name
-        
+
         if self.should_ignore_file(file):
             return False
 
@@ -213,28 +218,28 @@ class Immich(BaseModel):
     def get_directories(self, directory: Path, recursive: bool = True) -> list[Path]:
         if not recursive:
             return [directory]
-        
+
         logger.info('Searching %s for directories.', directory.absolute())
-        
+
         result = []
         for dirpath, dirnames, _ in os.walk(directory):
             # Remove hidden directories from dirnames so os.walk doesn't traverse into them
             dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-            
+
             # Skip the directory if it's hidden
             if Path(dirpath).name.startswith('.'):
                 continue
-            
+
             result.append(Path(dirpath))
-            
+
         return result
 
-
-    def upload_files(self, recursive: bool = True, max_threads: int = 4):
+    def upload(self, directory : Path | None = None, recursive: bool = True, max_threads: int = 4):
         if not self._authenticated:
             self.authenticate()
 
-        directories = self.get_directories(self.directory)
+        directory = directory or self.directory
+        directories = self.get_directories(directory, recursive=recursive)
 
         logger.info("Uploading files from %d directories.", len(directories))
 
@@ -263,26 +268,29 @@ class Immich(BaseModel):
                         future.result()  
             finally:
                 self.save_status_file(directory, status, status_lock)
-                
-    def find_large_files(self, directory : Path | None = None, size : int = 1024 * 1024 * 100) -> list[Path]:
-        """
-        Only used for upload_directory()
-        """
+
+class ImmichDirectUploader(ImmichInterface):
+    """
+    Deprecated. Use ImmichProgressiveUploader for uploading files.
+
+    This class is kept in case Immich optimizes their upload feature in the future. It works, but
+    does not support terminating and resuming uploads, so requires re-computing the hash of all files
+    every time it is run.
+    """
+
+    def find_large_files(self, directory: Path | None = None, size: int = 1024 * 1024 * 100) -> list[Path]:
         if not directory:
             directory = self.directory
-            
+
         large_files = []
         for file in directory.rglob("**/*"):
             if file.stat().st_size > size:
                 large_files.append(file)
         return large_files
 
-    def _compile_ignore_patterns(self, directory : Path) -> list[str]:
-        """
-        Only used for upload_directory()
-        """
+    def _compile_ignore_patterns(self, directory: Path) -> list[str]:
         ignore_patterns = []
-        
+
         for ext in self.ignore_extensions:
             # Handle not (!)
             if ext.startswith("!"):
@@ -299,30 +307,24 @@ class Immich(BaseModel):
 
         return ignore_patterns
 
-    def upload_directory(self, directory : Path | None = None, recursive : bool = True):
-        """
-        Not used, in favor of upload_files()
-
-        This method uses immich to upload the entire directory. However, re-compiling hashes for
-        every file is time consuming, and progress can't be resumed if terminated early. 
-        """
+    def upload(self, directory: Path | None = None, recursive: bool = True):
         if not self._authenticated:
             self.authenticate()
 
-        logger.warning('Using upload_directory() is not recommended. Use upload_files() instead.')
-            
+        logger.warning('Using ImmichDirectUploader is not recommended. Use ImmichProgressiveUploader instead.')
+
         directory = directory or self.directory
 
         command = ["immich", "upload"]
 
-        # Ignore files 
+        # Ignore files
         if ignore_patterns := self._compile_ignore_patterns(directory):
             ignore_string = "|".join(ignore_patterns)
             command.extend(["-i", f'({ignore_string})'])
 
         if recursive:
             command.append("--recursive")
-            
+
         command.append(directory.as_posix())
 
         try:
@@ -345,26 +347,21 @@ def main():
         parser.add_argument("--thumbnails-dir", '-d', help="Cloud thumbnails directory", default=thumbnails_dir)
         parser.add_argument("--ignore-extensions", "-e", help="Ignore files with these extensions", nargs='+')
         parser.add_argument('--ignore-paths', '-i', help="Ignore files with these paths", nargs='+')
-        parser.add_argument('--group', '-g', action='store_true', help="Upload files as a group via immich. Kept for legacy reasons, or if immich optimizes their recursive upload feature.")
         parser.add_argument('--max-threads', '-t', type=int, default=4, help="Maximum number of threads for concurrent uploads")
         args = parser.parse_args()
 
         if not args.url or not args.api_key or not args.thumbnails_dir:
             logger.error("IMMICH_URL, IMMICH_API_KEY, and CLOUD_THUMBNAILS_DIR must be set.")
             sys.exit(1)
-
-        immich = Immich(
+            
+        immich = ImmichProgressiveUploader(
             url=args.url,
             api_key=args.api_key,
             directory=Path(args.thumbnails_dir),
             ignore_extensions=args.ignore_extensions,
             ignore_paths=args.ignore_paths
         )
-
-        if args.group:
-            immich.upload_directory()
-        else:
-            immich.upload_files(max_threads=args.max_threads)
+        immich.upload(max_threads=args.max_threads)
 
     except AuthenticationError:
         logger.error("Authentication failed. Check your API key and URL.")
