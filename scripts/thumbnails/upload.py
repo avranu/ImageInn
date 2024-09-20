@@ -115,7 +115,7 @@ class ImmichInterface(BaseModel, ABC):
             return True
 
         if suffix in self.ignore_extensions:
-            logger.debug("Ignoring file due to extension: %s", file)
+            logger.debug("Ignoring file due to extension per user request: %s", file)
             return True
 
         # Ignore hidden
