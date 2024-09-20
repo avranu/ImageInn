@@ -2,18 +2,20 @@ from __future__ import annotations
 import colorlog
 import logging
 
+SUPPRESS_INFO = False
+
 def setup_logging() -> logging.Logger:
     logging.basicConfig(level=logging.INFO)
 
     # Define a custom formatter class to supress info level names
     class CustomFormatter(colorlog.ColoredFormatter):
         def format(self, record):
-            if record.levelno == logging.INFO:
+            if SUPPRESS_INFO and record.levelno == logging.INFO:
                 # Exclude the level name for INFO messages
                 self._style._fmt = '%(message)s'
             else:
                 # Include the level name for other levels
-                self._style._fmt = '%(log_color)s%(levelname)s:%(reset)s %(message)s'
+                self._style._fmt = '(%(log_color)s%(levelname)s%(reset)s) %(message)s'
             return super().format(record)
 
     # Configure colored logging with the custom formatter

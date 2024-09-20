@@ -29,6 +29,8 @@ from pydantic import BaseModel, Field, PrivateAttr, field_validator
 from typing import Iterable, List
 from tqdm import tqdm
 from scripts import setup_logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = setup_logging()
 
@@ -55,7 +57,7 @@ class Immich(BaseModel):
     ignore_extensions: List[str] = Field(default_factory=list)
     ignore_paths: List[str] = Field(default_factory=list)
     large_file_size: int = 1024 * 1024 * 100  # 100 MB
-    
+
     _authenticated: bool = PrivateAttr(default=False)
 
     @field_validator('directory', mode="before")
@@ -98,21 +100,26 @@ class Immich(BaseModel):
             logger.error(f"Authentication failed: {e}")
             raise AuthenticationError("Authentication failed.") from e
 
-    def should_ignore_file(self, file: Path) -> bool:
+    def should_ignore_file(self, file: Path, status : dict[str, str] | None = None, status_lock : threading.Lock | None = None) -> bool:
         if not file.is_file():
             return True
 
         suffix = file.suffix.lstrip('.').lower()
-        
+
         # Ignore non-image extensions
         if suffix not in ALLOWED_EXTENSIONS:
             logger.debug("Ignoring non-media file due to extension: %s", file)
             return True
-        
+
         if suffix in self.ignore_extensions:
             logger.debug("Ignoring file due to extension: %s", file)
             return True
-        
+
+        # Ignore hidden
+        if file.name.startswith('.'):
+            logger.debug("Ignoring hidden file: %s", file)
+            return True
+
         if str(file) in self.ignore_paths:
             logger.debug("Ignoring file due to path: %s", file)
             return True
@@ -120,6 +127,13 @@ class Immich(BaseModel):
         if file.stat().st_size > self.large_file_size:
             logger.debug(f"File {file} is larger than {self.large_file_size} bytes and will be skipped.")
             return True
+
+        if status is not None and status_lock is not None:
+            filename = file.name
+            with status_lock:
+                if filename in status and status[filename] == 'success':
+                    logger.debug(f"Skipping already uploaded file {file}")
+                    return True
 
         return False
 
@@ -140,15 +154,16 @@ class Immich(BaseModel):
             success = len([s for s in status.values() if s == 'success'])
             failure = len([s for s in status.values() if s == 'failed'])
             logger.info(f"Loaded status file {status_file}. Success: {success}, Failure: {failure}")
-                                
+
         return status
 
-    def save_status_file(self, directory: Path, status: dict[str, str]):
-        status_file = directory / 'upload_status.txt'
-        logger.debug(f"Saving status file {status_file}")
-        with status_file.open('w') as f:
-            for filename, file_status in status.items():
-                f.write(f'{filename}\t{file_status}\n')
+    def save_status_file(self, directory: Path, status: dict[str, str], status_lock : threading.Lock):
+        with status_lock:
+            status_file = directory / 'upload_status.txt'
+            logger.debug(f"Saving status file {status_file}")
+            with status_file.open('w') as f:
+                for filename, file_status in status.items():
+                    f.write(f'{filename}\t{file_status}\n')
 
     def upload_file(self, file: Path) -> bool:
         command = ["immich", "upload", file.as_posix()]
@@ -172,7 +187,7 @@ class Immich(BaseModel):
             if "Successfully uploaded" in output:
                 logger.debug("Uploaded %s successfully.", file)
                 return True
-            
+
             logger.info('Unknown output: %s', output)
             logger.info('By default, marking file %s uploaded successfully.', file)
             return True
@@ -182,34 +197,72 @@ class Immich(BaseModel):
 
         return False
 
-    def upload_files(self, recursive: bool = True):
+    def upload_file_threadsafe(self, file: Path, status: dict[str, str], status_lock: threading.Lock) -> bool:
+        filename = file.name
+        
+        if self.should_ignore_file(file):
+            return False
+
+        success = self.upload_file(file)
+
+        with status_lock:
+            status[filename] = 'success' if success else 'failed'
+
+        return success
+
+    def get_directories(self, directory: Path, recursive: bool = True) -> list[Path]:
+        if not recursive:
+            return [directory]
+        
+        logger.info('Searching %s for directories.', directory.absolute())
+        
+        result = []
+        for dirpath, dirnames, _ in os.walk(directory):
+            # Remove hidden directories from dirnames so os.walk doesn't traverse into them
+            dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+            
+            # Skip the directory if it's hidden
+            if Path(dirpath).name.startswith('.'):
+                continue
+            
+            result.append(Path(dirpath))
+            
+        return result
+
+
+    def upload_files(self, recursive: bool = True, max_threads: int = 4):
         if not self._authenticated:
             self.authenticate()
 
-        if recursive:
-            logger.info('Searching %s recursively for directories.', self.directory.absolute())
-            directories = list(Path(dirpath) for dirpath, dirnames, _ in os.walk(self.directory))
-        else:
-            directories = [self.directory]
+        directories = self.get_directories(self.directory)
 
-        logger.info("Uploading files from %s directories.", len(directories))
+        logger.info("Uploading files from %d directories.", len(directories))
 
         for directory in tqdm(directories, desc="Directories"):
             status = self.load_status_file(directory)
+            status_lock = threading.Lock()
             try:
-                for file in tqdm(directory.glob('*'), desc="Files", leave=False):
-                    filename = file.name
-                    if filename in status and status[filename] == 'success':
-                        logger.debug(f"Skipping already uploaded file {file}")
-                        continue
-                    
-                    if self.should_ignore_file(file):
-                        continue
+                files = list(directory.iterdir())
+                files_to_upload = [file for file in files if not self.should_ignore_file(file, status, status_lock)]
+                if not files_to_upload:
+                    continue
 
-                    success = self.upload_file(file)
-                    status[filename] = 'success' if success else 'failed'
+                with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                    futures = []
+                    for file in files_to_upload:
+                        future = executor.submit(self.upload_file_threadsafe, file, status, status_lock)
+                        futures.append(future)
+                    for future in tqdm(
+                        as_completed(futures), 
+                        total=len(futures), 
+                        unit="file", 
+                        leave=False,
+                        desc=f"Uploading {directory.name}"
+                    ):
+                        # re-raise any exceptions
+                        future.result()  
             finally:
-                self.save_status_file(directory, status)
+                self.save_status_file(directory, status, status_lock)
                 
     def find_large_files(self, directory : Path | None = None, size : int = 1024 * 1024 * 100) -> list[Path]:
         """
@@ -279,7 +332,6 @@ class Immich(BaseModel):
             logger.error(f"File upload failed: {e}")
 
 def main():
-    
     try:
         load_dotenv()
 
@@ -287,7 +339,6 @@ def main():
         api_key = os.getenv("IMMICH_API_KEY")
         thumbnails_dir = os.getenv("CLOUD_THUMBNAILS_DIR", '.')
 
-    
         parser = argparse.ArgumentParser(description="Upload files to Immich.")
         parser.add_argument("--url", help="Immich URL", default=url)
         parser.add_argument("--api-key", help="Immich API key", default=api_key)
@@ -295,6 +346,7 @@ def main():
         parser.add_argument("--ignore-extensions", "-e", help="Ignore files with these extensions", nargs='+')
         parser.add_argument('--ignore-paths', '-i', help="Ignore files with these paths", nargs='+')
         parser.add_argument('--group', '-g', action='store_true', help="Upload files as a group via immich. Kept for legacy reasons, or if immich optimizes their recursive upload feature.")
+        parser.add_argument('--max-threads', '-t', type=int, default=4, help="Maximum number of threads for concurrent uploads")
         args = parser.parse_args()
 
         if not args.url or not args.api_key or not args.thumbnails_dir:
@@ -312,8 +364,8 @@ def main():
         if args.group:
             immich.upload_directory()
         else:
-            immich.upload_files()
-            
+            immich.upload_files(max_threads=args.max_threads)
+
     except AuthenticationError:
         logger.error("Authentication failed. Check your API key and URL.")
     except KeyboardInterrupt:
