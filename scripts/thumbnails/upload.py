@@ -11,8 +11,6 @@ Example:
     >>> upload
 
 TODO:
-    Suppress immich output
-    progress bar
     concurrency
     
 """
@@ -21,16 +19,32 @@ import subprocess
 import os
 import logging
 from pathlib import Path
+import sys
 from dotenv import load_dotenv
 import argparse
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
-from typing import Iterable, List, Union, Optional
+from typing import Iterable, List
+import tqdm
+import colorlog
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class AuthenticationError(Exception):
     pass
+
+ALLOWED_EXTENSIONS = [
+    # Images
+    'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'heic', 'heif',
+    # RAW
+    'arw', 'cr2', 'cr3', 'dng', 'nef', 'nrw', 'orf', 'pef', 'raf', 'rw2', 'srw',
+    # Videos
+    'mp4', 'mov', 'm4a', 'wmv', 'avi', 'mkv', 'flv', 'webm', '3gp', '3g2',
+    # Audio
+    'mp3', 'wav', 'flac', 'm4a', 'ogg', 'opus', 'wma', 'aiff', 'alac',
+    # Photo editing
+    'psd', 'xcf', 'ai', 'svg', 'eps',
+]
 
 class Immich(BaseModel):
     url: str
@@ -83,15 +97,26 @@ class Immich(BaseModel):
             raise AuthenticationError("Authentication failed.") from e
 
     def should_ignore_file(self, file: Path) -> bool:
+        if not file.is_file():
+            return True
+        
+        # Ignore non-image extensions
+        if file.suffix.lstrip('.').lower() not in ALLOWED_EXTENSIONS:
+            logger.debug("Ignoring non-media file due to extension: %s", file)
+            return True
+        
         if file.suffix.lstrip('.').lower() in self.ignore_extensions:
-            logger.info(f"Ignoring file {file} due to extension.")
+            logger.debug("Ignoring file due to extension: %s", file)
             return True
+        
         if str(file) in self.ignore_paths:
-            logger.info(f"Ignoring file {file} due to path.")
+            logger.debug("Ignoring file due to path: %s", file)
             return True
+
         if file.stat().st_size > self.large_file_size:
-            logger.warning(f"File {file} is larger than {self.large_file_size} bytes and will be skipped.")
+            logger.debug(f"File {file} is larger than {self.large_file_size} bytes and will be skipped.")
             return True
+
         return False
 
     def load_status_file(self, directory: Path | None = None) -> dict[str, str]:
@@ -108,10 +133,10 @@ class Immich(BaseModel):
                             filename, file_status = parts
                             status[filename] = file_status
 
-        success = len([s for s in status.values() if s == 'success'])
-        failure = len([s for s in status.values() if s == 'failed'])
-        logger.info(f"Loaded status file {status_file}. Success: {success}, Failure: {failure}")
-                            
+            success = len([s for s in status.values() if s == 'success'])
+            failure = len([s for s in status.values() if s == 'failed'])
+            logger.info(f"Loaded status file {status_file}. Success: {success}, Failure: {failure}")
+                                
         return status
 
     def save_status_file(self, directory: Path, status: dict[str, str]):
@@ -124,25 +149,50 @@ class Immich(BaseModel):
     def upload_file(self, file: Path) -> bool:
         command = ["immich", "upload", file.as_posix()]
         try:
-            subprocess.run(command, check=True)
-            logger.info(f"Uploaded {file}")
+            result = subprocess.run(
+                command,
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            output = result.stdout + result.stderr
+
+            # Analyze the output
+            if "All assets were already uploaded" in output:
+                logger.debug("%s already uploaded.", file)
+                return True
+            if "Unsupported file type" in output:
+                logger.debug("Unsupported file type: %s", file)
+                return False
+            if "Successfully uploaded" in output:
+                logger.debug("Uploaded %s successfully.", file)
+                return True
+            
+            logger.info('Unknown output: %s', output)
+            logger.info('By default, marking file %s uploaded successfully.', file)
             return True
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to upload {file}: {e}")
-            return False
+            output = e.stdout + e.stderr
+            logger.error(f"Failed to upload {file}: {output}")
 
-    def upload_files(self, recursive: bool = False):
+        return False
+
+    def upload_files(self, recursive: bool = True):
         if not self._authenticated:
             self.authenticate()
 
         directories = [self.directory]
         if recursive:
+            logger.info('Searching %s recursively for directories.', self.directory.absolute())
             directories.extend([d for d in self.directory.rglob('*') if d.is_dir()])
 
-        for directory in directories:
+        logger.info("Uploading files from %s directories.", len(directories))
+
+        for directory in tqdm.tqdm(directories, desc="Directories"):
             status = self.load_status_file(directory)
             try:
-                for file in directory.iterdir():
+                for file in tqdm.tqdm(directory.glob('*'), desc="Files", leave=False):
                     if not file.is_file():
                         continue
 
@@ -157,7 +207,7 @@ class Immich(BaseModel):
                     status[filename] = 'success' if success else 'failed'
             finally:
                 self.save_status_file(directory, status)
-
+                
     def find_large_files(self, directory : Path | None = None, size : int = 1024 * 1024 * 100) -> list[Path]:
         """
         Only used for upload_directory()
@@ -223,12 +273,44 @@ class Immich(BaseModel):
         except subprocess.CalledProcessError as e:
             logger.error(f"File upload failed: {e}")
 
+def setup_logging():
+    # Define a custom formatter class to supress info level names
+    class CustomFormatter(colorlog.ColoredFormatter):
+        def format(self, record):
+            if record.levelno == logging.INFO:
+                # Exclude the level name for INFO messages
+                self._style._fmt = '%(message)s'
+            else:
+                # Include the level name for other levels
+                self._style._fmt = '%(log_color)s%(levelname)s:%(reset)s %(message)s'
+            return super().format(record)
+
+    # Configure colored logging with the custom formatter
+    handler = colorlog.StreamHandler()
+    handler.setFormatter(CustomFormatter(
+        # Initial format string (will be overridden in the formatter)
+        '',
+        log_colors={
+            'DEBUG':    'green',
+            'INFO':     'blue',
+            'WARNING':  'yellow',
+            'ERROR':    'red',
+            'CRITICAL': 'red,bg_white',
+        }
+    ))
+
+    root_logger = logging.getLogger()
+    root_logger.handlers = []  # Clear existing handlers
+    root_logger.addHandler(handler)
+    root_logger.setLevel(logging.INFO)
+
 def main():
     load_dotenv()
+    setup_logging()
 
     url = os.getenv("IMMICH_URL")
     api_key = os.getenv("IMMICH_API_KEY")
-    thumbnails_dir = os.getenv("CLOUD_THUMBNAILS_DIR")
+    thumbnails_dir = os.getenv("CLOUD_THUMBNAILS_DIR", '.')
 
     try:
         parser = argparse.ArgumentParser(description="Upload files to Immich.")
@@ -242,7 +324,7 @@ def main():
 
         if not args.url or not args.api_key or not args.thumbnails_dir:
             logger.error("IMMICH_URL, IMMICH_API_KEY, and CLOUD_THUMBNAILS_DIR must be set.")
-            exit(1)
+            sys.exit(1)
 
         immich = Immich(
             url=args.url,
@@ -256,6 +338,7 @@ def main():
             immich.upload_directory()
         else:
             immich.upload_files()
+            
     except AuthenticationError:
         logger.error("Authentication failed. Check your API key and URL.")
     except KeyboardInterrupt:
