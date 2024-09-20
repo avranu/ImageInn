@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
 """
+This script organizes files into monthly directories based on the filename. It is useful for dumping 
+photos from a phone or camera into a single directory and organizing them later.
+
+Ideally, it should be run as a cron job to automatically organize files on a regular basis.
+
+See also upload.py for a script that should run after this one to upload those files to immich.
+
+This script is referenced in bash_aliases (but not in the github copy of it).
+
 Version 1.0
-Date: 2024-09-17
-Working
+Date: 2024-09-20
+Status: Working
 
 Example:
     >>> python -m scripts.monthly.organize -d /mnt/i/Phone/

@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 """
+Upload files to Immich.
+
+This script is used because the immich app isn't reliable for uploading files, and I don't want to
+manually upload files via the web interface (and leave that interface open in Chrome).
+
+Instead, this cli script can be run as a periodic cronjob.
+
+See also the organize.py script for organizing files into directories prior to this script being 
+executed.
+
+This script is referenced in bash_aliases (but not in the github copy of it).
+
 Version 1.0
 Date: 2024-09-20
-Working
+Status: Working
 
 Example:
     >>> python upload.py
@@ -48,6 +60,9 @@ ALLOWED_EXTENSIONS = [
 ]
 
 class ImmichInterface(BaseModel, ABC):
+    """
+    Abstract class for uploading files to Immich. Subclasses include ImmichProgressiveUploader and ImmichDirectUploader.
+    """
     url: str
     api_key: str
     directory: Path
@@ -87,6 +102,12 @@ class ImmichInterface(BaseModel, ABC):
         raise ValueError("Invalid ignore_paths value.")
 
     def authenticate(self):
+        """
+        Authenticate with Immich using the API key.
+
+        Raises:
+            AuthenticationError: If authentication fails
+        """
         if self._authenticated:
             return
         try:
@@ -99,11 +120,31 @@ class ImmichInterface(BaseModel, ABC):
 
     @abstractmethod
     def upload(self, directory: Path | None = None, recursive: bool = True):
-        """Abstract method to upload files."""
+        """
+        Abstract method to upload files.
+
+        Args:
+            directory (Path): The directory to upload.
+            recursive (bool): Whether to upload recursively
+
+        Raises:
+            NotImplementedError: If the method is not implemented in a subclass
+        """
         pass
 
     # Shared methods
     def should_ignore_file(self, file: Path, status: dict[str, str] | None = None, status_lock: threading.Lock | None = None) -> bool:
+        """
+        Check if a file should be ignored based on the extension, size, and status.
+
+        Args:
+            file (Path): The file to check.
+            status (dict[str, str]): A dictionary of file status.
+            status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
+
+        Returns:
+            bool: True if the file should be ignored, False otherwise
+        """
         if not file.is_file():
             return True
 
@@ -141,6 +182,19 @@ class ImmichInterface(BaseModel, ABC):
         return False
 
     def load_status_file(self, directory: Path | None = None) -> dict[str, str]:
+        """
+        Load the status file for a directory.
+
+        Args:
+            directory (Path): The directory to load the status file from.
+
+        Returns:
+            dict[str, str]: A dictionary of file status.
+
+        Example:
+            >>> immich.load_status_file(Path('cloud/thumbnails'))
+            {'image1.jpg': 'success', 'image2.jpg': 'failed'}
+        """
         directory = directory or self.directory
         status_file = directory / 'upload_status.txt'
         status = {}
@@ -161,6 +215,19 @@ class ImmichInterface(BaseModel, ABC):
         return status
 
     def save_status_file(self, directory: Path, status: dict[str, str], status_lock: threading.Lock):
+        """
+        Save the status file for a directory.
+
+        Args:
+            directory (Path): The directory to save the status file to.
+            status (dict[str, str]): A dictionary of file status.
+            status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
+
+        Example:
+            >>> status = {'image1.jpg': 'success', 'image2.jpg': 'failed'}
+            >>> status_lock = threading.Lock()
+            >>> immich.save_status_file(Path('cloud/thumbnails'), status, status_lock)
+        """
         with status_lock:
             status_file = directory / 'upload_status.txt'
             logger.debug(f"Saving status file {status_file}")
@@ -170,7 +237,16 @@ class ImmichInterface(BaseModel, ABC):
 
 class ImmichProgressiveUploader(ImmichInterface):
 
-    def upload_file(self, file: Path) -> bool:
+    def _upload_file(self, file: Path) -> bool:
+        """
+        Upload a file to Immich. Call upload_file_threadsafe, which wraps this method.
+
+        Args:
+            file (Path): The file to upload.
+
+        Returns:
+            bool: True if the file was uploaded successfully, False otherwise.
+        """
         command = ["immich", "upload", file.as_posix()]
         try:
             result = subprocess.run(
@@ -203,12 +279,20 @@ class ImmichProgressiveUploader(ImmichInterface):
         return False
 
     def upload_file_threadsafe(self, file: Path, status: dict[str, str], status_lock: threading.Lock) -> bool:
+        """
+        Upload a file to Immich in a thread-safe manner.
+
+        Args:
+            file (Path): The file to upload.
+            status (dict[str, str]): A dictionary of file status.
+            status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
+
+        Returns:
+            bool: True if the file was uploaded successfully, False otherwise.    
+        """
         filename = file.name
 
-        if self.should_ignore_file(file):
-            return False
-
-        success = self.upload_file(file)
+        success = self._upload_file(file)
 
         with status_lock:
             status[filename] = 'success' if success else 'failed'
@@ -216,6 +300,16 @@ class ImmichProgressiveUploader(ImmichInterface):
         return success
 
     def get_directories(self, directory: Path, recursive: bool = True) -> list[Path]:
+        """
+        Get a list of directories to upload.
+
+        Args:
+            directory (Path): The directory to search.
+            recursive (bool): Whether to search recursively.
+
+        Returns:
+            list[Path]: A list of directories to upload.
+        """
         if not recursive:
             return [directory]
 
@@ -235,6 +329,14 @@ class ImmichProgressiveUploader(ImmichInterface):
         return result
 
     def upload(self, directory : Path | None = None, recursive: bool = True, max_threads: int = 4):
+        """
+        Upload files to Immich.
+
+        Args:
+            directory (Path): The directory to upload.
+            recursive (bool): Whether to upload recursively.
+            max_threads (int): The maximum number of threads for concurrent
+        """
         if not self._authenticated:
             self.authenticate()
 
@@ -278,7 +380,6 @@ class ImmichDirectUploader(ImmichInterface):
     does not support terminating and resuming uploads, so requires re-computing the hash of all files
     every time it is run.
     """
-
     def find_large_files(self, directory: Path | None = None, size: int = 1024 * 1024 * 100) -> list[Path]:
         if not directory:
             directory = self.directory
@@ -335,6 +436,9 @@ class ImmichDirectUploader(ImmichInterface):
             logger.error(f"File upload failed: {e}")
 
 def main():
+    """
+    Called when the script is run from the command line. Parses arguments and uploads files to Immich.
+    """
     try:
         load_dotenv()
 
