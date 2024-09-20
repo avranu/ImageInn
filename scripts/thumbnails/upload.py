@@ -250,6 +250,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                 files = list(directory.iterdir())
                 files_to_upload = [file for file in files if not self.should_ignore_file(file, status, status_lock)]
                 if not files_to_upload:
+                    logger.debug("No files to upload in %s", directory)
                     continue
 
                 with ThreadPoolExecutor(max_workers=max_threads) as executor:
