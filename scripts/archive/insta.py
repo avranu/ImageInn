@@ -1,3 +1,12 @@
+"""
+Intended to archive Instagram profiles using Instaloader.
+
+Work in progress. Not yet functional.
+
+Version: 0.1a
+Date: 2024-09-25
+Status: WIP
+"""
 from __future__ import annotations
 import sys
 import os
@@ -107,48 +116,60 @@ class InstaloaderRunner(BaseModel):
         self.setup_instaloader()
 
         for profile_name in tqdm(self.profiles, desc="Profiles", unit="profile"):
-            retries = 0
-            delay = self.delay
-            while retries <= self.max_retries:
-                try:
-                    self.process_profile(profile_name)
-                    self._success_profiles.append(profile_name)
-                    break  # Exit retry loop on success
-                except instaloader.exceptions.ConnectionException as e:
-                    if retries < self.max_retries:
-                        sleep_time = delay + random.uniform(0, 1)
-                        logger.warning(f"Connection error for profile '{profile_name}': {e}. Retrying in {sleep_time:.2f} seconds...")
-                        time.sleep(sleep_time)
-                        retries += 1
-                        delay *= 2  # Exponential backoff
-                    else:
-                        logger.error(f"Max retries exceeded for profile '{profile_name}'.")
-                        self._failed_profiles.append(profile_name)
-                        break
-                except instaloader.exceptions.QueryReturnedNotFoundException:
-                    logger.error(f"Profile '{profile_name}' does not exist.")
-                    self._failed_profiles.append(profile_name)
-                    break
-                except instaloader.exceptions.PrivateProfileNotFollowedException:
-                    logger.error(f"Profile '{profile_name}' is private and not followed.")
-                    self._failed_profiles.append(profile_name)
-                    break
-                except instaloader.exceptions.TooManyRequestsException as e:
-                    sleep_time = delay + random.uniform(0, 1)
-                    logger.warning(f"Too many requests error for profile '{profile_name}': {e}. Sleeping for {sleep_time:.2f} seconds...")
-                    time.sleep(sleep_time)
-                    retries += 1
-                    delay *= 2  # Exponential backoff
-                except Exception as e:
-                    logger.error(f"An unexpected error occurred for profile '{profile_name}': {e}")
-                    self._failed_profiles.append(profile_name)
-                    break
-            else:
-                logger.error(f"Failed to process profile '{profile_name}' after {self.max_retries} retries.")
-
+            self.process_profile(profile_name)
+            
         self.report()
 
     def process_profile(self, profile_name: str):
+        retries = 0
+        delay = self.delay
+        while retries <= self.max_retries:
+            try:
+                self.send_request(profile_name)
+                self._success_profiles.append(profile_name)
+                break
+            
+            except instaloader.exceptions.ConnectionException as e:
+                if retries >= self.max_retries:
+                    self._profile_error(profile_name, f"Max retries exceeded for profile '{profile_name}'.")
+                    break
+                
+                sleep_time = delay + random.uniform(0, 1)
+                logger.warning(f"Connection error for profile '{profile_name}': {e}. Retrying in {sleep_time:.2f} seconds...")
+                time.sleep(sleep_time)
+                retries += 1
+                # Exponential backoff
+                delay *= 2
+                
+            except instaloader.exceptions.QueryReturnedNotFoundException:
+                self._profile_error(profile_name, f"Profile {profile_name} not found.")
+                self._failed_profiles.append(profile_name)
+                break
+            
+            except instaloader.exceptions.PrivateProfileNotFollowedException:
+                self._profile_error(profile_name, f"Profile {profile_name} is private and not followed.")
+                break
+            
+            except instaloader.exceptions.TooManyRequestsException as e:
+                sleep_time = delay + random.uniform(0, 1)
+                logger.warning(f"Too many requests error for profile '{profile_name}': {e}. Sleeping for {sleep_time:.2f} seconds...")
+                time.sleep(sleep_time)
+                retries += 1
+                # Exponential backoff
+                delay *= 2
+                
+            except Exception as e:
+                logger.error(f"An unexpected error occurred for profile '{profile_name}': {e}")
+                self._failed_profiles.append(profile_name)
+                break
+        else:
+            logger.error(f"Failed to process profile '{profile_name}' after {self.max_retries} retries.")
+
+    def _profile_error(self, profile_name: str, error_message : str):
+        logger.error(f"Error processing profile '{profile_name}': {error_message}")
+        self._failed_profiles.append(profile_name)
+
+    def send_request(self, profile_name: str):
         profile = instaloader.Profile.from_username(self._instaloader.context, profile_name)
         logger.info(f"Processing profile '{profile_name}'")
         self._instaloader.download_profile(
