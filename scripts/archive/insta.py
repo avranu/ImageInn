@@ -5,16 +5,18 @@ import os
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-import subprocess
 import logging
 import argparse
 import time
+import random
 from pathlib import Path
 from typing import List
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 from tqdm import tqdm
 from scripts import setup_logging
-from scripts.exceptions import ShouldTerminateException, TooFastException
+from scripts.exceptions import ShouldTerminateException
+import instaloader
+import instaloader.exceptions
 
 logger = setup_logging()
 
@@ -26,19 +28,22 @@ class InstaloaderRunner(BaseModel):
     Run instaloader commands for a list of Instagram profiles.
 
     - Reads profile names from a file or command-line arguments.
-    - Runs the instaloader command for each profile.
-    - Handles password prompts by providing the password from an environment variable.
-    - Checks the output for successful execution.
+    - Uses the instaloader module directly for better control.
+    - Handles retries with exponential backoff.
+    - Manages login using username and password from environment variables.
     """
     profiles: List[str] = Field(default_factory=list)
-    instaloader_args: List[str] = Field(default_factory=list)
     profiles_file: Path | None = None
+    max_retries: int = 5
+    backoff_factor: float = 0.5
+    delay: int = 1  # Initial delay between retries in seconds
 
     # Private attributes
-    _username: str = Field(default='')
+    _username: str = PrivateAttr(default='')
     _password: str = PrivateAttr(default='')
     _success_profiles: List[str] = PrivateAttr(default_factory=list)
     _failed_profiles: List[str] = PrivateAttr(default_factory=list)
+    _instaloader: instaloader.Instaloader = PrivateAttr()
 
     class Config:
         arbitrary_types_allowed = True
@@ -46,7 +51,7 @@ class InstaloaderRunner(BaseModel):
     @property
     def password(self) -> str:
         if not self._password:
-            self._password = os.getenv('INSTALOADER_PASSWORD')            
+            self._password = os.getenv('INSTALOADER_PASSWORD')
             if not self._password:
                 raise ShouldTerminateException("Password not found in environment variable 'INSTALOADER_PASSWORD'.")
         return self._password
@@ -73,56 +78,93 @@ class InstaloaderRunner(BaseModel):
 
         raise ValueError("No profiles provided.")
 
+    def setup_instaloader(self):
+        # Set up instaloader instance with desired options
+        self._instaloader = instaloader.Instaloader(
+            download_stories=True,
+            download_comments=True,
+            download_videos=True,
+            save_metadata=True,
+            post_metadata_txt_pattern=DEFAULT_POST_METADATA_TEXT,
+            storyitem_metadata_txt_pattern=DEFAULT_STORY_METADATA_TEXT,
+            max_connection_attempts=1,
+        )
+        try:
+            self._instaloader.login(self.username, self.password)
+            logger.info("Logged in as '%s'.", self.username)
+        except instaloader.exceptions.BadCredentialsException:
+            raise ShouldTerminateException("Invalid username or password.")
+        except instaloader.exceptions.ConnectionException as e:
+            raise ShouldTerminateException(f"Connection error: {e}")
+        except instaloader.exceptions.TwoFactorAuthRequiredException:
+            raise ShouldTerminateException("Two-factor authentication is required but not supported in this script.")
+        except Exception as e:
+            raise ShouldTerminateException(f"An unexpected error occurred during login: {e}")
+
     def run(self):
         logger.info("Starting Instaloader for %d profiles.", len(self.profiles))
 
-        for profile in tqdm(self.profiles, desc="Profiles", unit="profile"):
-            try:
-                self.process_profile(profile)
-            except TooFastException as e:
-                logger.error(f"Sending requests too quickly. Waiting before retry: {e}")
-                time.sleep(60)
-                self.process_profile(profile)
+        self.setup_instaloader()
 
-            
+        for profile_name in tqdm(self.profiles, desc="Profiles", unit="profile"):
+            retries = 0
+            delay = self.delay
+            while retries <= self.max_retries:
+                try:
+                    self.process_profile(profile_name)
+                    self._success_profiles.append(profile_name)
+                    break  # Exit retry loop on success
+                except instaloader.exceptions.ConnectionException as e:
+                    if retries < self.max_retries:
+                        sleep_time = delay + random.uniform(0, 1)
+                        logger.warning(f"Connection error for profile '{profile_name}': {e}. Retrying in {sleep_time:.2f} seconds...")
+                        time.sleep(sleep_time)
+                        retries += 1
+                        delay *= 2  # Exponential backoff
+                    else:
+                        logger.error(f"Max retries exceeded for profile '{profile_name}'.")
+                        self._failed_profiles.append(profile_name)
+                        break
+                except instaloader.exceptions.QueryReturnedNotFoundException:
+                    logger.error(f"Profile '{profile_name}' does not exist.")
+                    self._failed_profiles.append(profile_name)
+                    break
+                except instaloader.exceptions.PrivateProfileNotFollowedException:
+                    logger.error(f"Profile '{profile_name}' is private and not followed.")
+                    self._failed_profiles.append(profile_name)
+                    break
+                except instaloader.exceptions.TooManyRequestsException as e:
+                    sleep_time = delay + random.uniform(0, 1)
+                    logger.warning(f"Too many requests error for profile '{profile_name}': {e}. Sleeping for {sleep_time:.2f} seconds...")
+                    time.sleep(sleep_time)
+                    retries += 1
+                    delay *= 2  # Exponential backoff
+                except Exception as e:
+                    logger.error(f"An unexpected error occurred for profile '{profile_name}': {e}")
+                    self._failed_profiles.append(profile_name)
+                    break
+            else:
+                logger.error(f"Failed to process profile '{profile_name}' after {self.max_retries} retries.")
+
         self.report()
 
-    def process_profile(self, profile: str):
-        command = ['instaloader', '--login', self.username] + self.instaloader_args + [profile]
-        logger.debug("Executing command: %s", ' '.join(command))
-
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True
+    def process_profile(self, profile_name: str):
+        profile = instaloader.Profile.from_username(self._instaloader.context, profile_name)
+        logger.info(f"Processing profile '{profile_name}'")
+        self._instaloader.download_profile(
+            profile_name,
+            profile_pic=True,
+            stories=True,
+            highlights=True,
+            tagged=True,
+            posts=True,
+            fast_update=True
         )
-
-        try:
-            stdout, _ = process.communicate(input=self._password + '\n', timeout=300)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            stdout, _ = process.communicate()
-            raise ShouldTerminateException(f"Command timed out for profile '{profile}'.")
-
-        logger.debug("Command output for profile '%s':\n%s", profile, stdout)
-
-        if process.returncode != 0:
-            logger.error("Instaloader failed for profile '%s'. Return code: %d", profile, process.returncode)
-            self._failed_profiles.append(profile)
-            return
-
-        if "HTTP error code 429" in stdout:
-            logger.error("Too many requests error for profile '%s'.", profile)
-            raise TooFastException(f"Too many requests for profile '{profile}'.")
-
-        self._success_profiles.append(profile)
-        logger.info("Successfully processed profile '%s'.", profile)
 
     def report(self):
         logger.info("Instaloader run completed.")
-        logger.info("Successful profiles: %s", ', '.join(self._success_profiles))
+        if self._success_profiles:
+            logger.info("Successful profiles: %s", ', '.join(self._success_profiles))
         if self._failed_profiles:
             logger.warning("Failed profiles: %s", ', '.join(self._failed_profiles))
 
@@ -132,24 +174,14 @@ def main():
         parser.add_argument('-p', '--profiles', nargs='*', help='List of Instagram profiles to archive.')
         parser.add_argument('-f', '--profiles-file', help='File containing Instagram profiles to archive, one per line.')
         parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity.')
-        args, unknown_args = parser.parse_known_args()
+        args = parser.parse_args()
 
         if args.verbose:
             logger.setLevel(logging.DEBUG)
 
-        instaloader_args = [
-            '--stories',
-            '--highlights',
-            '--tagged',
-            '--comments',
-            f'--post-metadata-txt="{DEFAULT_POST_METADATA_TEXT}"',
-            f'--storyitem-metadata-txt="{DEFAULT_STORY_METADATA_TEXT}"',
-        ] + unknown_args
-
         runner = InstaloaderRunner(
-            profiles			= args.profiles,
-            profiles_file		= args.profiles_file,
-            instaloader_args	= instaloader_args,
+            profiles=args.profiles,
+            profiles_file=args.profiles_file,
         )
 
         runner.run()
