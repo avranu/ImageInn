@@ -180,6 +180,11 @@ class InstaloaderRunner(BaseModel):
             fast_update=True
         )
 
+        '''
+        Raw output options:
+        JSON Query to graphql/query: 401 Unauthorized - "fail" status, message "Please wait a few minutes before you try again." when accessing https://www.instagram.com/graphql/query?query_hash=2b0673e0dc4580674a88d426fe00ea90&variables=%7B%22shortcode%22%3A%22C0hnmIOvnda%22%7D
+        '''
+
     def report(self):
         logger.info("Instaloader run completed.")
         if self._success_profiles:
