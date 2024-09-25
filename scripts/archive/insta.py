@@ -182,7 +182,12 @@ class InstaloaderRunner(BaseModel):
 
         '''
         Raw output options:
-        JSON Query to graphql/query: 401 Unauthorized - "fail" status, message "Please wait a few minutes before you try again." when accessing https://www.instagram.com/graphql/query?query_hash=2b0673e0dc4580674a88d426fe00ea90&variables=%7B%22shortcode%22%3A%22C0hnmIOvnda%22%7D
+            * JSON Query to graphql/query: 401 Unauthorized - "fail" status, message "Please wait a few minutes before you try again." when accessing https://www.instagram.com/graphql/query?query_hash=2b0673e0dc4580674a88d426fe00ea90&variables=%7B%22shortcode%22%3A%22C0hnmIOvnda%22%7D
+            * Login required to access comments of a post
+            * username/2024-01-10_21-13-19_UTC_1.jpg exists username/2024-01-10_21-13-19_UTC_2.jpg exists [Caption: 'some caption…] updated [Caption: 'some caption…] Download <Post C8DML5XPKOi> of username: Login required to access comments of a post.
+            * username: 400 Bad Request - "fail" status, message "challenge_required" when accessing https://i.instagram.com/api/v1/users/web_profile_info/?username=username
+            * username/2021-01-20_15-29-55_UTC.jpg [Caption: 'some caption i…] comments json
+            * username/2021-01-20_13-58-25_UTC.jpg [Caption: 'some caption …] Download <Post CRtmKDgoR9b> of username: 400 Bad Request - "fail" status, message "feedback_required" when accessing https://i.instagram.com/api/v1/media/2624921974557712219/comments/18302300596044615/child_comments/?max_id=
         '''
 
     def report(self):
