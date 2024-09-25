@@ -158,8 +158,7 @@ class InstaloaderRunner(BaseModel):
                 delay *= 2
                 
             except Exception as e:
-                logger.error(f"An unexpected error occurred for profile '{profile_name}': {e}")
-                self._failed_profiles.append(profile_name)
+                self._profile_error(profile_name, f"An unexpected error occurred for profile '{profile_name}': {e}")
                 break
         else:
             logger.error(f"Failed to process profile '{profile_name}' after {self.max_retries} retries.")
