@@ -44,7 +44,6 @@ class InstaloaderRunner(BaseModel):
     profiles: List[str] = Field(default_factory=list)
     profiles_file: Path | None = None
     max_retries: int = 5
-    backoff_factor: float = 0.5
     delay: int = 1  # Initial delay between retries in seconds
 
     # Private attributes
