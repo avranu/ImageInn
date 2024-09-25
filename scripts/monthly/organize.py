@@ -40,10 +40,10 @@ from typing import Literal
 from tqdm import tqdm
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from scripts import setup_logging
-from scripts.monthly.exceptions import ShouldTerminateException, OneFileException, DuplicationHandledException
+from scripts.exceptions import ShouldTerminateException
+from scripts.monthly.exceptions import OneFileException, DuplicationHandledException
 
 logger = setup_logging()
-
 
 class FileOrganizer(BaseModel):
     """
@@ -541,7 +541,7 @@ class FileOrganizer(BaseModel):
         """
         self.notice(message, 'CRITICAL')
 
-    def notice(self, message : str | None, level : str = 'INFO') -> None:
+    def notice(self, message : str, level : str = 'INFO') -> None:
         """
         Log a message with the specified level, noting that it has been skipped if in dry-run mode.
 
@@ -589,7 +589,13 @@ def main():
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
-    organizer = FileOrganizer(directory=args.directory, file_prefix=args.prefix, batch_size=args.limit, dry_run=args.dry_run, skip_collision=args.skip_collision)
+    organizer = FileOrganizer(
+        directory       = args.directory, 
+        file_prefix     = args.prefix, 
+        batch_size      = args.limit, 
+        dry_run         = args.dry_run, 
+        skip_collision  = args.skip_collision
+    )
 
     try:
         organizer.organize_files()
