@@ -204,7 +204,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                     for future in tqdm(
                         as_completed(futures), 
                         total=len(futures), 
-                        unit="file", 
+                        unit='files', 
                         leave=False,
                         desc=f"Uploading {directory.name}"
                     ):

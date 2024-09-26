@@ -198,7 +198,7 @@ class FileOrganizer(BaseModel):
         if self.dry_run:
             logger.info('Dry run mode enabled; no files will be moved')
 
-        with tqdm(desc='Processing files', leave=False, unit='file', miniters=1000, mininterval=1) as self._progress:
+        with tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1) as self._progress:
             for file in self.files:
                 try:
                     if not file.is_file():
