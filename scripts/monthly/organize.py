@@ -36,7 +36,7 @@ from pathlib import Path
 import logging
 import argparse
 from functools import lru_cache
-from typing import Literal
+from typing import Iterator, Literal
 from tqdm import tqdm
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from scripts import setup_logging
@@ -58,6 +58,7 @@ class FileOrganizer(BaseModel):
     dry_run: bool = False
     batch_size: int = -1
     skip_collision: bool = False
+    skip_hash : bool = False
 
     duplicates_found: int = 0
     directories_created: int = 0
@@ -69,8 +70,6 @@ class FileOrganizer(BaseModel):
     _count_files_moved: int = PrivateAttr(default=0)
     _files_deleted: list[Path] = PrivateAttr(default_factory=list)
     _count_files_deleted: int = PrivateAttr(default=0)
-    _files: list[Path] = PrivateAttr(default_factory=list)
-    _count_files: int = PrivateAttr(default=0)
     _progress: tqdm | None = PrivateAttr(default=None)
     _filename_pattern : re.Pattern | None = PrivateAttr(default=None)
 
@@ -82,27 +81,7 @@ class FileOrganizer(BaseModel):
 
     @property
     def files(self) -> list[Path]:
-        # Cache it
-        if not self._files:
-        
-            try:
-                if self.batch_size > 0:
-                    # Optimize in the case of a limited batch size, since glob is a generator
-                    logger.debug(f"Limiting files to {self.batch_size}")
-                    self._files = []
-                    for f in self.directory.glob(f'{self.file_prefix}*'):
-                        if f.is_file():
-                            self.append_file(f)
-                            if self.file_count >= self.batch_size:
-                                break
-                else:
-                    # Grab everything
-                    self._files = [f for f in self.directory.glob(f'{self.file_prefix}*') if f.is_file()]
-                    self._count_files = len(self._files)
-            except Exception as e:
-                raise ShouldTerminateException(f"Error accessing directory {self.directory}") from e
-
-        return self._files
+        return self.directory.glob(f'{self.file_prefix}20*.jpg')
 
     @property
     def filename_pattern(self) -> re.Pattern:
@@ -111,17 +90,9 @@ class FileOrganizer(BaseModel):
         return self._filename_pattern
 
     @property
-    def file_count(self) -> int:
-        # Cache it
-        if not self._count_files:
-            self._count_files = len(self.files)
-
-        return self._count_files
-
-    @property
     def progress(self) -> tqdm:
         if self._progress is None:
-            self._progress = tqdm(total=self.file_count, desc='Processing files', leave=False, unit='file', miniters=1000, mininterval=1)
+            self._progress = tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1)
             
         return self._progress
 
@@ -148,10 +119,6 @@ class FileOrganizer(BaseModel):
     @property
     def count_files_skipped(self) -> int:
         return self._count_files_skipped
-
-    def append_file(self, file: Path) -> None:
-        self._files.append(file)
-        self._count_files += 1
 
     def append_moved_file(self, file: Path) -> None:
         self._files_moved.append(file)
@@ -211,6 +178,9 @@ class FileOrganizer(BaseModel):
         if source_file.stat().st_size != destination.stat().st_size:
             return False
 
+        if self.skip_hash:
+            return True
+
         # Check the hashes
         source_hash = self.hash_file(source_file)
         destination_hash = self.hash_file(destination)
@@ -225,13 +195,15 @@ class FileOrganizer(BaseModel):
             The number of files moved into new subdirectories.
         """
         # Loop over all files matching the pattern
-        logger.info('Organizing %s files', self.file_count)
         if self.dry_run:
             logger.info('Dry run mode enabled; no files will be moved')
 
-        with tqdm(total=self.file_count, desc='Processing files', leave=False, unit='file', miniters=1000, mininterval=1) as self._progress:
+        with tqdm(desc='Processing files', leave=False, unit='file', miniters=1000, mininterval=1) as self._progress:
             for file in self.files:
                 try:
+                    if not file.is_file():
+                        continue
+                    
                     self.process_file(file)
                 except DuplicationHandledException as e:
                     logger.debug(f"Duplicate file {file} handled")
@@ -351,12 +323,20 @@ class FileOrganizer(BaseModel):
         Raises:
             OneFileException: If an error occurs while deleting the file.
         """
+        if self.skip_hash:
+            logger.critical('Cannot delete files without verifying checksums')
+            raise OneFileException('Cannot delete files without verifying checksums')
+        
         try:
             if not self.dry_run:
                 if use_trash:
-                    trash = self.directory / '.trash'
-                    trash.mkdir(exist_ok=True)
-                    file.rename(trash / file.name)
+                    trash_dir = self.directory / '.trash'
+                    trash_dir.mkdir(exist_ok=True)
+                    trash_file_path = trash_dir / file.name
+                    number = 1
+                    while trash_file_path.exists():
+                        trash_file_path = trash_dir / f"{file.stem}_{number}{file.suffix}" 
+                    file.rename(trash_file_path)
                 else:
                     file.unlink()
                 
@@ -437,7 +417,8 @@ class FileOrganizer(BaseModel):
         if self.files_match(source_file, destination):
             # Files are identical; delete the source file
             self.duplicates_found += 1
-            self.delete_file(source_file, "Duplicate file found; deleted")
+            if not self.skip_hash:
+                self.delete_file(source_file, "Duplicate file found; deleted")
             raise DuplicationHandledException(f"Duplicate file {source_file} handled")
 
         return False
@@ -582,7 +563,8 @@ def main():
     parser.add_argument('-p', '--prefix', default='PXL_', help='File prefix to match (default: PXL_)')
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
-    parser.add_argument('-s', '--skip-collision', action='store_true', help='Skip moving files on collision')
+    parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
+    parser.add_argument('--skip-hash', action='store_true', help='Skip verifying file hashes')
     parser.add_argument('--dry-run', action='store_true', help='Simulate the file organization without moving files')
     args = parser.parse_args()
 
@@ -594,7 +576,8 @@ def main():
         file_prefix     = args.prefix, 
         batch_size      = args.limit, 
         dry_run         = args.dry_run, 
-        skip_collision  = args.skip_collision
+        skip_collision  = args.skip_collision,
+        skip_hash       = args.skip_hash
     )
 
     try:

@@ -48,7 +48,7 @@ class ImmichProgressiveUploader(ImmichInterface):
 
     def _upload_file(self, file: Path) -> bool:
         """
-        Upload a file to Immich. Call upload_file_threadsafe, which wraps this method.
+        Upload a file to Immich. To use this, call upload_file_threadsafe, which wraps this method.
 
         Args:
             file (Path): The file to upload.
@@ -209,7 +209,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                         desc=f"Uploading {directory.name}"
                     ):
                         # re-raise any exceptions
-                        future.result()  
+                        future.result()
             finally:
                 if len(status) > status_count:
                     self.save_status_file(directory, status, status_lock)
