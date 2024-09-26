@@ -30,7 +30,7 @@ import sys
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
-from typing import Collection, Generator, Iterable, List
+from typing import Collection, Generator
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -39,6 +39,7 @@ from dotenv import load_dotenv
 import argparse
 from tqdm import tqdm
 from scripts import setup_logging
+from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 from scripts.thumbnails.upload.interface import ImmichInterface
 

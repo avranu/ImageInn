@@ -36,6 +36,7 @@ from typing import Iterable, List
 import threading
 from abc import ABC, abstractmethod
 from scripts import setup_logging
+from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, STATUS_FILE_NAME
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 
@@ -56,16 +57,16 @@ ALLOWED_EXTENSIONS = [
 
 STATUS_FILE_NAME = 'upload_status.txt'
 
-class ImmichInterface(BaseModel, ABC):
+class ImmichInterface(FileManager, ABC):
     """
     Abstract class for uploading files to Immich. Subclasses include ImmichProgressiveUploader and ImmichDirectUploader.
     """
     url: str
     api_key: str
-    directory: Path
-    ignore_extensions: List[str] = Field(default_factory=list)
-    ignore_paths: List[str] = Field(default_factory=list)
+    ignore_extensions: list[str] = Field(default_factory=list)
+    ignore_paths: list[str] = Field(default_factory=list)
     large_file_size: int = 1024 * 1024 * 100  # 100 MB
+    backup_directories : list[Path] = Field(default_factory=list)
 
     _authenticated: bool = PrivateAttr(default=False)
 
@@ -97,6 +98,16 @@ class ImmichInterface(BaseModel, ABC):
         if isinstance(v, Iterable):
             return [str(path) for path in v]
         raise ValueError("Invalid ignore_paths value.")
+
+    @field_validator('backup_directories', mode="before")
+    def validate_backup_directories(cls, v):
+        if not v:
+            return []
+        if isinstance(v, (str, Path)):
+            return [Path(v)]
+        if isinstance(v, Iterable):
+            return [Path(path) for path in v]
+        raise ValueError("Invalid backup_directories value.")
 
     def authenticate(self):
         """
@@ -235,3 +246,47 @@ class ImmichInterface(BaseModel, ABC):
             with status_file.open('w') as f:
                 for filename, file_status in status.items():
                     f.write(f'{filename}\t{file_status}\n')
+
+    def create_backup_subdirs(self, file: Path) -> list[Path]:
+        """
+        Create subdirectories in each backup directory based on the current date.
+
+        Args:
+            file (Path): The file to create subdirectories for.
+
+        Returns:
+            list[Path]: A list of subdirectories created.
+        """
+        subdirs = []
+        for backup_dir in self.backup_directories:
+            subdir = self.create_subdir(file, backup_dir)
+            subdirs.append(subdir)
+        return subdirs
+
+    def backup_file(self, file : Path, delete : bool = False) -> list[Path]:
+        """
+        Move a file to all of the backup directories, organized into a subdir based on the current date.
+
+        Args:
+            file (Path): The file to move.
+            delete (bool): Whether to delete the original file after moving.
+        """
+        if not self.backup_directories:
+            logger.warning("No backup directories specified. Skipping move.")
+            return []
+
+        results = []
+        errors = []
+        for backup_dir in self.create_backup_subdirs(file):
+            if result := self.copy_file(file, backup_dir):
+                results.append(result)
+            else:
+                errors.append(backup_dir)
+                
+        if delete and results and not errors:
+            self.delete_file(file)
+            logger.debug(f"Deleted original file {file}")
+
+        return results
+
+        

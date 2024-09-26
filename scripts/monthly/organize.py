@@ -42,10 +42,11 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.monthly.exceptions import OneFileException, DuplicationHandledException
+from scripts.lib.file_manager import FileManager
 
 logger = setup_logging()
 
-class FileOrganizer(BaseModel):
+class FileOrganizer(FileManager):
     """
     Organize files into monthly directories based on the filename.
 
@@ -53,9 +54,6 @@ class FileOrganizer(BaseModel):
     - Files are moved to a directory named 'YYYY-MM' under the specified directory.
     - If a file with the same name already exists in the target directory, a unique filename is generated.
     """
-    directory: Path = Field(default=Path('.'))
-    file_prefix: str = 'PXL_'
-    dry_run: bool = False
     batch_size: int = -1
     skip_collision: bool = False
     skip_hash : bool = False
@@ -64,30 +62,8 @@ class FileOrganizer(BaseModel):
     directories_created: int = 0
 
     # Private attributes
-    _files_skipped: list[Path] = PrivateAttr(default_factory=list)
-    _count_files_skipped: int = PrivateAttr(default=0)
-    _files_moved: list[Path] = PrivateAttr(default_factory=list)
-    _count_files_moved: int = PrivateAttr(default=0)
-    _files_deleted: list[Path] = PrivateAttr(default_factory=list)
-    _count_files_deleted: int = PrivateAttr(default=0)
     _progress: tqdm | None = PrivateAttr(default=None)
     _filename_pattern : re.Pattern | None = PrivateAttr(default=None)
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    @field_validator('directory', mode='before')
-    def validate_directory(cls, v):
-        return Path(v)
-
-    @property
-    def files(self) -> list[Path]:
-        return self.directory.glob(f'{self.file_prefix}20*.jpg')
-
-    @property
-    def filename_pattern(self) -> re.Pattern:
-        if not self._filename_pattern:
-            self._filename_pattern = re.compile(rf'^{re.escape(self.file_prefix)}(20\d{{6}})_')
-        return self._filename_pattern
 
     @property
     def progress(self) -> tqdm:
@@ -97,40 +73,16 @@ class FileOrganizer(BaseModel):
         return self._progress
 
     @property
-    def files_moved(self) -> list[Path]:
-        return self._files_moved
-
-    @property
     def count_files_moved(self) -> int:
-        return self._count_files_moved
-
-    @property
-    def files_deleted(self) -> list[Path]:
-        return self._files_deleted
+        return len(self._files_moved)
 
     @property
     def count_files_deleted(self) -> int:
-        return self._count_files_deleted
-
-    @property
-    def files_skipped(self) -> list[Path]:
-        return self._files_skipped
+        return len(self._files_deleted)
 
     @property
     def count_files_skipped(self) -> int:
-        return self._count_files_skipped
-
-    def append_moved_file(self, file: Path) -> None:
-        self._files_moved.append(file)
-        self._count_files_moved += 1
-
-    def append_deleted_file(self, file: Path) -> None:
-        self._files_deleted.append(file)
-        self._count_files_deleted += 1
-
-    def append_skipped_file(self, file: Path) -> None:
-        self._files_skipped.append(file)
-        self._count_files_skipped += 1
+        return len(self._files_skipped)
 
     @lru_cache(maxsize=1024)
     def hash_file(self, filename: str | Path) -> str:
@@ -147,17 +99,12 @@ class FileOrganizer(BaseModel):
             OneFileException: If an error occurs while reading the file.
         """
         try:
-            hash_md5 = hashlib.md5()
-            with open(filename, "rb") as f:
-                # Read the file in chunks to handle large files efficiently
-                for chunk in iter(lambda: f.read(4096), b""):
-                    hash_md5.update(chunk)
-            return hash_md5.hexdigest()
+            return super().hash_file(filename)
         except IOError as e:
             raise OneFileException(f"Error reading file {filename}") from e
 
 
-    def files_match(self, source_file : Path, destination: Path) -> bool:
+    def files_match(self, source_file : Path, destination: Path, skip_hash : bool = False) -> bool:
         """
         Check if the MD5 hashes of two files match.
 
@@ -171,21 +118,9 @@ class FileOrganizer(BaseModel):
         Raises:
             OneFileException: If an error occurs while hashing either file.
         """
-        if not destination.exists():
-            return False
+        skip_hash = skip_hash or self.skip_hash
 
-        # Check the filesize
-        if source_file.stat().st_size != destination.stat().st_size:
-            return False
-
-        if self.skip_hash:
-            return True
-
-        # Check the hashes
-        source_hash = self.hash_file(source_file)
-        destination_hash = self.hash_file(destination)
-
-        return source_hash == destination_hash
+        return super().files_match(source_file, destination, skip_hash)
 
     def organize_files(self) -> None:
         """
@@ -199,7 +134,7 @@ class FileOrganizer(BaseModel):
             logger.info('Dry run mode enabled; no files will be moved')
 
         with tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1) as self._progress:
-            for file in self.files:
+            for file in self.get_files():
                 try:
                     if not file.is_file():
                         continue
@@ -227,7 +162,7 @@ class FileOrganizer(BaseModel):
         filename = file.name
 
         # Create the subdir
-        target_dir = self.find_subdir(filename)
+        target_dir = self.create_subdir(filename)
 
         # Handle potential filename collisions
         target_file = self.handle_collision(file, target_dir / filename)
@@ -253,7 +188,7 @@ class FileOrganizer(BaseModel):
         if increase_progress_bar > 0:
             self.progress.update(increase_progress_bar)
 
-    def find_subdir(self, filename: str | Path) -> Path:
+    def create_subdir(self, filename: str | Path, parent_directory : Path | None = None) -> Path:
         """
         Find the subdirectory for a file based on its filename.
 
@@ -266,20 +201,10 @@ class FileOrganizer(BaseModel):
         Raises:
             OneFileException: If the filename does not match the expected format.
         """
-        if isinstance(filename, Path):
-            filename = filename.name
-
-        if not (match := self.filename_pattern.match(str(filename))):
-            raise OneFileException(f"Invalid filename format: {filename}")
-
-        # Subdir name
-        date_part = match.group(1)
-        year = date_part[:4]
-        month = date_part[4:6]
-        dir_name = f"{year}-{month}"
-
-        # Turn into path
-        return self.mkdir(self.directory / dir_name) 
+        try:
+            return super().create_subdir(filename, parent_directory)
+        except ValueError as e:
+            raise OneFileException(f"Unable to create subdir for: {filename}") from e
 
     def mkdir(self, directory: Path, message: str | None = "Created directory") -> Path:
         """
@@ -295,19 +220,19 @@ class FileOrganizer(BaseModel):
         Raises:
             ShouldTerminateException: If an error occurs while creating the directory.
         """
+        if directory.exists():
+            return directory
+        
         try:
-            if not directory.exists():
-
-                if not self.dry_run:
-                    directory.mkdir(exist_ok=True)
-                    
-                self.directories_created += 1
-                if message:
-                    self.debug(f"{message}: {directory.relative_to(self.directory)}")
+            result = super().mkdir(directory)
+                
+            self.directories_created += 1
+            if message:
+                logger.debug(f"{message}: {directory.relative_to(self.directory)}")
         except Exception as e:
             raise ShouldTerminateException(f'Error creating directory: {directory}') from e
-
-        return directory
+        
+        return result
         
     def delete_file(self, file: Path, message : str = "Deleted file", use_trash : bool = True) -> bool:
         """
@@ -328,24 +253,12 @@ class FileOrganizer(BaseModel):
             raise OneFileException('Cannot delete files without verifying checksums')
         
         try:
-            if not self.dry_run:
-                if use_trash:
-                    trash_dir = self.directory / '.trash'
-                    trash_dir.mkdir(exist_ok=True)
-                    trash_file_path = trash_dir / file.name
-                    number = 1
-                    while trash_file_path.exists():
-                        trash_file_path = trash_dir / f"{file.stem}_{number}{file.suffix}" 
-                    file.rename(trash_file_path)
-                else:
-                    file.unlink()
-                
-            self.debug(f"{message}: {file}")
-            self.append_deleted_file(file)
+            result = super().delete_file(file, use_trash)    
+            logger.debug(f"{message}: {file}")
         except Exception as e:
             raise OneFileException('Error deleting file') from e
 
-        return not file.exists()
+        return result
 
     def move_file(self, source: Path, destination: Path, message : str | None = "Moved file", verify : bool = False) -> Path:
         """
@@ -363,29 +276,10 @@ class FileOrganizer(BaseModel):
             OneFileException: If an error occurs while moving the file, or hashing either file.
             ShouldTerminateException: If the checksums do not match after moving the file.
         """
-        # Destination must be absolute for Path.rename to be consistent
-        if not destination.is_absolute():
-            logger.debug(f"Making destination path absolute: {destination}")
-            destination = self.directory / destination
-        
-        if not self.dry_run:
-            if verify:
-                source_hash = self.hash_file(source)
-            
-            try:
-                source.rename(destination)
-            except Exception as e:
-                raise OneFileException(f'Error moving file {source} to {destination}') from e
+        destination = super().move_file(source, destination, verify=verify)
 
-            if verify:
-                destination_hash = self.hash_file(destination)
-                if source_hash != destination_hash:
-                    logger.critical(f"Checksum mismatch after moving {source} to {destination}")
-                    raise ShouldTerminateException('Checksum mismatch after moving')
-
-        self.append_moved_file(destination)
         if message:
-            self.debug(f"{message}: {source} to {destination.relative_to(self.directory)}")
+            logger.debug(f"{message}: {source} to {destination.relative_to(self.directory)}")
             
         return destination
 
@@ -411,7 +305,7 @@ class FileOrganizer(BaseModel):
         if self.skip_collision:
             # Skip moving files on collision
             self.append_skipped_file(source_file)
-            self.debug(f"Skipping file {source_file} due to collision with {destination}")
+            logger.debug(f"Skipping file {source_file} due to collision with {destination}")
             raise DuplicationHandledException(f"Duplicate file {source_file} handled")
         
         if self.files_match(source_file, destination):
@@ -466,95 +360,6 @@ class FileOrganizer(BaseModel):
                     self.count_files_skipped,
                     self.directories_created
         )
-
-    def info(self, message : str) -> None:
-        """
-        Log an INFO message noting that it has been skipped if in dry-run mode.
-
-        This should only be used for logging steps that occur which will be skipped in dry-run mode.
-
-        Args:
-            message: The message to log.
-        """
-        self.notice(message, 'INFO')
-
-    def debug(self, message : str) -> None:
-        """
-        Log a DEBUG message noting that it has been skipped if in dry-run mode.
-
-        This should only be used for logging steps that occur which will be skipped in dry-run mode.
-
-        Args:
-            message: The message to log.
-        """
-        self.notice(message, 'DEBUG')
-
-    def warning(self, message : str) -> None:
-        """
-        Log a WARNING message noting that it has been skipped if in dry-run mode.
-
-        This should only be used for logging steps that occur which will be skipped in dry-run mode.
-
-        Args:
-            message: The message to log.
-        """
-        self.notice(message, 'WARNING')
-
-    def error(self, message : str) -> None:
-        """
-        Log an ERROR message noting that it has been skipped if in dry-run mode.
-
-        This should only be used for logging steps that occur which will be skipped in dry-run mode.
-
-        Args:
-            message: The message to log.
-        """
-        self.notice(message, 'ERROR')
-
-    def critical(self, message : str) -> None:
-        """
-        Log a CRITICAL message noting that it has been skipped if in dry-run mode.
-
-        This should only be used for logging steps that occur which will be skipped in dry-run mode.
-
-        Args:
-            message: The message to log.
-        """
-        self.notice(message, 'CRITICAL')
-
-    def notice(self, message : str, level : str = 'INFO') -> None:
-        """
-        Log a message with the specified level, noting that it has been skipped if in dry-run mode.
-
-        This should only be used for logging steps that occur which will be skipped in dry-run mode.
-
-        Args:
-            message: The message to log.
-            level: The logging level to use (default: INFO).
-        """
-        if not message:
-            return
-        
-        if self.dry_run:
-            message = f"[SKIPPED] - {message} - [SKIPPED]"
-
-        match level.lower():
-            case 'info':
-                logger.info(message)
-            case 'debug':
-                logger.debug(message)
-            case 'warning':
-                logger.warning(message)
-            case 'error':
-                logger.error(message)
-            case 'critical':
-                logger.critical(message)
-            case _:
-                logger.debug('Invalid log level: %s', level)
-                logger.info(message)
-
-    def __hash__(self) -> int:
-        return hash(self.directory)
 
 def main():    
     # Set up argument parser

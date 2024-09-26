@@ -35,7 +35,7 @@ class TestFileOrganizer(unittest.TestCase):
     def test_find_subdir(self):
         filename = "PXL_20211009_143747197.jpg"
         expected_subdir = self.organizer.directory / "2021-10"
-        subdir = self.organizer.find_subdir(filename)
+        subdir = self.organizer.create_subdir(filename)
         self.assertEqual(subdir, expected_subdir)
         # Check that the directory is created
         self.assertTrue(subdir.exists())
