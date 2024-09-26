@@ -25,6 +25,7 @@ Example:
 from __future__ import annotations
 import os
 import sys
+import time
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
@@ -189,7 +190,7 @@ class ImmichInterface(FileManager, ABC):
 
         return False
 
-    def load_status_file(self, directory: Path | None = None) -> dict[str, str]:
+    def load_status_file(self, directory: Path | None = None) -> tuple[dict[str, str], float]:
         """
         Load the status file for a directory.
 
@@ -206,23 +207,29 @@ class ImmichInterface(FileManager, ABC):
         directory = directory or self.directory
         status_file = directory / STATUS_FILE_NAME
         status = {}
+        last_processed_time = 0
         if status_file.exists():
             with status_file.open('r') as f:
                 for line in f:
                     line = line.strip()
+                    if line.startswith('#'):
+                        # Parse header lines
+                        if line.startswith('# last_processed_time:'):
+                            last_processed_time = float(line.split(':', 1)[1].strip())
+                        continue
                     if line:
                         parts = line.split('\t')
                         if len(parts) == 2:
                             filename, file_status = parts
                             status[filename] = file_status
-
             success = len([s for s in status.values() if s == 'success'])
             failure = len([s for s in status.values() if s == 'failed'])
             logger.info(f"Loaded status file {status_file}. Success: {success}, Failure: {failure}")
+            
+        return status, last_processed_time
 
-        return status
 
-    def save_status_file(self, directory: Path, status: dict[str, str], status_lock: threading.Lock):
+    def save_status_file(self, directory: Path, status: dict[str, str], status_lock: threading.Lock, last_processed_time : float = 0):
         """
         Save the status file for a directory.
 
@@ -230,6 +237,7 @@ class ImmichInterface(FileManager, ABC):
             directory (Path): The directory to save the status file to.
             status (dict[str, str]): A dictionary of file status.
             status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
+            last_processed_time (float): The last time the directory was processed.
 
         Example:
             >>> status = {'image1.jpg': 'success', 'image2.jpg': 'failed'}
@@ -239,13 +247,19 @@ class ImmichInterface(FileManager, ABC):
         # Do not write an empty status file
         if not status:
             return
+
+        if not last_processed_time:
+            # default to now
+            last_processed_time = time.time()
         
         with status_lock:
             status_file = directory / STATUS_FILE_NAME
             logger.debug(f"Saving status file {status_file}")
             with status_file.open('w') as f:
+                f.write(f'# last_processed_time: {last_processed_time}\n')
                 for filename, file_status in status.items():
                     f.write(f'{filename}\t{file_status}\n')
+
 
     def create_backup_subdirs(self, file: Path) -> list[Path]:
         """

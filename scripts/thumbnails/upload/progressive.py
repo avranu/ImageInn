@@ -30,6 +30,7 @@ import sys
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
+import time
 from typing import Collection, Generator
 import subprocess
 import threading
@@ -162,7 +163,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                     
         return files_to_upload
 
-    def upload(self, directory : Path | None = None, recursive: bool = True, max_threads: int = 4):
+    def upload(self, directory: Path | None = None, recursive: bool = True, max_threads: int = 4):
         """
         Upload files to Immich.
 
@@ -182,26 +183,26 @@ class ImmichProgressiveUploader(ImmichInterface):
         for directory in tqdm(directories, desc="Directories"):
             status_lock = threading.Lock()
             with status_lock:
-                status = self.load_status_file(directory)
-            status_count = len(status)
+                status, last_processed_time = self.load_status_file(directory)
 
-            '''
-            logger.debug('Counting files in %s...', directory.absolute())
-            files_to_upload = self.prune_files(directory)
-            if not files_to_upload:
-                logger.debug("No files to upload in %s", directory)
-                continue
-            logger.debug('Found %d files to upload in %s', len(files_to_upload), directory.absolute())
-            '''
-            files_to_upload = directory.iterdir()
-            
+            # Check if the directory has changed since the last processed time
             try:
+                directory_mtime = directory.stat().st_mtime
+                if last_processed_time and directory_mtime <= last_processed_time:
+                    logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
+                    continue
+            except Exception as e:
+                logger.debug(f"Error checking directory mtime {directory}: {e}")
+
+            try:
+                files_to_upload = directory.iterdir()
+
                 with ThreadPoolExecutor(max_workers=max_threads) as executor:
                     futures = []
                     for file in files_to_upload:
                         future = executor.submit(self.upload_file_threadsafe, file, status, status_lock)
                         futures.append(future)
-                        
+
                     for future in tqdm(
                         as_completed(futures), 
                         total=len(futures), 
@@ -209,11 +210,12 @@ class ImmichProgressiveUploader(ImmichInterface):
                         leave=False,
                         desc=f"Uploading {directory.name}"
                     ):
-                        # re-raise any exceptions
+                        # Re-raise any exceptions
                         future.result()
             finally:
-                if len(status) > status_count:
-                    self.save_status_file(directory, status, status_lock)
+                # Update last_processed_time and save the status file
+                last_processed_time = time.time()
+                self.save_status_file(directory, status, status_lock, last_processed_time)
 
 def main():
     """
