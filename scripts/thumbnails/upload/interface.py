@@ -224,7 +224,7 @@ class ImmichInterface(FileManager, ABC):
                             status[filename] = file_status
             success = len([s for s in status.values() if s == 'success'])
             failure = len([s for s in status.values() if s == 'failed'])
-            logger.info(f"Loaded status file {status_file}. Success: {success}, Failure: {failure}")
+            logger.info(f"Loaded status file in {directory.name}. Success: {success}, Failure: {failure}")
             
         return status, last_processed_time
 
