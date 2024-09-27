@@ -61,6 +61,9 @@ class ImmichProgressiveUploader(ImmichInterface):
         if self.should_ignore_file(file):
             logger.debug('Ignoring %s', file)
             return True
+
+        if self.check_dry_run('running immich upload'):
+            return True
         
         command = ["immich", "upload", file.as_posix()]
         try:
@@ -143,26 +146,6 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         return result
 
-    def prune_files(self, file_list : Collection[Path] | Generator[Path] | Path) -> list[Path]:
-        """
-        Equivalent to the following code, but with a progress bar:
-            >>> files_to_upload = [file for file in files if not self.should_ignore_file(file, status, status_lock)]
-        """
-        files_to_upload = []
-
-        if isinstance(file_list, Path):
-            file_list = file_list.iterdir()
-        
-        with tqdm(file_list, desc="Checking for new files...", unit='files') as progress:
-            for file in file_list:
-                try:
-                    if not self.should_ignore_file(file):
-                        files_to_upload.append(file)
-                finally:
-                    progress.update(1)
-                    
-        return files_to_upload
-
     def upload(self, directory: Path | None = None, recursive: bool = True, max_threads: int = 4):
         """
         Upload files to Immich.
@@ -195,7 +178,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                 logger.debug(f"Error checking directory mtime {directory}: {e}")
 
             try:
-                files_to_upload = directory.iterdir()
+                files_to_upload = self.get_files(directory)
 
                 with ThreadPoolExecutor(max_workers=max_threads) as executor:
                     futures = []
@@ -212,9 +195,10 @@ class ImmichProgressiveUploader(ImmichInterface):
                     ):
                         # Re-raise any exceptions
                         future.result()
-            finally:
-                # Update last_processed_time and save the status file
+                        
+                # Once finished, update the last processed time to now
                 last_processed_time = time.time()
+            finally:
                 self.save_status_file(directory, status, status_lock, last_processed_time)
 
 def main():

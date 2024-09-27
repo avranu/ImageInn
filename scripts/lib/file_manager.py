@@ -18,7 +18,7 @@ logger = setup_logging()
 
 class FileManager(BaseModel):
     directory: Path = Field(default=Path('.'))
-    file_prefix: str = 'PXL_'
+    file_prefix: str = 'PXL_20'
     dry_run: bool = False
     _files_moved: list[Path] = PrivateAttr(default_factory=list)
     _files_copied : list[Path] = PrivateAttr(default_factory=list)
@@ -106,7 +106,7 @@ class FileManager(BaseModel):
             A list of files in the directory which match the file prefix.
         """
         directory = directory or self.directory
-        return directory.glob(f'{self.file_prefix}20*.jpg')
+        return directory.glob(f'{self.file_prefix}*.jpg')
 
     def files_match(self, source_path : Path, destination_path: Path, skip_hash : bool = False) -> bool:
         """
