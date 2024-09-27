@@ -181,14 +181,14 @@ class ImmichInterface(FileManager, ABC):
             logger.debug("Ignoring file due to path: %s", file)
             return True
 
-        if file.stat().st_size > self.large_file_size:
-            logger.debug(f"File {file} is larger than {self.large_file_size} bytes and will be skipped.")
-            return True
-
         if status:
             if status.was_successful(file):
                 logger.debug(f"Skipping already uploaded file {file}")
                 return True
+            
+        if file.stat().st_size > self.large_file_size:
+            logger.debug(f"File {file} is larger than {self.large_file_size} bytes and will be skipped.")
+            return True
 
         return False
 
