@@ -52,6 +52,7 @@ class ImmichInterface(FileManager, ABC):
     api_key: str
     ignore_extensions: list[str] = Field(default_factory=list)
     ignore_paths: list[str] = Field(default_factory=list)
+    allowed_extensions : list[str] = Field(default_factory=lambda: ALLOWED_EXTENSIONS)
     large_file_size: int = 1024 * 1024 * 100  # 100 MB
     backup_directories : list[Path] = Field(default_factory=list)
 

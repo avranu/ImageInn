@@ -99,7 +99,7 @@ class Status(BaseModel):
         """
         with self.lock:
             if not self.statuses:
-                logger.info('Skipping saving empty status file')
+                logger.debug('Skipping saving empty status file')
                 return
             
             with self.status_file.open('w') as f:

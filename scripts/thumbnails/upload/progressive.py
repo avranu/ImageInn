@@ -21,6 +21,10 @@ Example:
     >>> python progressive.py -d /mnt/i/Phone
     # bash_aliases defines `upload` to run this script for the current dir
     >>> upload
+
+TODO:
+    When supplying arguments to the script (such as --allow-extension), the script will skip some files, but still save
+    last_processed_time and version. Therefore, a subsequent run without those args will still skip some directories.
 """
 from __future__ import annotations
 import logging
@@ -48,6 +52,7 @@ from scripts.thumbnails.upload.status import Status, UploadStatus
 logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
+        
     def _upload_file(self, image_path: Path, status: Status | None = None) -> UploadStatus:
         """
         Upload a file to Immich.
@@ -213,8 +218,9 @@ def main():
         parser.add_argument("--url", help="Immich URL", default=url)
         parser.add_argument("--api-key", help="Immich API key", default=api_key)
         parser.add_argument("--thumbnails-dir", '-d', help="Cloud thumbnails directory", default=thumbnails_dir)
-        parser.add_argument("--ignore-extensions", "-e", help="Ignore files with these extensions", nargs='+')
-        parser.add_argument('--ignore-paths', '-i', help="Ignore files with these paths", nargs='+')
+        parser.add_argument('--allow-extension', '-e', help="Allow only files with these extensions", nargs='+')
+        parser.add_argument("--ignore-extension", "-E", help="Ignore files with these extensions", nargs='+')
+        parser.add_argument('--ignore-path', '-P', help="Ignore files with these paths", nargs='+')
         parser.add_argument('--max-threads', '-t', type=int, default=4, help="Maximum number of threads for concurrent uploads")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         args = parser.parse_args()
@@ -230,8 +236,9 @@ def main():
             url=args.url,
             api_key=args.api_key,
             directory=args.thumbnails_dir,
-            ignore_extensions=args.ignore_extensions,
-            ignore_paths=args.ignore_paths
+            ignore_extensions=args.ignore_extension,
+            ignore_paths=args.ignore_path,
+            allowed_extensions=args.allow_extension
         )
         immich.upload(max_threads=args.max_threads)
 
