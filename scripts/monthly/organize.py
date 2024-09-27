@@ -24,6 +24,7 @@ TODO:
     Cron
 """
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 import sys
 import os
 
@@ -89,7 +90,7 @@ class FileOrganizer(FileManager):
         return len(self._files_skipped)
 
     @lru_cache(maxsize=1024)
-    def hash_file(self, filename: str | Path) -> str:
+    def hash_file(self, filename: str | Path, partial : bool = False, hashing_algorithm : str = 'xxhash') -> str:
         """
         Calculate the MD5 hash of a file.
 
@@ -103,7 +104,7 @@ class FileOrganizer(FileManager):
             OneFileException: If an error occurs while reading the file.
         """
         try:
-            return super().hash_file(filename)
+            return super().hash_file(filename, partial, hashing_algorithm)
         except IOError as e:
             raise OneFileException(f"Error reading file {filename}") from e
 
@@ -129,29 +130,31 @@ class FileOrganizer(FileManager):
     def organize_files(self) -> None:
         """
         Organize files into subdirectories based on their date.
-
-        Returns:
-            The number of files moved into new subdirectories.
         """
-        # Loop over all files matching the pattern
-        if self.dry_run:
-            logger.info('Dry run mode enabled; no files will be moved')
+        if self.check_dry_run('organizing files'):
+            return
+        
+        # Gather all files to process
+        files_to_process = self.get_files()
 
-        with tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1) as self._progress:
-            for file in self.get_files():
-                try:
-                    if not file.is_file():
-                        continue
-                    
-                    self.process_file(file)
-                except DuplicationHandledException as e:
-                    logger.debug(f"Duplicate file {file} handled")
-                except OneFileException as e:
-                    logger.error(f"Error processing file {file}: {e}")
-                finally:
-                    self._update_progress()
-                    
+        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+            list(tqdm(executor.map(self.process_file_threadsafe, files_to_process), desc='Processing files', unit='files'))
+
         self.report('Finished organizing.')
+
+    def process_file_threadsafe(self, file: Path):
+        """
+        Process a single file and handle exceptions safely.
+        """
+        try:
+            self.process_file(file)
+        except DuplicationHandledException as e:
+            logger.debug(f"Duplicate file {file} handled")
+        except OneFileException as e:
+            logger.error(f"Error processing file {file}: {e}")
+        finally:
+            self._update_progress()
+
         
     def process_file(self, file_path: Path) -> Path | None:
         """
@@ -312,7 +315,7 @@ class FileOrganizer(FileManager):
             logger.debug(f"Skipping file {source_file} due to collision with {destination}")
             raise DuplicationHandledException(f"Duplicate file {source_file} handled")
         
-        if self.files_match(source_file, destination):
+        if self.files_match(source_file, destination, self.skip_hash):
             # Files are identical; delete the source file
             self.duplicates_found += 1
             if not self.skip_hash:
