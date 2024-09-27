@@ -89,7 +89,6 @@ class FileOrganizer(FileManager):
     def count_files_skipped(self) -> int:
         return len(self._files_skipped)
 
-    @lru_cache(maxsize=1024)
     def hash_file(self, filename: str | Path, partial : bool = False, hashing_algorithm : str = 'xxhash') -> str:
         """
         Calculate the MD5 hash of a file.
@@ -363,7 +362,7 @@ class FileOrganizer(FileManager):
         logger.info('%s %s files moved, %s files deleted, %s files skipped, %s directories created', 
                     message_prefix or '', 
                     self.count_files_moved, 
-                    self.count_files_deleted, 
+                    self.count_files_deleted,
                     self.count_files_skipped,
                     self.directories_created
         )
