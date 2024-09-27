@@ -53,29 +53,29 @@ class FileManager(BaseModel):
             self._filename_pattern = re.compile(rf'^{re.escape(self.file_prefix)}(20\d{{6}})_')
         return self._filename_pattern
 
-    def append_moved_file(self, file: Path) -> None:
+    def append_moved_file(self, file_path: Path) -> None:
         """
         Add a file to the list of moved files.
         """
-        self._files_moved.append(file)
+        self._files_moved.append(file_path)
 
-    def append_deleted_file(self, file: Path) -> None:
-        """
-        Add a file to the list of deleted files. 
-        """
-        self._files_deleted.append(file)
-
-    def append_skipped_file(self, file: Path) -> None:
-        """
-        Add a file to the list of skipped files.
-        """
-        self._files_skipped.append(file)
-
-    def append_copied_file(self, file: Path) -> None:
+    def append_copied_file(self, file_path: Path) -> None:
         """
         Add a file to the list of copied files.
         """
-        self._files_copied.append(file)
+        self._files_copied.append(file_path)
+        
+    def append_deleted_file(self, file_path: Path) -> None:
+        """
+        Add a file to the list of deleted files. 
+        """
+        self._files_deleted.append(file_path)
+
+    def append_skipped_file(self, file_path: Path) -> None:
+        """
+        Add a file to the list of skipped files.
+        """
+        self._files_skipped.append(file_path)
     
     @lru_cache(maxsize=1024)
     def hash_file(self, filename: str | Path) -> str:
@@ -88,6 +88,13 @@ class FileManager(BaseModel):
         Returns:
             The MD5 hash of the file.
         """
+        filename = Path(filename)
+        if not filename.is_absolute():
+            filename = self.directory / filename
+
+        if not filename.exists():
+            raise FileNotFoundError(f"File not found: {filename}")
+            
         hash_md5 = hashlib.md5()
         with open(filename, "rb") as f:
             # Read the file in chunks to handle large files efficiently
@@ -195,12 +202,12 @@ class FileManager(BaseModel):
             
         return directory
 
-    def delete_file(self, file: Path, use_trash : bool = True) -> bool:
+    def delete_file(self, file_path: Path, use_trash : bool = True) -> bool:
         """
         Delete a file.
 
         Args:
-            file: The file to delete.
+            file_path: The file to delete.
             message: An optional message to log.
 
         Returns:
@@ -214,22 +221,22 @@ class FileManager(BaseModel):
             if not self.check_dry_run(f'creating trash directory: {trash_dir}'):
                 trash_dir.mkdir(exist_ok=True)
                 
-            trash_file_path = trash_dir / file.name
+            trash_file_path = trash_dir / file_path.name
             number = 1
             while trash_file_path.exists():
-                trash_file_path = trash_dir / f"{file.stem}_{number}{file.suffix}" 
+                trash_file_path = trash_dir / f"{file_path.stem}_{number}{file_path.suffix}" 
 
-            if not self.check_dry_run(f'moving {file} to trash {trash_file_path}'):
-                file.rename(trash_file_path)
+            if not self.check_dry_run(f'moving {file_path} to trash {trash_file_path}'):
+                file_path.rename(trash_file_path)
         else:
-            if not self.check_dry_run(f'deleting file {file}'):
-                file.unlink()
+            if not self.check_dry_run(f'deleting file {file_path}'):
+                file_path.unlink()
 
-        self.append_deleted_file(file)
+        self.append_deleted_file(file_path)
 
-        return not file.exists()
+        return not file_path.exists()
 
-    def move_file(self, source_path: Path, destination_path: Path, verify : bool = False) -> Path:
+    def move_file(self, source_path: Path, destination_path: Path, verify : bool = True) -> Path:
         """
         Move a file to a new location.
 
@@ -267,7 +274,7 @@ class FileManager(BaseModel):
 
         return destination_path
 
-    def copy_file(self, source_path : Path, destination_path : Path, verify : bool = False) -> Path:
+    def copy_file(self, source_path : Path, destination_path : Path, verify : bool = True) -> Path:
         """
         Copy a file to a new location.
 

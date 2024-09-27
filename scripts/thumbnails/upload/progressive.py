@@ -49,7 +49,7 @@ logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
 
-    def _upload_file(self, file: Path, status : Status | None = None) -> bool:
+    def _upload_file(self, image_path: Path, status : Status | None = None) -> bool:
         """
         Upload a file to Immich. To use this, call upload_file_threadsafe, which wraps this method.
 
@@ -59,14 +59,14 @@ class ImmichProgressiveUploader(ImmichInterface):
         Returns:
             bool: True on success (i.e. the file was uploaded successfully), False on error.
         """
-        if self.should_ignore_file(file, status):
-            logger.debug('Ignoring %s', file)
+        if self.should_ignore_file(image_path, status):
+            logger.debug('Ignoring %s', image_path)
             return True
 
         if self.check_dry_run('running immich upload'):
             return True
         
-        command = ["immich", "upload", file.as_posix()]
+        command = ["immich", "upload", image_path.as_posix()]
         try:
             result = subprocess.run(
                 command,
@@ -79,25 +79,25 @@ class ImmichProgressiveUploader(ImmichInterface):
 
             # Analyze the output
             if "All assets were already uploaded" in output:
-                logger.debug("%s already uploaded.", file)
+                logger.debug("%s already uploaded.", image_path)
                 return True
             if "Unsupported file type" in output:
-                logger.debug("Unsupported file type: %s", file)
+                logger.debug("Unsupported file type: %s", image_path)
                 return False
             if "Successfully uploaded" in output:
-                logger.debug("Uploaded %s successfully.", file)
+                logger.debug("Uploaded %s successfully.", image_path)
                 return True
 
             logger.info('Unknown output: %s', output)
-            logger.info('By default, marking file %s uploaded successfully.', file)
+            logger.info('By default, marking file %s uploaded successfully.', image_path)
             return True
         except subprocess.CalledProcessError as e:
             output = e.stdout + e.stderr
-            logger.error(f"Failed to upload {file}: {output}")
+            logger.error(f"Failed to upload {image_path}: {output}")
 
         return False
 
-    def upload_file_threadsafe(self, file: Path, status: Status | None = None) -> bool:
+    def upload_file_threadsafe(self, image_path: Path, status: Status | None = None) -> bool:
         """
         Upload a file to Immich in a thread-safe manner.
 
@@ -108,9 +108,9 @@ class ImmichProgressiveUploader(ImmichInterface):
         Returns:
             bool: True if the file was uploaded successfully, False otherwise.    
         """
-        filename = file.name
+        filename = image_path.name
 
-        success = self._upload_file(file, status)
+        success = self._upload_file(image_path, status)
 
         if status:
             status.update_status(filename, success)

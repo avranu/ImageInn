@@ -83,8 +83,8 @@ class Status(BaseModel):
                 if self.last_processed_time:
                     f.write(f'# last_processed_time: {self.last_processed_time}\n')
                 for filename, file_status in self.statuses.items():
-                    status_str = 'success' if file_status else 'failed'
-                    f.write(f'{filename}\t{status_str}\n')
+                    file_status = 'success' if file_status else 'failed'
+                    f.write(f'{filename}\t{file_status}\n')
 
     def update_time(self):
         """

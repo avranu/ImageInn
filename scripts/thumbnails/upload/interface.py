@@ -145,8 +145,7 @@ class ImmichInterface(FileManager, ABC):
         """
         pass
 
-    # Shared methods
-    def should_ignore_file(self, file: Path, status: Status | None = None) -> bool:
+    def should_ignore_file(self, image_path: Path, status: Status | None = None) -> bool:
         """
         Check if a file should be ignored based on the extension, size, and status.
 
@@ -158,41 +157,41 @@ class ImmichInterface(FileManager, ABC):
         Returns:
             bool: True if the file should be ignored, False otherwise
         """
-        if not file.is_file():
+        if not image_path.is_file():
             return True
 
-        suffix = file.suffix.lstrip('.').lower()
+        suffix = image_path.suffix.lstrip('.').lower()
 
         # Ignore non-image extensions
         if suffix not in ALLOWED_EXTENSIONS:
-            logger.debug("Ignoring non-media file due to extension: %s", file)
+            logger.debug("Ignoring non-media file due to extension: %s", image_path)
             return True
 
         if suffix in self.ignore_extensions:
-            logger.debug("Ignoring file due to extension per user request: %s", file)
+            logger.debug("Ignoring file due to extension per user request: %s", image_path)
             return True
 
         # Ignore hidden
-        if file.name.startswith('.'):
-            logger.debug("Ignoring hidden file: %s", file)
+        if image_path.name.startswith('.'):
+            logger.debug("Ignoring hidden file: %s", image_path)
             return True
 
-        if str(file) in self.ignore_paths:
-            logger.debug("Ignoring file due to path: %s", file)
+        if str(image_path) in self.ignore_paths:
+            logger.debug("Ignoring file due to path: %s", image_path)
             return True
 
         if status:
-            if status.was_successful(file):
-                logger.debug(f"Skipping already uploaded file {file}")
+            if status.was_successful(image_path):
+                logger.debug(f"Skipping already uploaded file {image_path}")
                 return True
             
-        if file.stat().st_size > self.large_file_size:
-            logger.debug(f"File {file} is larger than {self.large_file_size} bytes and will be skipped.")
+        if image_path.stat().st_size > self.large_file_size:
+            logger.debug(f"File {image_path} is larger than {self.large_file_size} bytes and will be skipped.")
             return True
 
         return False
 
-    def create_backup_subdirs(self, file: Path) -> list[Path]:
+    def create_backup_subdirs(self, image_path: Path) -> list[Path]:
         """
         Create subdirectories in each backup directory based on the current date.
 
@@ -204,11 +203,11 @@ class ImmichInterface(FileManager, ABC):
         """
         subdirs = []
         for backup_dir in self.backup_directories:
-            subdir = self.create_subdir(file, backup_dir)
+            subdir = self.create_subdir(image_path, backup_dir)
             subdirs.append(subdir)
         return subdirs
 
-    def backup_file(self, file : Path, delete : bool = False) -> list[Path]:
+    def backup_file(self, file_path : Path, delete : bool = False) -> list[Path]:
         """
         Move a file to all of the backup directories, organized into a subdir based on the current date.
 
@@ -222,15 +221,15 @@ class ImmichInterface(FileManager, ABC):
 
         results = []
         errors = []
-        for backup_dir in self.create_backup_subdirs(file):
-            if result := self.copy_file(file, backup_dir):
+        for backup_dir in self.create_backup_subdirs(file_path):
+            if result := self.copy_file(file_path, backup_dir):
                 results.append(result)
             else:
                 errors.append(backup_dir)
                 
         if delete and results and not errors:
-            self.delete_file(file)
-            logger.debug(f"Deleted original file {file}")
+            self.delete_file(file_path)
+            logger.debug(f"Deleted original file {file_path}")
 
         return results
 
