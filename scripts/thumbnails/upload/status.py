@@ -8,7 +8,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from typing import Any, Iterable, Iterator
 from pathlib import Path
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
-from functools import singledispatchmethod
 import threading
 from scripts import setup_logging
 
@@ -22,8 +21,8 @@ class Status(BaseModel):
     """
     statuses: dict[str, bool] = Field(default_factory=dict)
     last_processed_time: float = 0.0
-    directory : Path
-    lock: threading.Lock = Field(default_factory=threading.Lock)
+    directory: Path
+    _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
 
     class Config:
         arbitrary_types_allowed = True
@@ -44,6 +43,10 @@ class Status(BaseModel):
     @property
     def status_file(self) -> Path:
         return self.directory / STATUS_FILE_NAME
+
+    @property
+    def lock(self) -> threading.Lock:
+        return self._lock
 
     def load(self):
         """
@@ -80,7 +83,14 @@ class Status(BaseModel):
                 if self.last_processed_time:
                     f.write(f'# last_processed_time: {self.last_processed_time}\n')
                 for filename, file_status in self.statuses.items():
-                    f.write(f'{filename}\t{'success' if file_status else 'failed'}\n')
+                    status_str = 'success' if file_status else 'failed'
+                    f.write(f'{filename}\t{status_str}\n')
+
+    def update_time(self):
+        """
+        Update the last processed time to the current time.
+        """
+        self.last_processed_time = self.directory.stat().st_mtime
 
     def update_status(self, filename: str | Path, status: bool):
         """
@@ -102,17 +112,19 @@ class Status(BaseModel):
         with self.lock:
             return self.statuses.get(filename)
 
-    def was_successful(self, filename : str | Path) -> bool:
+    def was_successful(self, filename: str | Path) -> bool:
         """
         Check if the file was uploaded successfully.
         """
-        return self.get_status(filename)
+        status = self.get_status(filename)
+        return status is True
 
-    def was_failed(self, filename : str | Path) -> bool:
+    def was_failed(self, filename: str | Path) -> bool:
         """
         Check if the file upload failed.
         """
-        return not self.get_status(filename)
+        status = self.get_status(filename)
+        return status is False
 
     def directory_changed(self) -> bool:
         """
@@ -127,18 +139,21 @@ class Status(BaseModel):
         with self.lock:
             return len(self.statuses)
 
-    def __iter__(self) -> Iterator[tuple[str, str]]:
+    def __iter__(self) -> Iterator[tuple[str, bool]]:
         """
         Iterate over the statuses.
         """
         with self.lock:
-            return iter(self.statuses.items())
+            # Return a copy to prevent issues during iteration
+            return iter(self.statuses.copy().items())
 
     def __getitem__(self, key: str) -> bool:
         """
         Get the status of a file.
         """
-        return self.get_status(key)
+        if (status := self.get_status(key)) is None:
+            raise KeyError(f"No status found for file: {key}")
+        return status
 
     def __setitem__(self, key: str, value: bool):
         """
@@ -157,7 +172,8 @@ class Status(BaseModel):
         """
         Check if the status of a file is present.
         """
-        return key in self.statuses
+        with self.lock:
+            return key in self.statuses
 
     def __repr__(self) -> str:
         """
@@ -170,3 +186,16 @@ class Status(BaseModel):
         Get the string representation of the status object.
         """
         return repr(self)
+
+    def __enter__(self) -> Status:
+        """
+        Enter the runtime context related to this object.
+        """
+        self.load()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Exit the runtime context and save the status data.
+        """
+        self.save()

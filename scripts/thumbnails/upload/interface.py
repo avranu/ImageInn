@@ -74,6 +74,9 @@ class ImmichInterface(FileManager, ABC):
 
     @field_validator('directory', mode="before")
     def validate_directory(cls, v):
+        if not v:
+            raise ValueError("directory must be set.")
+        
         # Allow str and list[str]
         v = Path(v)
         if not v.exists():

@@ -49,7 +49,7 @@ logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
 
-    def _upload_file(self, file: Path) -> bool:
+    def _upload_file(self, file: Path, status : Status | None = None) -> bool:
         """
         Upload a file to Immich. To use this, call upload_file_threadsafe, which wraps this method.
 
@@ -59,7 +59,7 @@ class ImmichProgressiveUploader(ImmichInterface):
         Returns:
             bool: True on success (i.e. the file was uploaded successfully), False on error.
         """
-        if self.should_ignore_file(file):
+        if self.should_ignore_file(file, status):
             logger.debug('Ignoring %s', file)
             return True
 
@@ -97,7 +97,7 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         return False
 
-    def upload_file_threadsafe(self, file: Path, status: Status) -> bool:
+    def upload_file_threadsafe(self, file: Path, status: Status | None = None) -> bool:
         """
         Upload a file to Immich in a thread-safe manner.
 
@@ -110,9 +110,10 @@ class ImmichProgressiveUploader(ImmichInterface):
         """
         filename = file.name
 
-        success = self._upload_file(file)
+        success = self._upload_file(file, status)
 
-        status.update_status(filename, success)
+        if status:
+            status.update_status(filename, success)
 
         return success
 
@@ -163,16 +164,14 @@ class ImmichProgressiveUploader(ImmichInterface):
         logger.info("Uploading files from %d directories.", len(directories))
 
         for directory in tqdm(directories, desc="Directories"):
-            status = Status(directory=directory)
-            status.load()
+            with Status(directory=directory) as status:
 
-            # Check if the directory has changed since the last processed time
-            if not status.directory_changed():
-                logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
-                continue
+                # Check if the directory has changed since the last processed time
+                if not status.directory_changed():
+                    logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
+                    continue
 
-            try:
-                files_to_upload = directory.iterdir()
+                files_to_upload = self.get_files(directory)
 
                 with ThreadPoolExecutor(max_workers=max_threads) as executor:
                     futures = []
@@ -189,10 +188,10 @@ class ImmichProgressiveUploader(ImmichInterface):
                     ):
                         # Re-raise any exceptions
                         future.result()
-            finally:
-                # Update last_processed_time and save the status file
-                status.last_processed_time = time.time()
-                status.save()
+
+                # At the conclusion of the upload, update the last processed time
+                # -- if the upload is cancelled, the last processed time will not be updated
+                status.update_time()
 
 def main():
     """
@@ -225,7 +224,7 @@ def main():
         immich = ImmichProgressiveUploader(
             url=args.url,
             api_key=args.api_key,
-            directory=Path(args.thumbnails_dir),
+            directory=args.thumbnails_dir,
             ignore_extensions=args.ignore_extensions,
             ignore_paths=args.ignore_paths
         )
