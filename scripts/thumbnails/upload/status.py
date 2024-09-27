@@ -69,7 +69,7 @@ class Status(BaseModel):
 
             success = sum(1 for status in self.statuses.values() if status)
             failure = len(self.statuses) - success
-            logger.info(f"Loaded status file {self.status_file}. Success: {success}, Failure: {failure}")
+            logger.debug(f"Loaded status file in {self.directory.name}. Success: {success}, Failure: {failure}")
 
     def save(self):
         """
