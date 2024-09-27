@@ -40,6 +40,7 @@ from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, STATUS_FILE_NAME
 from scripts.thumbnails.upload.exceptions import AuthenticationError
+from scripts.thumbnails.upload.status import Status
 
 logger = setup_logging()
 
@@ -142,7 +143,7 @@ class ImmichInterface(FileManager, ABC):
         pass
 
     # Shared methods
-    def should_ignore_file(self, file: Path, status: dict[str, str] | None = None, status_lock: threading.Lock | None = None) -> bool:
+    def should_ignore_file(self, file: Path, status: Status | None = None) -> bool:
         """
         Check if a file should be ignored based on the extension, size, and status.
 
@@ -181,85 +182,12 @@ class ImmichInterface(FileManager, ABC):
             logger.debug(f"File {file} is larger than {self.large_file_size} bytes and will be skipped.")
             return True
 
-        if status is not None and status_lock is not None:
-            filename = file.name
-            with status_lock:
-                if filename in status and status[filename] == 'success':
-                    logger.debug(f"Skipping already uploaded file {file}")
-                    return True
+        if status:
+            if status.was_successful(file):
+                logger.debug(f"Skipping already uploaded file {file}")
+                return True
 
         return False
-
-    def load_status_file(self, directory: Path | None = None) -> tuple[dict[str, str], float]:
-        """
-        Load the status file for a directory.
-
-        Args:
-            directory (Path): The directory to load the status file from.
-
-        Returns:
-            dict[str, str]: A dictionary of file status.
-
-        Example:
-            >>> immich.load_status_file(Path('cloud/thumbnails'))
-            {'image1.jpg': 'success', 'image2.jpg': 'failed'}
-        """
-        directory = directory or self.directory
-        status_file = directory / STATUS_FILE_NAME
-        status = {}
-        last_processed_time = 0
-        if status_file.exists():
-            with status_file.open('r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith('#'):
-                        # Parse header lines
-                        if line.startswith('# last_processed_time:'):
-                            last_processed_time = float(line.split(':', 1)[1].strip())
-                        continue
-                    if line:
-                        parts = line.split('\t')
-                        if len(parts) == 2:
-                            filename, file_status = parts
-                            status[filename] = file_status
-            success = len([s for s in status.values() if s == 'success'])
-            failure = len([s for s in status.values() if s == 'failed'])
-            logger.info(f"Loaded status file in {directory.name}. Success: {success}, Failure: {failure}")
-            
-        return status, last_processed_time
-
-
-    def save_status_file(self, directory: Path, status: dict[str, str], status_lock: threading.Lock, last_processed_time : float = 0):
-        """
-        Save the status file for a directory.
-
-        Args:
-            directory (Path): The directory to save the status file to.
-            status (dict[str, str]): A dictionary of file status.
-            status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
-            last_processed_time (float): The last time the directory was processed.
-
-        Example:
-            >>> status = {'image1.jpg': 'success', 'image2.jpg': 'failed'}
-            >>> status_lock = threading.Lock()
-            >>> immich.save_status_file(Path('cloud/thumbnails'), status, status_lock)
-        """
-        # Do not write an empty status file
-        if not status:
-            return
-
-        if not last_processed_time:
-            # default to now
-            last_processed_time = time.time()
-        
-        with status_lock:
-            status_file = directory / STATUS_FILE_NAME
-            logger.debug(f"Saving status file {status_file}")
-            with status_file.open('w') as f:
-                f.write(f'# last_processed_time: {last_processed_time}\n')
-                for filename, file_status in status.items():
-                    f.write(f'{filename}\t{file_status}\n')
-
 
     def create_backup_subdirs(self, file: Path) -> list[Path]:
         """

@@ -26,11 +26,11 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
-import time
 from typing import Collection, Generator
 import subprocess
 import threading
@@ -43,6 +43,7 @@ from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 from scripts.thumbnails.upload.interface import ImmichInterface
+from scripts.thumbnails.upload.status import Status
 
 logger = setup_logging()
 
@@ -96,14 +97,13 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         return False
 
-    def upload_file_threadsafe(self, file: Path, status: dict[str, str], status_lock: threading.Lock) -> bool:
+    def upload_file_threadsafe(self, file: Path, status: Status) -> bool:
         """
         Upload a file to Immich in a thread-safe manner.
 
         Args:
             file (Path): The file to upload.
-            status (dict[str, str]): A dictionary of file status.
-            status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
+            status (Status): An instance of the Status class.
 
         Returns:
             bool: True if the file was uploaded successfully, False otherwise.    
@@ -112,8 +112,7 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         success = self._upload_file(file)
 
-        with status_lock:
-            status[filename] = 'success' if success else 'failed'
+        status.update_status(filename, success)
 
         return success
 
@@ -153,7 +152,7 @@ class ImmichProgressiveUploader(ImmichInterface):
         Args:
             directory (Path): The directory to upload.
             recursive (bool): Whether to upload recursively.
-            max_threads (int): The maximum number of threads for concurrent
+            max_threads (int): The maximum number of threads for concurrent uploads.
         """
         if not self._authenticated:
             self.authenticate()
@@ -164,26 +163,21 @@ class ImmichProgressiveUploader(ImmichInterface):
         logger.info("Uploading files from %d directories.", len(directories))
 
         for directory in tqdm(directories, desc="Directories"):
-            status_lock = threading.Lock()
-            with status_lock:
-                status, last_processed_time = self.load_status_file(directory)
+            status = Status(directory=directory)
+            status.load()
 
             # Check if the directory has changed since the last processed time
-            try:
-                directory_mtime = directory.stat().st_mtime
-                if last_processed_time and directory_mtime <= last_processed_time:
-                    logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
-                    continue
-            except Exception as e:
-                logger.debug(f"Error checking directory mtime {directory}: {e}")
+            if not status.directory_changed():
+                logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
+                continue
 
             try:
-                files_to_upload = self.get_files(directory)
+                files_to_upload = directory.iterdir()
 
                 with ThreadPoolExecutor(max_workers=max_threads) as executor:
                     futures = []
                     for file in files_to_upload:
-                        future = executor.submit(self.upload_file_threadsafe, file, status, status_lock)
+                        future = executor.submit(self.upload_file_threadsafe, file, status)
                         futures.append(future)
 
                     for future in tqdm(
@@ -195,11 +189,10 @@ class ImmichProgressiveUploader(ImmichInterface):
                     ):
                         # Re-raise any exceptions
                         future.result()
-                        
-                # Once finished, update the last processed time to now
-                last_processed_time = time.time()
             finally:
-                self.save_status_file(directory, status, status_lock, last_processed_time)
+                # Update last_processed_time and save the status file
+                status.last_processed_time = time.time()
+                status.save()
 
 def main():
     """
