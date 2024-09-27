@@ -22,7 +22,7 @@ logger = setup_logging()
 
 class FileManager(BaseModel):
     directory: Path = Field(default=Path('.'))
-    file_prefix: str = 'PXL_20'
+    file_prefix: str = ''
     dry_run: bool = False
     
     _files_moved: list[Path] = PrivateAttr(default_factory=list)
@@ -55,10 +55,8 @@ class FileManager(BaseModel):
         return self._files_copied
 
     @property
-    def filename_pattern(self) -> re.Pattern:
-        if not self._filename_pattern:
-            self._filename_pattern = re.compile(rf'^{re.escape(self.file_prefix)}(20\d{{6}})_')
-        return self._filename_pattern
+    def filename_pattern(self) -> re.Pattern | None:
+        return None
 
     def append_moved_file(self, file_path: Path) -> None:
         """
@@ -161,6 +159,37 @@ class FileManager(BaseModel):
 
         return result
 
+    def get_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> list[Path]:
+        """
+        Get a list of directories
+
+        Args:
+            directory (Path): The directory to search.
+            recursive (bool): Whether to search recursively.
+            allow_hidden (bool): Whether to include hidden directories.
+
+        Returns:
+            list[Path]: A list of directories
+        """
+        if not recursive:
+            return [directory]
+
+        logger.info('Searching %s for directories.', directory.absolute())
+
+        result = []
+        for dirpath, dirnames, _ in os.walk(directory):
+            # Remove hidden directories from dirnames so os.walk doesn't traverse into them
+            if not allow_hidden:
+                dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+
+                # Skip the directory if it's hidden
+                if Path(dirpath).name.startswith('.'):
+                    continue
+
+            result.append(Path(dirpath))
+
+        return result
+
     def get_files(self, directory : Path | None = None) -> list[Path]:
         """
         Get a list of files in a directory.
@@ -172,7 +201,9 @@ class FileManager(BaseModel):
             A list of files in the directory which match the file prefix.
         """
         directory = directory or self.directory
-        return directory.glob(f'{self.file_prefix}*.jpg')
+        if self.file_prefix:
+            return directory.glob(f'{self.file_prefix}*')
+        return directory.iterdir()
 
     def file_sizes_match(self, source_path: Path, destination_path: Path) -> bool:
         """
@@ -266,50 +297,6 @@ class FileManager(BaseModel):
             return True
 
         return self.file_hashes_match(source_path, destination_path)
-
-    def find_subdir(self, filename: str | Path) -> str:
-        """
-        Find the subdirectory for a file based on its filename.
-
-        Args:
-            filename: The filename to extract the date from.
-
-        Returns:
-            The name of the proposed subdirectory.
-
-        Raises:
-            ValueError: If the filename does not match the expected format.
-        """
-        if isinstance(filename, Path):
-            filename = filename.name
-
-        if not (match := self.filename_pattern.match(str(filename))):
-            raise ValueError(f"Invalid filename format: {filename}")
-
-        # Subdir name
-        date_part = match.group(1)
-        year = date_part[:4]
-        month = date_part[4:6]
-        dir_name = f"{year}-{month}"
-
-        return dir_name
-
-    def create_subdir(self, filename : str | Path, parent_directory : Path | None = None) -> Path:
-        """
-        Create a subdirectory for a file based on its filename.
-
-        Args:
-            filename: The filename to extract the date from.
-            parent_directory: The parent directory to create the subdirectory in, defaults to self.directory.
-
-        Returns:
-            The path to the subdirectory.
-        """
-        parent_directory = parent_directory or self.directory
-
-        subdir = self.find_subdir(filename)
-
-        return self.mkdir(parent_directory / subdir)
 
     def mkdir(self, directory: Path) -> Path:
         """

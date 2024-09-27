@@ -117,35 +117,6 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         return success
 
-    def get_directories(self, directory: Path, recursive: bool = True) -> list[Path]:
-        """
-        Get a list of directories to upload.
-
-        Args:
-            directory (Path): The directory to search.
-            recursive (bool): Whether to search recursively.
-
-        Returns:
-            list[Path]: A list of directories to upload.
-        """
-        if not recursive:
-            return [directory]
-
-        logger.info('Searching %s for directories.', directory.absolute())
-
-        result = []
-        for dirpath, dirnames, _ in os.walk(directory):
-            # Remove hidden directories from dirnames so os.walk doesn't traverse into them
-            dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-
-            # Skip the directory if it's hidden
-            if Path(dirpath).name.startswith('.'):
-                continue
-
-            result.append(Path(dirpath))
-
-        return result
-
     def upload(self, directory: Path | None = None, recursive: bool = True, max_threads: int = 4):
         """
         Upload files to Immich.
@@ -164,6 +135,7 @@ class ImmichProgressiveUploader(ImmichInterface):
         logger.info("Uploading files from %d directories.", len(directories))
 
         for directory in tqdm(directories, desc="Directories"):
+            
             with Status(directory=directory) as status:
 
                 # Check if the directory has changed since the last processed time
@@ -191,7 +163,7 @@ class ImmichProgressiveUploader(ImmichInterface):
 
                 # At the conclusion of the upload, update the last processed time
                 # -- if the upload is cancelled, the last processed time will not be updated
-                status.update_time()
+                status.update_meta()
 
 def main():
     """

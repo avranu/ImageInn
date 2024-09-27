@@ -6,6 +6,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 from typing import Any, Iterable, Iterator
+from enum import Enum
 from pathlib import Path
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 import threading
@@ -14,6 +15,14 @@ from scripts import setup_logging
 logger = setup_logging()
 
 STATUS_FILE_NAME = 'upload_status.txt'
+# When version increases, directories will be reprocessed even if their last modified time hasn't changed.
+VERSION = 1
+
+class UploadStatus(Enum):
+    UPLOADED = 'uploaded'
+    SKIPPED = 'skipped'
+    ERROR = 'error'
+
 
 class Status(BaseModel):
     """
@@ -22,6 +31,7 @@ class Status(BaseModel):
     statuses: dict[str, bool] = Field(default_factory=dict)
     last_processed_time: float = 0.0
     directory: Path
+    version : int = -1
     _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
 
     class Config:
@@ -60,6 +70,9 @@ class Status(BaseModel):
                         # Parse header lines
                         if line.startswith('# last_processed_time:'):
                             self.last_processed_time = float(line.split(':', 1)[1].strip())
+                        if line.startswith('# version:'):
+                            self.version = int(line.split(':', 1)[1].strip())
+                            
                         continue
                     if line:
                         parts = line.split('\t')
@@ -82,15 +95,18 @@ class Status(BaseModel):
             with self.status_file.open('w') as f:
                 if self.last_processed_time:
                     f.write(f'# last_processed_time: {self.last_processed_time}\n')
+                if self.version > 0:
+                    f.write(f'# version: {self.version}\n')
                 for filename, file_status in self.statuses.items():
                     file_status = 'success' if file_status else 'failed'
                     f.write(f'{filename}\t{file_status}\n')
 
-    def update_time(self):
+    def update_meta(self):
         """
-        Update the last processed time to the current time.
+        Update the last processed time to the current time, and update the version.
         """
         self.last_processed_time = self.directory.stat().st_mtime
+        self.version = VERSION
 
     def update_status(self, filename: str | Path, status: bool):
         """
@@ -130,6 +146,10 @@ class Status(BaseModel):
         """
         Check if the directory has changed since the last time it was processed.
         """
+        # If our version has changed, we can't trust that our directory iterator will be the same.
+        if self.version < VERSION:
+            return True
+        
         return self.last_processed_time <= self.directory.stat().st_mtime
 
     def __len__(self) -> int:

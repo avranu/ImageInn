@@ -8,3 +8,4 @@ colorlog
 pydantic
 xxhash
 cachetools
+python-dotenv

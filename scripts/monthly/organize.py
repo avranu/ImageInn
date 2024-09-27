@@ -58,6 +58,7 @@ class FileOrganizer(FileManager):
     batch_size: int = -1
     skip_collision: bool = False
     skip_hash : bool = False
+    file_prefix : str = 'PXL_'
 
     duplicates_found: int = 0
     directories_created: int = 0
@@ -72,6 +73,12 @@ class FileOrganizer(FileManager):
             self._progress = tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1)
             
         return self._progress
+    
+    @property
+    def filename_pattern(self) -> re.Pattern:
+        if not self._filename_pattern:
+            self._filename_pattern = re.compile(rf'^{re.escape(self.file_prefix)}(20\d{{6}})_')
+        return self._filename_pattern
 
     @property
     def count_files_moved(self) -> int:
@@ -88,6 +95,19 @@ class FileOrganizer(FileManager):
     @property
     def count_files_skipped(self) -> int:
         return len(self._files_skipped)
+
+    def get_files(self, directory : Path | None = None) -> list[Path]:
+        """
+        Get a list of files in a directory.
+
+        Args:
+            directory: The directory to search. Defaults to self.directory.
+
+        Returns:
+            A list of files in the directory which match the file prefix.
+        """
+        directory = directory or self.directory
+        return directory.glob(f'{self.file_prefix}*.jpg')
 
     def hash_file(self, filename: str | Path, partial : bool = False, hashing_algorithm : str = 'xxhash') -> str:
         """
@@ -288,6 +308,50 @@ class FileOrganizer(FileManager):
             logger.debug(f"{message}: {source} to {destination.relative_to(self.directory)}")
             
         return destination
+
+    def find_subdir(self, filename: str | Path) -> str:
+        """
+        Find the subdirectory for a file based on its filename.
+
+        Args:
+            filename: The filename to extract the date from.
+
+        Returns:
+            The name of the proposed subdirectory.
+
+        Raises:
+            ValueError: If the filename does not match the expected format.
+        """
+        if isinstance(filename, Path):
+            filename = filename.name
+
+        if not (match := self.filename_pattern.match(str(filename))):
+            raise ValueError(f"Invalid filename format: {filename}")
+
+        # Subdir name
+        date_part = match.group(1)
+        year = date_part[:4]
+        month = date_part[4:6]
+        dir_name = f"{year}-{month}"
+
+        return dir_name
+
+    def create_subdir(self, filename : str | Path, parent_directory : Path | None = None) -> Path:
+        """
+        Create a subdirectory for a file based on its filename.
+
+        Args:
+            filename: The filename to extract the date from.
+            parent_directory: The parent directory to create the subdirectory in, defaults to self.directory.
+
+        Returns:
+            The path to the subdirectory.
+        """
+        parent_directory = parent_directory or self.directory
+
+        subdir = self.find_subdir(filename)
+
+        return self.mkdir(parent_directory / subdir)
 
     def handle_single_conflict(self, source_file : Path, destination: Path) -> Path | Literal[False]:
         """
