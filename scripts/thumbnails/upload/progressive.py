@@ -23,8 +23,10 @@ Example:
     >>> upload
 
 TODO:
-    When supplying arguments to the script (such as --allow-extension), the script will skip some files, but still save
-    last_processed_time and version. Therefore, a subsequent run without those args will still skip some directories.
+    - When supplying arguments to the script (such as --allow-extension), the script will skip some files, but still save
+      last_processed_time and version. Therefore, a subsequent run without those args will still skip some directories.
+    - Don't skip current directory
+    - "dont-skip" argument, or "fast".
 """
 from __future__ import annotations
 import logging
