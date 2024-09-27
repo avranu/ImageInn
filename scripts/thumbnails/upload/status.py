@@ -16,11 +16,12 @@ logger = setup_logging()
 
 STATUS_FILE_NAME = 'upload_status.txt'
 # When version increases, directories will be reprocessed even if their last modified time hasn't changed.
-VERSION = 1
+VERSION = 2
 
 class UploadStatus(Enum):
     UPLOADED = 'uploaded'
     SKIPPED = 'skipped'
+    DUPLICATE = 'duplicate'
     ERROR = 'error'
 
 
@@ -28,7 +29,7 @@ class Status(BaseModel):
     """
     Class to manage the status file data, handle locking, and provide iteration over statuses.
     """
-    statuses: dict[str, bool] = Field(default_factory=dict)
+    statuses: dict[str, UploadStatus] = Field(default_factory=dict)
     last_processed_time: float = 0.0
     directory: Path
     version : int = -1
@@ -78,11 +79,19 @@ class Status(BaseModel):
                         parts = line.split('\t')
                         if len(parts) == 2:
                             filename, file_status = parts
-                            self.statuses[filename] = True if file_status == 'success' else False
+                            # Handle aliases. We can remove these eventually. TODO
+                            if file_status == 'failed':
+                                file_status = 'error'
+                            elif file_status == 'success':
+                                file_status = 'uploaded'
+                            elif file_status.startswith('UploadStatus.'):
+                                file_status = file_status.split('.')[1]
+                            self.statuses[filename] = UploadStatus(file_status.lower())
 
-            success = sum(1 for status in self.statuses.values() if status)
-            failure = len(self.statuses) - success
-            logger.debug(f"Loaded status file in {self.directory.name}. Success: {success}, Failure: {failure}")
+            success = sum(1 for status in self.statuses.values() if self.was_successful(status))
+            skipped = sum(1 for status in self.statuses.values() if self.was_skipped(status))
+            failure = sum(1 for status in self.statuses.values() if self.was_failed(status))
+            logger.debug(f"Loaded status file in {self.directory.name}. Success: {success}, Skipped: {skipped}, Failure: {failure}")
 
     def save(self):
         """
@@ -90,6 +99,7 @@ class Status(BaseModel):
         """
         with self.lock:
             if not self.statuses:
+                logger.info('Skipping saving empty status file')
                 return
             
             with self.status_file.open('w') as f:
@@ -98,8 +108,10 @@ class Status(BaseModel):
                 if self.version > 0:
                     f.write(f'# version: {self.version}\n')
                 for filename, file_status in self.statuses.items():
-                    file_status = 'success' if file_status else 'failed'
-                    f.write(f'{filename}\t{file_status}\n')
+                    # Do not save "skipped" statuses
+                    if file_status == UploadStatus.SKIPPED:
+                        continue
+                    f.write(f'{filename}\t{file_status.value}\n')
 
     def update_meta(self):
         """
@@ -108,7 +120,7 @@ class Status(BaseModel):
         self.last_processed_time = self.directory.stat().st_mtime
         self.version = VERSION
 
-    def update_status(self, filename: str | Path, status: bool):
+    def update_status(self, filename: str | Path, status: UploadStatus):
         """
         Update the status of a file in a thread-safe manner.
         """ 
@@ -118,7 +130,7 @@ class Status(BaseModel):
         with self.lock:
             self.statuses[filename] = status
 
-    def get_status(self, filename: str | Path) -> bool | None:
+    def get_status(self, filename: str | Path) -> UploadStatus | None:
         """
         Get the status of a file in a thread-safe manner.
         """
@@ -133,14 +145,21 @@ class Status(BaseModel):
         Check if the file was uploaded successfully.
         """
         status = self.get_status(filename)
-        return status is True
+        return status in [UploadStatus.DUPLICATE, UploadStatus.UPLOADED]
 
     def was_failed(self, filename: str | Path) -> bool:
         """
         Check if the file upload failed.
         """
         status = self.get_status(filename)
-        return status is False
+        return status in [UploadStatus.ERROR]
+
+    def was_skipped(self, filename : str | Path) -> bool:
+        """
+        Check if the file was skipped.
+        """
+        status = self.get_status(filename)
+        return status in [UploadStatus.SKIPPED]
 
     def directory_changed(self) -> bool:
         """
@@ -219,3 +238,9 @@ class Status(BaseModel):
         Exit the runtime context and save the status data.
         """
         self.save()
+
+    def __hash__(self) -> int:
+        """
+        Get the hash of the status object.
+        """
+        return hash(self.directory)

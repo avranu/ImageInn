@@ -43,29 +43,29 @@ from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 from scripts.thumbnails.upload.interface import ImmichInterface
-from scripts.thumbnails.upload.status import Status
+from scripts.thumbnails.upload.status import Status, UploadStatus
 
 logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
-
-    def _upload_file(self, image_path: Path, status : Status | None = None) -> bool:
+    def _upload_file(self, image_path: Path, status: Status | None = None) -> UploadStatus:
         """
-        Upload a file to Immich. To use this, call upload_file_threadsafe, which wraps this method.
+        Upload a file to Immich.
 
         Args:
-            file (Path): The file to upload.
+            image_path (Path): The file to upload.
+            status (Status): An instance of the Status class.
 
         Returns:
-            bool: True on success (i.e. the file was uploaded successfully), False on error.
+            UploadStatus: The status of the upload operation.
         """
         if self.should_ignore_file(image_path, status):
             logger.debug('Ignoring %s', image_path)
-            return True
+            return UploadStatus.SKIPPED
 
         if self.check_dry_run('running immich upload'):
-            return True
-        
+            return UploadStatus.UPLOADED
+
         command = ["immich", "upload", image_path.as_posix()]
         try:
             result = subprocess.run(
@@ -80,42 +80,43 @@ class ImmichProgressiveUploader(ImmichInterface):
             # Analyze the output
             if "All assets were already uploaded" in output:
                 logger.debug("%s already uploaded.", image_path)
-                return True
+                return UploadStatus.DUPLICATE
             if "Unsupported file type" in output:
                 logger.debug("Unsupported file type: %s", image_path)
-                return False
+                return UploadStatus.ERROR
             if "Successfully uploaded" in output:
                 logger.debug("Uploaded %s successfully.", image_path)
-                return True
+                return UploadStatus.UPLOADED
 
             logger.info('Unknown output: %s', output)
             logger.info('By default, marking file %s uploaded successfully.', image_path)
-            return True
+            return UploadStatus.UPLOADED
         except subprocess.CalledProcessError as e:
             output = e.stdout + e.stderr
             logger.error(f"Failed to upload {image_path}: {output}")
+        return UploadStatus.ERROR
 
-        return False
-
-    def upload_file_threadsafe(self, image_path: Path, status: Status | None = None) -> bool:
+    def upload_file_threadsafe(self, image_path: Path, status: Status | None = None) -> UploadStatus:
         """
         Upload a file to Immich in a thread-safe manner.
 
         Args:
-            file (Path): The file to upload.
+            image_path (Path): The file to upload.
             status (Status): An instance of the Status class.
 
         Returns:
-            bool: True if the file was uploaded successfully, False otherwise.    
+            UploadStatus: The status of the upload operation.
         """
         filename = image_path.name
 
-        success = self._upload_file(image_path, status)
+        result = self._upload_file(image_path, status)
 
-        if status:
-            status.update_status(filename, success)
+        # Do not save skipped statuses, because it would change 'uploaded' to 'skipped' in our file on a 2nd run.
+        if status is not None and result != UploadStatus.SKIPPED:
+            status.update_status(filename, result)
 
-        return success
+        return result
+
 
     def upload(self, directory: Path | None = None, recursive: bool = True, max_threads: int = 4):
         """
@@ -131,39 +132,71 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         directory = directory or self.directory
         directories = self.get_directories(directory, recursive=recursive)
+        total = len(directories)
 
-        logger.info("Uploading files from %d directories.", len(directories))
+        logger.info("Uploading files from %d directories.", total)
 
-        for directory in tqdm(directories, desc="Directories"):
-            
-            with Status(directory=directory) as status:
 
-                # Check if the directory has changed since the last processed time
-                if not status.directory_changed():
-                    logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
-                    continue
+        uploaded_count = 0
+        skipped_count = 0
+        error_count = 0
+        duplicate_count = 0
 
-                files_to_upload = self.get_files(directory)
+        with tqdm(total=total, desc="Directories", unit='dir') as progress_bar:
+            for directory in directories:
 
-                with ThreadPoolExecutor(max_workers=max_threads) as executor:
-                    futures = []
-                    for file in files_to_upload:
-                        future = executor.submit(self.upload_file_threadsafe, file, status)
-                        futures.append(future)
+                try:
+                    with Status(directory=directory) as status:
 
-                    for future in tqdm(
-                        as_completed(futures), 
-                        total=len(futures), 
-                        unit='files', 
-                        leave=False,
-                        desc=f"Uploading {directory.name}"
-                    ):
-                        # Re-raise any exceptions
-                        future.result()
+                        # Check if the directory has changed since the last processed time
+                        if not status.directory_changed():
+                            logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
+                            continue
 
-                # At the conclusion of the upload, update the last processed time
-                # -- if the upload is cancelled, the last processed time will not be updated
-                status.update_meta()
+                        files_to_upload = self.get_files(directory)
+
+                        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                            futures = []
+                            for file in files_to_upload:
+                                future = executor.submit(self.upload_file_threadsafe, file, status)
+                                futures.append(future)
+
+                            # Initialize the progress bar
+                            for future in tqdm(
+                                as_completed(futures), 
+                                total=len(futures), 
+                                unit='files', 
+                                leave=False,
+                                desc=f"Uploading {directory.name}"
+                            ):
+
+                                try:
+                                    result = future.result()
+                                    if result == UploadStatus.UPLOADED:
+                                        uploaded_count += 1
+                                    elif result == UploadStatus.SKIPPED:
+                                        skipped_count += 1
+                                    elif result == UploadStatus.ERROR:
+                                        error_count += 1
+                                    elif result == UploadStatus.DUPLICATE:
+                                        duplicate_count += 1
+
+                                except Exception as e:
+                                    error_count += 1
+                                    logger.error(f"Exception during upload: {e}")
+                                    raise
+                                
+                                finally:
+                                    progress_bar.set_postfix(
+                                        uploaded=uploaded_count, skipped=skipped_count, error=error_count, duplicates=duplicate_count
+                                    )
+
+                        # At the conclusion of the upload, update the last processed time
+                        # -- if the upload is cancelled, the last processed time will not be updated
+                        status.update_meta()
+                finally:
+                    progress_bar.update(1)
+
 
 def main():
     """
