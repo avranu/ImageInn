@@ -6,3 +6,5 @@ rawpy
 imageio
 colorlog
 pydantic
+xxhash
+cachetools

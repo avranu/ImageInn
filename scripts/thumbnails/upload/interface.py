@@ -40,6 +40,7 @@ from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, STATUS_FILE_NAME
 from scripts.thumbnails.upload.exceptions import AuthenticationError
+from scripts.thumbnails.upload.status import Status
 
 logger = setup_logging()
 
@@ -73,6 +74,9 @@ class ImmichInterface(FileManager, ABC):
 
     @field_validator('directory', mode="before")
     def validate_directory(cls, v):
+        if not v:
+            raise ValueError("directory must be set.")
+        
         # Allow str and list[str]
         v = Path(v)
         if not v.exists():
@@ -141,8 +145,7 @@ class ImmichInterface(FileManager, ABC):
         """
         pass
 
-    # Shared methods
-    def should_ignore_file(self, file: Path, status: dict[str, str] | None = None, status_lock: threading.Lock | None = None) -> bool:
+    def should_ignore_file(self, image_path: Path, status: Status | None = None) -> bool:
         """
         Check if a file should be ignored based on the extension, size, and status.
 
@@ -154,114 +157,41 @@ class ImmichInterface(FileManager, ABC):
         Returns:
             bool: True if the file should be ignored, False otherwise
         """
-        if not file.is_file():
+        if not image_path.is_file():
             return True
 
-        suffix = file.suffix.lstrip('.').lower()
+        suffix = image_path.suffix.lstrip('.').lower()
 
         # Ignore non-image extensions
         if suffix not in ALLOWED_EXTENSIONS:
-            logger.debug("Ignoring non-media file due to extension: %s", file)
+            logger.debug("Ignoring non-media file due to extension: %s", image_path)
             return True
 
         if suffix in self.ignore_extensions:
-            logger.debug("Ignoring file due to extension per user request: %s", file)
+            logger.debug("Ignoring file due to extension per user request: %s", image_path)
             return True
 
         # Ignore hidden
-        if file.name.startswith('.'):
-            logger.debug("Ignoring hidden file: %s", file)
+        if image_path.name.startswith('.'):
+            logger.debug("Ignoring hidden file: %s", image_path)
             return True
 
-        if str(file) in self.ignore_paths:
-            logger.debug("Ignoring file due to path: %s", file)
+        if str(image_path) in self.ignore_paths:
+            logger.debug("Ignoring file due to path: %s", image_path)
             return True
 
-        if file.stat().st_size > self.large_file_size:
-            logger.debug(f"File {file} is larger than {self.large_file_size} bytes and will be skipped.")
+        if status:
+            if status.was_successful(image_path):
+                logger.debug(f"Skipping already uploaded file {image_path}")
+                return True
+            
+        if image_path.stat().st_size > self.large_file_size:
+            logger.debug(f"File {image_path} is larger than {self.large_file_size} bytes and will be skipped.")
             return True
-
-        if status is not None and status_lock is not None:
-            filename = file.name
-            with status_lock:
-                if filename in status and status[filename] == 'success':
-                    logger.debug(f"Skipping already uploaded file {file}")
-                    return True
 
         return False
 
-    def load_status_file(self, directory: Path | None = None) -> tuple[dict[str, str], float]:
-        """
-        Load the status file for a directory.
-
-        Args:
-            directory (Path): The directory to load the status file from.
-
-        Returns:
-            dict[str, str]: A dictionary of file status.
-
-        Example:
-            >>> immich.load_status_file(Path('cloud/thumbnails'))
-            {'image1.jpg': 'success', 'image2.jpg': 'failed'}
-        """
-        directory = directory or self.directory
-        status_file = directory / STATUS_FILE_NAME
-        status = {}
-        last_processed_time = 0
-        if status_file.exists():
-            with status_file.open('r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith('#'):
-                        # Parse header lines
-                        if line.startswith('# last_processed_time:'):
-                            last_processed_time = float(line.split(':', 1)[1].strip())
-                        continue
-                    if line:
-                        parts = line.split('\t')
-                        if len(parts) == 2:
-                            filename, file_status = parts
-                            status[filename] = file_status
-            success = len([s for s in status.values() if s == 'success'])
-            failure = len([s for s in status.values() if s == 'failed'])
-            logger.info(f"Loaded status file in {directory.name}. Success: {success}, Failure: {failure}")
-            
-        return status, last_processed_time
-
-
-    def save_status_file(self, directory: Path, status: dict[str, str], status_lock: threading.Lock, last_processed_time : float = 0):
-        """
-        Save the status file for a directory.
-
-        Args:
-            directory (Path): The directory to save the status file to.
-            status (dict[str, str]): A dictionary of file status.
-            status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
-            last_processed_time (float): The last time the directory was processed.
-
-        Example:
-            >>> status = {'image1.jpg': 'success', 'image2.jpg': 'failed'}
-            >>> status_lock = threading.Lock()
-            >>> immich.save_status_file(Path('cloud/thumbnails'), status, status_lock)
-        """
-        # Do not write an empty status file
-        if not status:
-            return
-
-        if not last_processed_time:
-            # default to now
-            last_processed_time = time.time()
-        
-        with status_lock:
-            status_file = directory / STATUS_FILE_NAME
-            logger.debug(f"Saving status file {status_file}")
-            with status_file.open('w') as f:
-                f.write(f'# last_processed_time: {last_processed_time}\n')
-                for filename, file_status in status.items():
-                    f.write(f'{filename}\t{file_status}\n')
-
-
-    def create_backup_subdirs(self, file: Path) -> list[Path]:
+    def create_backup_subdirs(self, image_path: Path) -> list[Path]:
         """
         Create subdirectories in each backup directory based on the current date.
 
@@ -273,11 +203,11 @@ class ImmichInterface(FileManager, ABC):
         """
         subdirs = []
         for backup_dir in self.backup_directories:
-            subdir = self.create_subdir(file, backup_dir)
+            subdir = self.create_subdir(image_path, backup_dir)
             subdirs.append(subdir)
         return subdirs
 
-    def backup_file(self, file : Path, delete : bool = False) -> list[Path]:
+    def backup_file(self, file_path : Path, delete : bool = False) -> list[Path]:
         """
         Move a file to all of the backup directories, organized into a subdir based on the current date.
 
@@ -291,15 +221,15 @@ class ImmichInterface(FileManager, ABC):
 
         results = []
         errors = []
-        for backup_dir in self.create_backup_subdirs(file):
-            if result := self.copy_file(file, backup_dir):
+        for backup_dir in self.create_backup_subdirs(file_path):
+            if result := self.copy_file(file_path, backup_dir):
                 results.append(result)
             else:
                 errors.append(backup_dir)
                 
         if delete and results and not errors:
-            self.delete_file(file)
-            logger.debug(f"Deleted original file {file}")
+            self.delete_file(file_path)
+            logger.debug(f"Deleted original file {file_path}")
 
         return results
 

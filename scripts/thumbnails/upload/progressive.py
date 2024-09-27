@@ -26,11 +26,11 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
-import time
 from typing import Collection, Generator
 import subprocess
 import threading
@@ -43,12 +43,13 @@ from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 from scripts.thumbnails.upload.interface import ImmichInterface
+from scripts.thumbnails.upload.status import Status
 
 logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
 
-    def _upload_file(self, file: Path) -> bool:
+    def _upload_file(self, image_path: Path, status : Status | None = None) -> bool:
         """
         Upload a file to Immich. To use this, call upload_file_threadsafe, which wraps this method.
 
@@ -58,14 +59,14 @@ class ImmichProgressiveUploader(ImmichInterface):
         Returns:
             bool: True on success (i.e. the file was uploaded successfully), False on error.
         """
-        if self.should_ignore_file(file):
-            logger.debug('Ignoring %s', file)
+        if self.should_ignore_file(image_path, status):
+            logger.debug('Ignoring %s', image_path)
             return True
 
         if self.check_dry_run('running immich upload'):
             return True
         
-        command = ["immich", "upload", file.as_posix()]
+        command = ["immich", "upload", image_path.as_posix()]
         try:
             result = subprocess.run(
                 command,
@@ -78,42 +79,41 @@ class ImmichProgressiveUploader(ImmichInterface):
 
             # Analyze the output
             if "All assets were already uploaded" in output:
-                logger.debug("%s already uploaded.", file)
+                logger.debug("%s already uploaded.", image_path)
                 return True
             if "Unsupported file type" in output:
-                logger.debug("Unsupported file type: %s", file)
+                logger.debug("Unsupported file type: %s", image_path)
                 return False
             if "Successfully uploaded" in output:
-                logger.debug("Uploaded %s successfully.", file)
+                logger.debug("Uploaded %s successfully.", image_path)
                 return True
 
             logger.info('Unknown output: %s', output)
-            logger.info('By default, marking file %s uploaded successfully.', file)
+            logger.info('By default, marking file %s uploaded successfully.', image_path)
             return True
         except subprocess.CalledProcessError as e:
             output = e.stdout + e.stderr
-            logger.error(f"Failed to upload {file}: {output}")
+            logger.error(f"Failed to upload {image_path}: {output}")
 
         return False
 
-    def upload_file_threadsafe(self, file: Path, status: dict[str, str], status_lock: threading.Lock) -> bool:
+    def upload_file_threadsafe(self, image_path: Path, status: Status | None = None) -> bool:
         """
         Upload a file to Immich in a thread-safe manner.
 
         Args:
             file (Path): The file to upload.
-            status (dict[str, str]): A dictionary of file status.
-            status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
+            status (Status): An instance of the Status class.
 
         Returns:
             bool: True if the file was uploaded successfully, False otherwise.    
         """
-        filename = file.name
+        filename = image_path.name
 
-        success = self._upload_file(file)
+        success = self._upload_file(image_path, status)
 
-        with status_lock:
-            status[filename] = 'success' if success else 'failed'
+        if status:
+            status.update_status(filename, success)
 
         return success
 
@@ -153,7 +153,7 @@ class ImmichProgressiveUploader(ImmichInterface):
         Args:
             directory (Path): The directory to upload.
             recursive (bool): Whether to upload recursively.
-            max_threads (int): The maximum number of threads for concurrent
+            max_threads (int): The maximum number of threads for concurrent uploads.
         """
         if not self._authenticated:
             self.authenticate()
@@ -164,26 +164,19 @@ class ImmichProgressiveUploader(ImmichInterface):
         logger.info("Uploading files from %d directories.", len(directories))
 
         for directory in tqdm(directories, desc="Directories"):
-            status_lock = threading.Lock()
-            with status_lock:
-                status, last_processed_time = self.load_status_file(directory)
+            with Status(directory=directory) as status:
 
-            # Check if the directory has changed since the last processed time
-            try:
-                directory_mtime = directory.stat().st_mtime
-                if last_processed_time and directory_mtime <= last_processed_time:
+                # Check if the directory has changed since the last processed time
+                if not status.directory_changed():
                     logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
                     continue
-            except Exception as e:
-                logger.debug(f"Error checking directory mtime {directory}: {e}")
 
-            try:
                 files_to_upload = self.get_files(directory)
 
                 with ThreadPoolExecutor(max_workers=max_threads) as executor:
                     futures = []
                     for file in files_to_upload:
-                        future = executor.submit(self.upload_file_threadsafe, file, status, status_lock)
+                        future = executor.submit(self.upload_file_threadsafe, file, status)
                         futures.append(future)
 
                     for future in tqdm(
@@ -195,11 +188,10 @@ class ImmichProgressiveUploader(ImmichInterface):
                     ):
                         # Re-raise any exceptions
                         future.result()
-                        
-                # Once finished, update the last processed time to now
-                last_processed_time = time.time()
-            finally:
-                self.save_status_file(directory, status, status_lock, last_processed_time)
+
+                # At the conclusion of the upload, update the last processed time
+                # -- if the upload is cancelled, the last processed time will not be updated
+                status.update_time()
 
 def main():
     """
@@ -232,7 +224,7 @@ def main():
         immich = ImmichProgressiveUploader(
             url=args.url,
             api_key=args.api_key,
-            directory=Path(args.thumbnails_dir),
+            directory=args.thumbnails_dir,
             ignore_extensions=args.ignore_extensions,
             ignore_paths=args.ignore_paths
         )

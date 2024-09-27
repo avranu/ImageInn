@@ -24,6 +24,7 @@ TODO:
     Cron
 """
 from __future__ import annotations
+from concurrent.futures import ThreadPoolExecutor
 import sys
 import os
 
@@ -77,6 +78,10 @@ class FileOrganizer(FileManager):
         return len(self._files_moved)
 
     @property
+    def count_files_copied(self) -> int:
+        return len(self._files_copied)
+
+    @property
     def count_files_deleted(self) -> int:
         return len(self._files_deleted)
 
@@ -85,7 +90,7 @@ class FileOrganizer(FileManager):
         return len(self._files_skipped)
 
     @lru_cache(maxsize=1024)
-    def hash_file(self, filename: str | Path) -> str:
+    def hash_file(self, filename: str | Path, partial : bool = False, hashing_algorithm : str = 'xxhash') -> str:
         """
         Calculate the MD5 hash of a file.
 
@@ -99,12 +104,12 @@ class FileOrganizer(FileManager):
             OneFileException: If an error occurs while reading the file.
         """
         try:
-            return super().hash_file(filename)
+            return super().hash_file(filename, partial, hashing_algorithm)
         except IOError as e:
             raise OneFileException(f"Error reading file {filename}") from e
 
 
-    def files_match(self, source_file : Path, destination: Path, skip_hash : bool = False) -> bool:
+    def files_match(self, source_file : Path, destination_path: Path, skip_hash : bool = False) -> bool:
         """
         Check if the MD5 hashes of two files match.
 
@@ -120,55 +125,57 @@ class FileOrganizer(FileManager):
         """
         skip_hash = skip_hash or self.skip_hash
 
-        return super().files_match(source_file, destination, skip_hash)
+        return super().files_match(source_file, destination_path, skip_hash)
 
     def organize_files(self) -> None:
         """
         Organize files into subdirectories based on their date.
-
-        Returns:
-            The number of files moved into new subdirectories.
         """
-        # Loop over all files matching the pattern
-        if self.dry_run:
-            logger.info('Dry run mode enabled; no files will be moved')
-
-        with tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1) as self._progress:
-            for file in self.get_files():
-                try:
-                    if not file.is_file():
-                        continue
-                    
-                    self.process_file(file)
-                except DuplicationHandledException as e:
-                    logger.debug(f"Duplicate file {file} handled")
-                except OneFileException as e:
-                    logger.error(f"Error processing file {file}: {e}")
-                finally:
-                    self._update_progress()
-                    
-        self.report('Finished organizing.')
+        if self.check_dry_run('organizing files'):
+            return
         
-    def process_file(self, file: Path) -> Path | None:
+        # Gather all files to process
+        files_to_process = self.get_files()
+
+        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+            list(tqdm(executor.map(self.process_file_threadsafe, files_to_process), desc='Processing files', unit='files'))
+
+        self.report('Finished organizing.')
+
+    def process_file_threadsafe(self, file: Path):
+        """
+        Process a single file and handle exceptions safely.
+        """
+        try:
+            self.process_file(file)
+        except DuplicationHandledException as e:
+            logger.debug(f"Duplicate file {file} handled")
+        except OneFileException as e:
+            logger.error(f"Error processing file {file}: {e}")
+        finally:
+            self._update_progress()
+
+        
+    def process_file(self, file_path: Path) -> Path | None:
         """
         Process a single file.
 
         Args:
-            file: The file to process.
+            file_path: The file to process.
 
         Returns:
             The new path of the file if it was moved, or None if it was deleted.
         """
-        filename = file.name
+        filename = file_path.name
 
         # Create the subdir
         target_dir = self.create_subdir(filename)
 
         # Handle potential filename collisions
-        target_file = self.handle_collision(file, target_dir / filename)
+        target_file = self.handle_collision(file_path, target_dir / filename)
 
         # TODO: Check file and target file are same drive. If not, verify=True
-        return self.move_file(file, target_file)
+        return self.move_file(file_path, target_file)
 
     def _update_progress(self, increase_progress_bar : int = 1) -> None:
         description = f'Organizing... {self.count_files_moved} files moved'
@@ -234,12 +241,12 @@ class FileOrganizer(FileManager):
         
         return result
         
-    def delete_file(self, file: Path, message : str = "Deleted file", use_trash : bool = True) -> bool:
+    def delete_file(self, file_path: Path, message : str = "Deleted file", use_trash : bool = True) -> bool:
         """
         Delete a file.
 
         Args:
-            file: The file to delete.
+            file_path: The file to delete.
             message: An optional message to log.
 
         Returns:
@@ -253,8 +260,8 @@ class FileOrganizer(FileManager):
             raise OneFileException('Cannot delete files without verifying checksums')
         
         try:
-            result = super().delete_file(file, use_trash)    
-            logger.debug(f"{message}: {file}")
+            result = super().delete_file(file_path, use_trash)    
+            logger.debug(f"{message}: {file_path}")
         except Exception as e:
             raise OneFileException('Error deleting file') from e
 
@@ -308,7 +315,7 @@ class FileOrganizer(FileManager):
             logger.debug(f"Skipping file {source_file} due to collision with {destination}")
             raise DuplicationHandledException(f"Duplicate file {source_file} handled")
         
-        if self.files_match(source_file, destination):
+        if self.files_match(source_file, destination, self.skip_hash):
             # Files are identical; delete the source file
             self.duplicates_found += 1
             if not self.skip_hash:
@@ -317,12 +324,12 @@ class FileOrganizer(FileManager):
 
         return False
 
-    def handle_collision(self, file: Path, target_file: Path, max_attempts : int = 1000) -> Path:
+    def handle_collision(self, source_file: Path, target_file: Path, max_attempts : int = 1000) -> Path:
         """
         Handle a filename collision by finding a unique filename.
 
         Args:
-            file: The source file.
+            source_file: The source file.
             target_file: The target file.
             max_attempts: The maximum number of attempts to find a unique filename.
 
@@ -332,22 +339,22 @@ class FileOrganizer(FileManager):
         Raises:
             OneFileException: If a unique filename could not be found.
         """
-        if (result := self.handle_single_conflict(file, target_file)):
+        if (result := self.handle_single_conflict(source_file, target_file)):
             # A viable path was found
             return result
         
         # Files differ; find a new filename
-        base = file.stem  # Filename without extension
-        ext = file.suffix  # File extension including the dot
+        base = source_file.stem  # Filename without extension
+        ext = source_file.suffix  # File extension including the dot
         
         for i in range(max_attempts):
             new_target_file = target_file.parent / f"{base}_{i}{ext}"
             
-            if (result := self.handle_single_conflict(file, new_target_file)):
+            if (result := self.handle_single_conflict(source_file, new_target_file)):
                 # A viable path was found
                 return result
 
-        raise OneFileException(f"Could not find a unique filename for {file}")
+        raise OneFileException(f"Could not find a unique filename for {source_file}")
 
     def report(self, message_prefix : str | None = "Organization Progress:") -> None:
         if self.dry_run:
