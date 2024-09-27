@@ -149,7 +149,7 @@ class ImmichInterface(FileManager, ABC):
         suffix = image_path.suffix.lstrip('.').lower()
 
         # Ignore non-image extensions
-        if suffix not in ALLOWED_EXTENSIONS:
+        if suffix not in self.allowed_extensions:
             logger.debug("Ignoring non-media file due to extension: %s", image_path)
             return True
 
