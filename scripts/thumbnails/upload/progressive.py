@@ -138,18 +138,14 @@ class ImmichProgressiveUploader(ImmichInterface):
             self.authenticate()
 
         directory = directory or self.directory
-        directories = self.get_directories(directory, recursive=recursive)
-        total = len(directories)
-
-        logger.info("Uploading files from %d directories.", total)
-
+        directories = self.yield_directories(directory, recursive=recursive)
 
         uploaded_count = 0
         skipped_count = 0
         error_count = 0
         duplicate_count = 0
 
-        with tqdm(total=total, desc="Directories", unit='dir') as progress_bar:
+        with tqdm(desc="Directories", unit='dir') as progress_bar:
             for directory in directories:
 
                 try:

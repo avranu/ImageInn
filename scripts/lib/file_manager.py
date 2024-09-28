@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from typing import Iterator
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -172,7 +173,9 @@ class FileManager(BaseModel):
             list[Path]: A list of directories
         """
         if not recursive:
-            return [directory]
+            if allow_hidden or not directory.name.startswith('.'):
+                return [directory]
+            return []
 
         logger.info('Searching %s for directories.', directory.absolute())
 
@@ -189,6 +192,39 @@ class FileManager(BaseModel):
             result.append(Path(dirpath))
 
         return result
+
+    def yield_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> Iterator[Path]:
+        """
+        Yield directories
+
+        Args:
+            directory (Path): The directory to search.
+            recursive (bool): Whether to search recursively.
+            allow_hidden (bool): Whether to include hidden directories.
+
+        Yields:
+
+        """
+        if not recursive:
+            if allow_hidden or not directory.name.startswith('.'):
+                yield directory
+            return
+
+        logger.info('Searching %s for directories.', directory.absolute())
+
+        for dirpath, dirnames, _ in os.walk(directory):
+            dirpath_obj = Path(dirpath)
+
+            # Skip hidden directories if not allowed
+            if not allow_hidden:
+                # Remove hidden directories from dirnames so os.walk doesn't traverse into them
+                dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+
+                # Skip the current directory if it's hidden
+                if dirpath_obj.name.startswith('.'):
+                    continue
+
+            yield dirpath_obj
 
     def get_files(self, directory : Path | None = None) -> list[Path]:
         """
