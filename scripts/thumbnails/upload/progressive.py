@@ -39,7 +39,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 from typing import Collection, Generator
 import subprocess
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from dotenv import load_dotenv
@@ -211,18 +210,19 @@ def main():
 
         url = os.getenv("IMMICH_URL")
         api_key = os.getenv("IMMICH_API_KEY")
-        thumbnails_dir = os.getenv("CLOUD_THUMBNAILS_DIR", '.')
+        thumbnails_dir = os.getenv("IMMICH_THUMBNAILS_DIR", '.')
+        max_threads = os.getenv("IMMICH_MAX_THREADS", 4)
 
         parser = argparse.ArgumentParser(description="Upload files to Immich.")
         parser.add_argument("--url", help="Immich URL", default=url)
         parser.add_argument("--api-key", help="Immich API key", default=api_key)
-        parser.add_argument("--thumbnails-dir", '-d', help="Cloud thumbnails directory", default=thumbnails_dir)
         parser.add_argument('--allow-extension', '-e', help="Allow only files with these extensions", nargs='+')
         parser.add_argument("--ignore-extension", "-E", help="Ignore files with these extensions", nargs='+')
         parser.add_argument('--ignore-path', '-P', help="Ignore files with these paths", nargs='+')
-        parser.add_argument('--max-threads', '-t', type=int, default=4, help="Maximum number of threads for concurrent uploads")
+        parser.add_argument('--max-threads', '-t', type=int, default=max_threads, help="Maximum number of threads for concurrent uploads")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         parser.add_argument('--templates', '-T', help="File templates to match", nargs='+')
+        parser.add_argument("thumbnails_dir", nargs='?', default=thumbnails_dir, help="Cloud thumbnails directory")
         args = parser.parse_args()
         
         if args.verbose:

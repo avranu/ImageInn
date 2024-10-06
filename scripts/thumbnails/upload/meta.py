@@ -2,7 +2,7 @@ from __future__ import annotations
 
 ALLOWED_EXTENSIONS = [
     # Images
-    'jpg', 'jpeg', 'tiff', #'tif', 'webp', 'png', 'gif', 
+    'jpg', 'jpeg', 'tiff', 'webp', #'tif', 'png', 'gif', 
     # RAW
     'arw', 'dng', 'nef',
     # Videos
