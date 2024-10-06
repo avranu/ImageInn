@@ -17,9 +17,11 @@ Status: Working
 
 Example:
     >>> python progressive.py
-    >>> python progressive.py -d /mnt/i/Phone
+    >>> python progressive.py /mnt/i/Phone
     # bash_aliases defines `upload` to run this script for the current dir
     >>> upload
+    >>> upload -e jpg /mnt/d/Photos
+    >>> upload -t pixel /mnt/i/Phone
 
 TODO:
     - When supplying arguments to the script (such as --allow-extension), the script will skip some files, but still save
