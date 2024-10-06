@@ -41,6 +41,7 @@ from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, STATUS_FILE_NAME
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 from scripts.thumbnails.upload.status import Status
+from scripts.thumbnails.upload.template import FileTemplate
 
 logger = setup_logging()
 
@@ -52,9 +53,10 @@ class ImmichInterface(FileManager, ABC):
     api_key: str
     ignore_extensions: list[str] = Field(default_factory=list)
     ignore_paths: list[str] = Field(default_factory=list)
-    allowed_extensions : list[str] = Field(default_factory=lambda: ALLOWED_EXTENSIONS)
+    allowed_extensions : list[str] = Field(default_factory=lambda: ALLOWED_EXTENSIONS.copy())
     large_file_size: int = 1024 * 1024 * 100  # 100 MB
     backup_directories : list[Path] = Field(default_factory=list)
+    templates : list[FileTemplate] = Field(default_factory=list)
 
     _authenticated: bool = PrivateAttr(default=False)
 
@@ -100,6 +102,16 @@ class ImmichInterface(FileManager, ABC):
             return [Path(path) for path in v]
         raise ValueError("Invalid backup_directories value.")
 
+    @field_validator('allowed_extensions', mode="before")
+    def validate_allowed_extensions(cls, v):
+        if not v:
+            return ALLOWED_EXTENSIONS
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, list):
+            return v
+        raise ValueError("Invalid allowed_extensions value.")
+
     def authenticate(self):
         """
         Authenticate with Immich using the API key.
@@ -129,7 +141,7 @@ class ImmichInterface(FileManager, ABC):
         Raises:
             NotImplementedError: If the method is not implemented in a subclass
         """
-        pass
+        raise NotImplementedError("upload method must be implemented in a subclass.")
 
     def should_ignore_file(self, image_path: Path, status: Status | None = None) -> bool:
         """
@@ -137,8 +149,7 @@ class ImmichInterface(FileManager, ABC):
 
         Args:
             file (Path): The file to check.
-            status (dict[str, str]): A dictionary of file status.
-            status_lock (threading.Lock): A lock to synchronize access to the status dictionary.
+            status (Status): The status of the file from the last run.
 
         Returns:
             bool: True if the file should be ignored, False otherwise
@@ -165,6 +176,11 @@ class ImmichInterface(FileManager, ABC):
         if str(image_path) in self.ignore_paths:
             logger.debug("Ignoring file due to path: %s", image_path)
             return True
+
+        for template in self.templates:
+            if not template.match(image_path):
+                logger.debug(f"Ignoring file {image_path} due to template {template}")
+                return True
 
         if status:
             if status.was_successful(image_path):

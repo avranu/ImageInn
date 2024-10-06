@@ -35,6 +35,7 @@ notes/
 # Secrets, authentication, etc
 .env
 .venv/
+.direnv/
 
 # Database files
 *.sqlite3-journal

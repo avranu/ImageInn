@@ -50,6 +50,7 @@ from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 from scripts.thumbnails.upload.interface import ImmichInterface
 from scripts.thumbnails.upload.status import Status, UploadStatus
+from scripts.thumbnails.upload.template import PixelFiles, FileTemplate
 
 logger = setup_logging()
 
@@ -221,6 +222,7 @@ def main():
         parser.add_argument('--ignore-path', '-P', help="Ignore files with these paths", nargs='+')
         parser.add_argument('--max-threads', '-t', type=int, default=4, help="Maximum number of threads for concurrent uploads")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
+        parser.add_argument('--templates', '-T', help="File templates to match", nargs='+')
         args = parser.parse_args()
         
         if args.verbose:
@@ -229,6 +231,17 @@ def main():
         if not args.url or not args.api_key or not args.thumbnails_dir:
             logger.error("IMMICH_URL, IMMICH_API_KEY, and CLOUD_THUMBNAILS_DIR must be set.")
             sys.exit(1)
+
+        templates = []
+        if args.templates:
+            template : str
+            for template in args.templates:
+                match template.lower():
+                    case 'pixel':
+                        templates.append(PixelFiles)
+                    case _:
+                        logger.error(f"Unknown template: {template}. See --help for available templates.")
+                        sys.exit(1)
             
         immich = ImmichProgressiveUploader(
             url=args.url,
@@ -236,7 +249,8 @@ def main():
             directory=args.thumbnails_dir,
             ignore_extensions=args.ignore_extension,
             ignore_paths=args.ignore_path,
-            allowed_extensions=args.allow_extension
+            allowed_extensions=args.allow_extension,
+            templates=templates,
         )
         immich.upload(max_threads=args.max_threads)
 
