@@ -1,5 +1,4 @@
-from rest_framework import serializers, viewsets
-from .SD import SDCards
+from rest_framework import serializers
 
 class Serializer(serializers.Serializer):
 	path = serializers.CharField()

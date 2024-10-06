@@ -44,6 +44,7 @@ from dotenv import load_dotenv
 import argparse
 from tqdm import tqdm
 from scripts import setup_logging
+from scripts.exceptions import AppException
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 from scripts.thumbnails.upload.interface import ImmichInterface
 from scripts.thumbnails.upload.status import Status, UploadStatus
@@ -254,6 +255,8 @@ def main():
 
     except AuthenticationError:
         logger.error("Authentication failed. Check your API key and URL.")
+    except (FileNotFoundError, FileExistsError, AppException) as e:
+        logger.error('Exiting. %s', e)
     except KeyboardInterrupt:
         logger.info("Upload cancelled by user.")
 

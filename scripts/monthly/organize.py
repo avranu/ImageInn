@@ -212,24 +212,6 @@ class FileOrganizer(FileManager):
         if increase_progress_bar > 0:
             self.progress.update(increase_progress_bar)
 
-    def create_subdir(self, filename: str | Path, parent_directory : Path | None = None) -> Path:
-        """
-        Find the subdirectory for a file based on its filename.
-
-        Args:
-            filename: The filename to extract the date from.
-
-        Returns:
-            The path to the subdirectory.
-
-        Raises:
-            OneFileException: If the filename does not match the expected format.
-        """
-        try:
-            return super().create_subdir(filename, parent_directory)
-        except ValueError as e:
-            raise OneFileException(f"Unable to create subdir for: {filename}") from e
-
     def mkdir(self, directory: Path, message: str | None = "Created directory") -> Path:
         """
         Create a directory if it does not exist.

@@ -37,7 +37,7 @@ from abc import ABC, abstractmethod
 from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
 from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS
-from scripts.thumbnails.upload.exceptions import AuthenticationError
+from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.status import Status
 from scripts.thumbnails.upload.template import FileTemplate
 
@@ -65,7 +65,14 @@ class ImmichInterface(FileManager, ABC):
         
         # Allow str and list[str]
         v = Path(v)
-        if not v.exists():
+
+        # v.exists() will raise an OSError if mounting points are not available
+        try:
+            exists = v.exists()
+        except (OSError, Exception):
+            exists = False
+            
+        if not exists:
             logger.error(f"Directory {v} does not exist.")
             raise FileNotFoundError(f"Directory {v} does not exist.")
         return v
@@ -78,7 +85,7 @@ class ImmichInterface(FileManager, ABC):
             return [v]
         if isinstance(v, list):
             return v
-        raise ValueError("Invalid ignore_extensions value.")
+        raise ConfigurationError("Invalid ignore_extensions value.")
 
     @field_validator('ignore_paths', mode="before")
     def validate_ignore_paths(cls, v):
@@ -88,7 +95,7 @@ class ImmichInterface(FileManager, ABC):
             return [str(v)]
         if isinstance(v, Iterable):
             return [str(path) for path in v]
-        raise ValueError("Invalid ignore_paths value.")
+        raise ConfigurationError("Invalid ignore_paths value.")
 
     @field_validator('backup_directories', mode="before")
     def validate_backup_directories(cls, v):
@@ -98,7 +105,7 @@ class ImmichInterface(FileManager, ABC):
             return [Path(v)]
         if isinstance(v, Iterable):
             return [Path(path) for path in v]
-        raise ValueError("Invalid backup_directories value.")
+        raise ConfigurationError("Invalid backup_directories value.")
 
     @field_validator('allowed_extensions', mode="before")
     def validate_allowed_extensions(cls, v):
@@ -108,7 +115,7 @@ class ImmichInterface(FileManager, ABC):
             return [v]
         if isinstance(v, list):
             return v
-        raise ValueError("Invalid allowed_extensions value.")
+        raise ConfigurationError("Invalid allowed_extensions value.")
 
     def authenticate(self):
         """
@@ -135,9 +142,6 @@ class ImmichInterface(FileManager, ABC):
         Args:
             directory (Path): The directory to upload.
             recursive (bool): Whether to upload recursively
-
-        Raises:
-            NotImplementedError: If the method is not implemented in a subclass
         """
         raise NotImplementedError("upload method must be implemented in a subclass.")
 

@@ -418,7 +418,7 @@ class FileManager(BaseModel):
             destination_path = destination_path / source_path.name
 
         if destination_path.exists():
-            raise FileExistsError(f"Destination file already exists: {destination_path}")
+            raise FileExistsError(f"Move Destination file already exists: {destination_path}")
         
         if verify:
             source_hash = self.hash_file(source_path)
@@ -431,7 +431,7 @@ class FileManager(BaseModel):
                 destination_hash = self.hash_file(destination_path)
                 if source_hash != destination_hash:
                     logger.critical(f"Checksum mismatch after moving {source_path} to {destination_path}")
-                    raise ShouldTerminateException('Checksum mismatch after moving')
+                    raise ShouldTerminateException(f'Checksum mismatch after moving {source_path} to {destination_path}')
 
         return destination_path
 
@@ -456,7 +456,7 @@ class FileManager(BaseModel):
             destination_path = destination_path / source_path.name
 
         if destination_path.exists():
-            raise FileExistsError(f"Destination file already exists: {destination_path}")
+            raise FileExistsError(f"Copy Destination file already exists: {destination_path}")
 
         if verify:
             source_hash = self.hash_file(source_path)
@@ -468,7 +468,7 @@ class FileManager(BaseModel):
                 destination_hash = self.hash_file(destination_path)
                 if source_hash != destination_hash:
                     logger.critical(f"Checksum mismatch after copying {source_path} to {destination_path}")
-                    raise ShouldTerminateException('Checksum mismatch after copying')
+                    raise ShouldTerminateException(f'Checksum mismatch after copying {source_path} to {destination_path}')
                 
         self.append_copied_file(destination_path)
         return destination_path

@@ -125,7 +125,7 @@ class TestFileOrganizer(unittest.TestCase):
         source_content = b"This is a test file."
         self.create_file(source_file, source_content)
         # Run process_file
-        result = self.organizer.process_file(source_file)
+        self.organizer.process_file(source_file)
         # Check that the source file is moved
         target_dir = self.organizer.directory / "2021-10"
         target_file = target_dir / "PXL_20211009_143747197.jpg"
@@ -179,7 +179,7 @@ class TestFileOrganizer(unittest.TestCase):
         # Instantiate organizer in dry-run mode
         dry_run_organizer = FileOrganizer(directory=self.test_dir, dry_run=True)
         # Run process_file
-        result = dry_run_organizer.process_file(source_file)
+        dry_run_organizer.process_file(source_file)
         # Check that source file still exists
         self.assertTrue(source_file.exists())
         # Check that the target directory is not created

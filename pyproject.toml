@@ -549,3 +549,38 @@ ignore_patterns = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+
+[tool.ruff]
+# Basic configuration options
+line-length = 250
+include = ["**/*.py", "**/*.pyi"]
+exclude = [
+    "node_modules/",
+    ".venv/",
+    ".venv_windows/",
+    ".direnv/",
+    ".env",
+    "manage.py",
+    ".vscode",
+    "pgsql",
+    "migrations/",
+    "logs/",
+    "__pycache__",
+]
+
+# Advanced configuration options
+extend-exclude = [
+    "migrations",
+    "settings",
+    "logs",
+    "node_modules",
+    "__pycache__",
+    "tests",
+    "__init__.py"
+]
+#max-complexity = 10
+output-format = 'concise'
+
+[tool.ruff.lint.per-file-ignores]
+"*.py" = ["F401"]
