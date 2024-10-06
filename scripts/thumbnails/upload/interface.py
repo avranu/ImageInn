@@ -25,20 +25,18 @@ Example:
 from __future__ import annotations
 import os
 import sys
-import time
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 import subprocess
 from pathlib import Path
-from pydantic import BaseModel, Field, PrivateAttr, field_validator
-from typing import Iterable, List
-import threading
+from pydantic import Field, PrivateAttr, field_validator
+from typing import Iterable
 from abc import ABC, abstractmethod
 from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
-from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, STATUS_FILE_NAME
+from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS
 from scripts.thumbnails.upload.exceptions import AuthenticationError
 from scripts.thumbnails.upload.status import Status
 from scripts.thumbnails.upload.template import FileTemplate

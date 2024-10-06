@@ -1,8 +1,7 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from pathlib import Path
 import tempfile
-import shutil
 from scripts.thumbnails.sync import JPGSyncer
 
 class TestJPGSyncer(unittest.TestCase):

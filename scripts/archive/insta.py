@@ -168,7 +168,7 @@ class InstaloaderRunner(BaseModel):
         self._failed_profiles.append(profile_name)
 
     def send_request(self, profile_name: str):
-        profile = instaloader.Profile.from_username(self._instaloader.context, profile_name)
+        _profile = instaloader.Profile.from_username(self._instaloader.context, profile_name)
         logger.info(f"Processing profile '{profile_name}'")
         self._instaloader.download_profile(
             profile_name,

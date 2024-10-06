@@ -12,7 +12,6 @@ from functools import lru_cache
 import hashlib
 import xxhash
 import shutil
-from concurrent.futures import ThreadPoolExecutor
 from cachetools import LRUCache
 from threading import Lock
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator

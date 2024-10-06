@@ -266,7 +266,7 @@ class TestSDCards(unittest.TestCase):
 	@patch.object(SDCards, "validate_checksum_list", return_value=True)
 	def test_successful_copy_teracopy(self, mock_generate_name, mock_input, mock_check_call, mock_validate, mock_organize_files, mock_validate_checksum_list):
 		filepath = self._create_file()
-		filename = os.path.basename(filepath)
+		_filename = os.path.basename(filepath)
 
 		result = self.sd_cards.copy_sd_card(self.sd_card_path, self.network_path, self.backup_network_path, CopyOperation.TERACOPY)
 		self.assertTrue(result, msg="Copy should have succeeded: {}".format(result))

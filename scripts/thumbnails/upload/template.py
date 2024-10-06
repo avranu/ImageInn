@@ -7,11 +7,9 @@ import sys
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
-from typing import Any, Iterable, Iterator
-from enum import Enum
+from typing import Iterable
 from pathlib import Path
-from pydantic import BaseModel, Field, PrivateAttr, field_validator
-import threading
+from pydantic import BaseModel, Field, field_validator
 from scripts import setup_logging
 
 logger = setup_logging()

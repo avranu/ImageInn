@@ -32,14 +32,12 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import re
-import hashlib
 from pathlib import Path
 import logging
 import argparse
-from functools import lru_cache
-from typing import Iterator, Literal
+from typing import Literal
 from tqdm import tqdm
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+from pydantic import PrivateAttr
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.monthly.exceptions import OneFileException, DuplicationHandledException
@@ -167,7 +165,7 @@ class FileOrganizer(FileManager):
         """
         try:
             self.process_file(file)
-        except DuplicationHandledException as e:
+        except DuplicationHandledException:
             logger.debug(f"Duplicate file {file} handled")
         except OneFileException as e:
             logger.error(f"Error processing file {file}: {e}")
