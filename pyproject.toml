@@ -45,7 +45,7 @@ fail-under = 10
 # from-stdin =
 
 # Files or directories to be skipped. They should be base names, not paths.
-ignore = ["CVS", "manage.py", "webpack", "logs", "downloads", "sample_data.py", "logs", "node_modules", "settings", "migrations", "template_blank.py"]
+ignore = ["CVS", "manage.py", "webpack", "logs", "downloads", "sample_data.py", "logs", "node_modules", "settings", "migrations"]
 
 # Add files or directories matching the regex patterns to the ignore-list. The
 # regex matches against paths and can be in Posix or Windows format.
@@ -84,7 +84,7 @@ persistent = true
 
 # Minimum Python version to use for version dependent checks. Will default to the
 # version used to run pylint.
-py-version = "3.10"
+py-version = "3.12"
 
 # Discover python modules and packages in the file system subtree.
 # recursive =
@@ -540,7 +540,7 @@ use_tabs = true
 indent_width = 1
 column_limit = 250
 
-# must ignore this until yapf supports match/case from python 3.11
+# must ignore this until yapf supports match/case from python 3.12
 [tool.yapfignore]
 ignore_patterns = [
   "src/scripts/db.py", 

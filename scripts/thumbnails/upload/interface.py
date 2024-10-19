@@ -24,6 +24,7 @@ Example:
 """
 from __future__ import annotations
 import os
+import shutil
 import sys
 
 # Add the root directory of the project to sys.path

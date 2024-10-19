@@ -1,41 +1,41 @@
 # Server state - Could contain sensitive details
+*.log
 logs/
 
 # Compiled code
 __pycache__/
-.pytest_cache
+.*_cache
 *.pyc
+*.egg-info
 **/frontend/static/
 
 # Libraries (npm, etc)
-node_modules
+node_modules/
 package-lock.json
+.direnv/
+.coverage/
 .benchmarks
 
 # Temporary files
 *.out
-*py.diff
-tmp/
+~*
+*.swp
 
 # Log files
 .aider*
 hugin
 
-# Outdated, deprecated, etc
-**/_deprecated*
-
-# VSCode stuff per user
-.vscode
+# User configs
 .vscode/
 .favorites.json
 *.code-workspace
-notes/
-.coverage
+.venv/
+.venv_windows/
+.venv_linux/
+.direnv/
 
 # Secrets, authentication, etc
 .env
-.venv/
-.direnv/
 
 # Database files
 *.sqlite3-journal
@@ -46,3 +46,7 @@ pgsql
 *.jpg
 *.jpeg
 *.png
+*.wepb
+*.gif
+*.mp4
+*.svg

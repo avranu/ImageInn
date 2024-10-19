@@ -18,3 +18,4 @@
 		Copyright (c) 2023 Jess Mann
 """
 from scripts.lib.types import Number
+from scripts.lib.script import Script

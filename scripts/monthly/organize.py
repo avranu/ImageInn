@@ -1,28 +1,45 @@
-#!/usr/bin/env python3
-"""
-This script organizes files into monthly directories based on the filename. It is useful for dumping 
-photos from a phone or camera into a single directory and organizing them later.
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+    This script organizes files into monthly directories based on the filename. It is useful for dumping 
+    photos from a phone or camera into a single directory and organizing them later.
 
-Ideally, it should be run as a cron job to automatically organize files on a regular basis.
+    Ideally, it should be run as a cron job to automatically organize files on a regular basis.
 
-See also upload.py for a script that should run after this one to upload those files to immich.
+    See also upload.py for a script that should run after this one to upload those files to immich.
 
-This script is referenced in bash_aliases (but not in the github copy of it).
+    This script is referenced in bash_aliases (but not in the github copy of it).
 
-Version 1.0
-Date: 2024-09-20
-Status: Working
+    Example:
+        >>> python -m scripts.monthly.organize -d /mnt/i/Phone/
+        >>> python /mnt/c/Users/jessa/Work/ImageInn/scripts/monthly/organize.py
+        # bash_aliases defines 'organize' as an alias for the above command
+        >>> organize
 
-Example:
-    >>> python -m scripts.monthly.organize -d /mnt/i/Phone/
-    >>> python /mnt/c/Users/jessa/Work/ImageInn/scripts/monthly/organize.py
-    # bash_aliases defines 'organize' as an alias for the above command
-    >>> organize
-
-TODO:
-    Check for symlinks
-    Cron
-"""
+    TODO:
+        Check for symlinks
+        Cron
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    organize.py                                                                                          *
+*        Project: imageinn                                                                                             *
+*        Version: 0.0.1                                                                                                *
+*        Created: 2024-09-16                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-19     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import sys
@@ -35,9 +52,9 @@ import re
 from pathlib import Path
 import logging
 import argparse
-from typing import Literal
+from typing import Iterator, Literal
 from tqdm import tqdm
-from pydantic import PrivateAttr
+from pydantic import PrivateAttr, field_validator
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.monthly.exceptions import OneFileException, DuplicationHandledException
@@ -57,6 +74,7 @@ class FileOrganizer(FileManager):
     skip_collision: bool = False
     skip_hash : bool = False
     file_prefix : str = 'PXL_'
+    target_directory : Path | None = None
 
     duplicates_found: int = 0
     directories_created: int = 0
@@ -94,7 +112,12 @@ class FileOrganizer(FileManager):
     def count_files_skipped(self) -> int:
         return len(self._files_skipped)
 
-    def get_files(self, directory : Path | None = None) -> list[Path]:
+    def get_target_directory(self) -> Path:
+        if not self.target_directory:
+            return self.directory
+        return self.target_directory
+
+    def get_files(self, directory : Path | None = None) -> Iterator[Path]:
         """
         Get a list of files in a directory.
 
@@ -105,7 +128,8 @@ class FileOrganizer(FileManager):
             A list of files in the directory which match the file prefix.
         """
         directory = directory or self.directory
-        return directory.glob(f'{self.file_prefix}*.jpg')
+        #return directory.glob(f'{self.file_prefix}*.jpg')
+        return self.yield_directories(directory)
 
     def hash_file(self, filename: str | Path, partial : bool = False, hashing_algorithm : str = 'xxhash') -> str:
         """
@@ -124,7 +148,6 @@ class FileOrganizer(FileManager):
             return super().hash_file(filename, partial, hashing_algorithm)
         except IOError as e:
             raise OneFileException(f"Error reading file {filename}") from e
-
 
     def files_match(self, source_file : Path, destination_path: Path, skip_hash : bool = False) -> bool:
         """
@@ -188,29 +211,11 @@ class FileOrganizer(FileManager):
         # Create the subdir
         target_dir = self.create_subdir(filename)
 
-        # Handle potential filename collisions
+        # Handle potential filename collisions. This will throw an exception if the collision cannot be handled.
         target_file = self.handle_collision(file_path, target_dir / filename)
 
         # TODO: Check file and target file are same drive. If not, verify=True
         return self.move_file(file_path, target_file)
-
-    def _update_progress(self, increase_progress_bar : int = 1) -> None:
-        description = f'Organizing... {self.count_files_moved} files moved'
-        if self.count_files_deleted > 0:
-            description = f'{description}, {self.count_files_deleted} deleted'
-        """
-        if self.duplicates_found > 0:
-            description = f'{description}, {self.duplicates_found} duplicates'
-        """
-        if self.directories_created > 0:
-            description = f'{description}, {self.directories_created} directories created'
-        if self.count_files_skipped > 0:
-            description = f'{description}, {self.count_files_skipped} skipped'
-            
-        self.progress.set_description(description)
-
-        if increase_progress_bar > 0:
-            self.progress.update(increase_progress_bar)
 
     def mkdir(self, directory: Path, message: str | None = "Created directory") -> Path:
         """
@@ -234,7 +239,7 @@ class FileOrganizer(FileManager):
                 
             self.directories_created += 1
             if message:
-                logger.debug(f"{message}: {directory.relative_to(self.directory)}")
+                logger.debug(f"{message}: {directory.relative_to(self.get_target_directory())}")
         except Exception as e:
             raise ShouldTerminateException(f'Error creating directory: {directory}') from e
         
@@ -312,7 +317,7 @@ class FileOrganizer(FileManager):
         date_part = match.group(1)
         year = date_part[:4]
         month = date_part[4:6]
-        dir_name = f"{year}-{month}"
+        dir_name = f"{year}/{year}-{month}"
 
         return dir_name
 
@@ -327,7 +332,7 @@ class FileOrganizer(FileManager):
         Returns:
             The path to the subdirectory.
         """
-        parent_directory = parent_directory or self.directory
+        parent_directory = parent_directory or self.get_target_directory()
 
         subdir = self.find_subdir(filename)
 
@@ -411,10 +416,29 @@ class FileOrganizer(FileManager):
                     self.directories_created
         )
 
+    def _update_progress(self, increase_progress_bar : int = 1) -> None:
+        description = f'Organizing... {self.count_files_moved} files moved'
+        if self.count_files_deleted > 0:
+            description = f'{description}, {self.count_files_deleted} deleted'
+        """
+        if self.duplicates_found > 0:
+            description = f'{description}, {self.duplicates_found} duplicates'
+        """
+        if self.directories_created > 0:
+            description = f'{description}, {self.directories_created} directories created'
+        if self.count_files_skipped > 0:
+            description = f'{description}, {self.count_files_skipped} skipped'
+            
+        self.progress.set_description(description)
+
+        if increase_progress_bar > 0:
+            self.progress.update(increase_progress_bar)
+
 def main():    
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize PXL_ files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')
+    parser.add_argument('-t', '--target', default=None, help='Target directory to move files to')
     parser.add_argument('-p', '--prefix', default='PXL_', help='File prefix to match (default: PXL_)')
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
@@ -428,9 +452,10 @@ def main():
 
     organizer = FileOrganizer(
         directory       = args.directory, 
+        target_directory= args.target,
         file_prefix     = args.prefix, 
         batch_size      = args.limit, 
-        dry_run         = args.dry_run, 
+        dry_run         = args.dry_run,
         skip_collision  = args.skip_collision,
         skip_hash       = args.skip_hash
     )

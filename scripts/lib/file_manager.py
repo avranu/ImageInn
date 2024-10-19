@@ -17,10 +17,11 @@ from threading import Lock
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
+from scripts.lib.script import Script
 
 logger = setup_logging()
 
-class FileManager(BaseModel):
+class FileManager(Script):
     directory: Path = Field(default=Path('.'))
     file_prefix: str = ''
     dry_run: bool = False
@@ -31,8 +32,6 @@ class FileManager(BaseModel):
     _files_skipped: list[Path] = PrivateAttr(default_factory=list)
     _hash_cache: LRUCache = PrivateAttr(default_factory=lambda: LRUCache(maxsize=10000))
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @field_validator('directory', mode='before')
     def validate_directory(cls, v):
@@ -332,6 +331,24 @@ class FileManager(BaseModel):
             return True
 
         return self.file_hashes_match(source_path, destination_path)
+
+    def exists(self, file_path: Path) -> bool:
+        """
+        Checks if a file or directory exists. Catches OSErrors if a mounting point is not found.
+
+        Args:
+            file_path: The file or directory to check.
+
+        Returns:
+            True if the file or directory exists, False otherwise
+        """
+        try:
+            if not file_path.is_absolute():
+                file_path = self.directory / file_path
+            return file_path.exists()
+        except (OSError, Exception) as e:
+            logger.debug(f"Error checking if file exists: {e}")
+        return False
 
     def mkdir(self, directory: Path) -> Path:
         """

@@ -33,19 +33,20 @@ from __future__ import annotations
 import logging
 import os
 import sys
-
-# Add the root directory of the project to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-
+import time
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from dotenv import load_dotenv
 import argparse
 from tqdm import tqdm
+
+# Add the root directory of the project to sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
+
 from scripts import setup_logging
 from scripts.exceptions import AppException
-from scripts.thumbnails.upload.exceptions import AuthenticationError
+from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.interface import ImmichInterface
 from scripts.thumbnails.upload.status import Status, UploadStatus
 from scripts.thumbnails.upload.template import PixelFiles
@@ -132,11 +133,16 @@ class ImmichProgressiveUploader(ImmichInterface):
             directory (Path): The directory to upload.
             recursive (bool): Whether to upload recursively.
             max_threads (int): The maximum number of threads for concurrent uploads.
+            
+        Raises:
+            AuthenticationError: If authentication fails with Immich
         """
         if not self._authenticated:
             self.authenticate()
 
         directory = directory or self.directory
+        if not self.exists(directory):
+            raise FileNotFoundError(f"Directory {directory} does not exist.")
         directories = self.yield_directories(directory, recursive=recursive)
 
         uploaded_count = 0
@@ -199,6 +205,70 @@ class ImmichProgressiveUploader(ImmichInterface):
                 finally:
                     progress_bar.update(1)
 
+    def handle_sd_card(self, directory : Path | str = '', max_threads: int = 4) -> bool:
+        """
+        Triggered when an SD card is inserted. Uploads files from the SD card to Immich.
+
+        Args:
+            directory (Path | str): The directory of the SD card.
+
+        Returns:
+            bool: True if the upload was successful, False
+
+        Raises:
+            AuthenticationError: If authentication fails with Immich
+
+        TODO:
+            - Detect sd card directory (not just D:/)
+            - Mount in WSL
+        """
+        if not directory:
+            # If Windows, default directory is D:/
+            if os.name == 'nt':
+                directory = 'D:/'
+            else:
+                # Otherwise, linux, wsl, etc
+                directory = '/mnt/d'
+        
+        sd_directory = Path(directory)
+        if not self.exists(sd_directory):
+            logger.error("SD card not found at %s", sd_directory)
+            return False
+
+        # If a DCIM directory exists, upload files from there
+        dcim_directory = sd_directory / 'DCIM'
+        if self.exists(dcim_directory):
+            self.upload(dcim_directory, max_threads)
+            return True
+
+        # Otherwise, upload files from the root directory
+        self.upload(sd_directory, max_threads)
+        return True
+
+def validate_args(args: argparse.Namespace) -> bool:
+    """
+    Validate the arguments passed to the script.
+
+    Args:
+        args (argparse.Namespace): The arguments passed to the script.
+
+    Returns:
+        bool: True if the arguments are valid, False otherwise
+    """
+    # Wait 10 seconds
+    logger.info('Waiting 1 seconds...')
+    time.sleep(1)
+    
+    if not args.url or not args.api_key:
+        logger.error("IMMICH_URL and IMMICH_API_KEY must be set.")
+        return False
+
+    if not args.sd and not args.import_path:
+        logger.error("CLOUD_THUMBNAILS_DIR must be set if not uploading from an SD card.")
+        return False
+
+    return True
+
 
 def main():
     """
@@ -221,14 +291,14 @@ def main():
         parser.add_argument('--max-threads', '-t', type=int, default=max_threads, help="Maximum number of threads for concurrent uploads")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         parser.add_argument('--templates', '-T', help="File templates to match", nargs='+')
-        parser.add_argument("thumbnails_dir", nargs='?', default=thumbnails_dir, help="Cloud thumbnails directory")
+        parser.add_argument('--sd', help="Upload files from an SD card", action='store_true')
+        parser.add_argument("import_path", nargs='?', default=thumbnails_dir, help="Path to import files from")
         args = parser.parse_args()
         
         if args.verbose:
             logger.setLevel(logging.DEBUG)
 
-        if not args.url or not args.api_key or not args.thumbnails_dir:
-            logger.error("IMMICH_URL, IMMICH_API_KEY, and CLOUD_THUMBNAILS_DIR must be set.")
+        if not validate_args(args):
             sys.exit(1)
 
         templates = []
@@ -245,20 +315,30 @@ def main():
         immich = ImmichProgressiveUploader(
             url=args.url,
             api_key=args.api_key,
-            directory=args.thumbnails_dir,
+            directory=args.import_path,
             ignore_extensions=args.ignore_extension,
             ignore_paths=args.ignore_path,
             allowed_extensions=args.allow_extension,
             templates=templates,
         )
-        immich.upload(max_threads=args.max_threads)
+
+        if args.sd:
+            immich.handle_sd_card(max_threads=args.max_threads)
+        else:
+            immich.upload(max_threads=args.max_threads)
 
     except AuthenticationError:
         logger.error("Authentication failed. Check your API key and URL.")
+        sys.exit(1)
     except (FileNotFoundError, FileExistsError, AppException) as e:
         logger.error('Exiting. %s', e)
+        raise
+        sys.exit(1)
     except KeyboardInterrupt:
         logger.info("Upload cancelled by user.")
+        sys.exit(0)
+        
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
