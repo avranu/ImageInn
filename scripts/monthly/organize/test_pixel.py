@@ -1,26 +1,50 @@
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    test_pixel.py                                                                                        *
+*        Project: imageinn                                                                                             *
+*        Version: 0.0.1                                                                                                *
+*        Created: 2024-09-16                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-19     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 import unittest
 import tempfile
 import shutil
 from pathlib import Path
 import hashlib
 from unittest.mock import patch
+from scripts.exceptions import ShouldTerminateException
 from scripts.monthly.exceptions import (
     OneFileException,
-    DuplicationHandledException,
-    ShouldTerminateException,
+    DuplicationHandledException
 )
-from scripts.monthly.organize import FileOrganizer
+from scripts.monthly.organize.pixel import PixelFileOrganizer
 import logging
 
 # Disable logging during tests to keep the output clean
 logging.disable(logging.CRITICAL)
 
-class TestFileOrganizer(unittest.TestCase):
+class TestPixelFileOrganizer(unittest.TestCase):
     def setUp(self):
         # Create a temporary directory for testing
         self.test_dir = tempfile.mkdtemp()
         # Instantiate the organizer with the test directory
-        self.organizer = FileOrganizer(directory=self.test_dir, dry_run=False)
+        self.organizer = PixelFileOrganizer(directory=self.test_dir, dry_run=False)
 
     def tearDown(self):
         # Remove the temporary directory after each test
@@ -177,7 +201,7 @@ class TestFileOrganizer(unittest.TestCase):
         source_content = b"This is a test file."
         self.create_file(source_file, source_content)
         # Instantiate organizer in dry-run mode
-        dry_run_organizer = FileOrganizer(directory=self.test_dir, dry_run=True)
+        dry_run_organizer = PixelFileOrganizer(directory=self.test_dir, dry_run=True)
         # Run process_file
         dry_run_organizer.process_file(source_file)
         # Check that source file still exists
@@ -187,7 +211,7 @@ class TestFileOrganizer(unittest.TestCase):
         target_file = target_dir / "PXL_20211009_143747197.jpg"
         self.assertFalse(target_file.exists())
 
-    @patch("scripts.monthly.organize.FileOrganizer.hash_file")
+    @patch("scripts.monthly.organize.PixelFileOrganizer.hash_file")
     def test_checksum_mismatch(self, mock_hash_file):
         # Create a source file
         source_file = Path(self.test_dir) / "PXL_20211009_143747197.jpg"

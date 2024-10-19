@@ -11,10 +11,12 @@
     This script is referenced in bash_aliases (but not in the github copy of it).
 
     Example:
-        >>> python -m scripts.monthly.organize -d /mnt/i/Phone/
-        >>> python /mnt/c/Users/jessa/Work/ImageInn/scripts/monthly/organize.py
+        >>> python -m scripts.monthly.organize.base -d /mnt/i/Phone/
+        >>> python -m scripts.monthly.organize.base -d /mnt/c/Users/jessa/Pictures -t /mnt/i/Photos
+        >>> python /mnt/c/Users/jessa/Work/ImageInn/scripts/monthly/organize/base.py
         # bash_aliases defines 'organize' as an alias for the above command
         >>> organize
+        >>> organize -t /mnt/i/Photos
 
     TODO:
         Check for symlinks
@@ -42,6 +44,7 @@
 *********************************************************************************************************************"""
 from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
+import datetime
 import sys
 import os
 
@@ -93,7 +96,7 @@ class FileOrganizer(FileManager):
     @property
     def filename_pattern(self) -> re.Pattern:
         if not self._filename_pattern:
-            self._filename_pattern = re.compile(rf'^{re.escape(self.file_prefix)}(20\d{{6}})_')
+            self._filename_pattern = re.compile(rf'.*\.(jpg|jpeg|dng|arw|png)', re.IGNORECASE)
         return self._filename_pattern
 
     @property
@@ -208,8 +211,14 @@ class FileOrganizer(FileManager):
         """
         filename = file_path.name
 
+        # Ensure it matches the pattern
+        if not self.filename_pattern.match(filename):
+            self.append_skipped_file(file_path)
+            logger.debug(f"Skipping file {file_path} due to invalid filename")
+            return None
+
         # Create the subdir
-        target_dir = self.create_subdir(filename)
+        target_dir = self.create_subdir(file_path)
 
         # Handle potential filename collisions. This will throw an exception if the collision cannot be handled.
         target_file = self.handle_collision(file_path, target_dir / filename)
@@ -294,39 +303,40 @@ class FileOrganizer(FileManager):
             
         return destination
 
-    def find_subdir(self, filename: str | Path) -> str:
+    def find_subdir(self, filepath : Path) -> str:
         """
         Find the subdirectory for a file based on its filename.
 
         Args:
-            filename: The filename to extract the date from.
+            filepath: The file path to extract the date from.
 
         Returns:
             The name of the proposed subdirectory.
-
-        Raises:
-            ValueError: If the filename does not match the expected format.
         """
-        if isinstance(filename, Path):
-            filename = filename.name
-
-        if not (match := self.filename_pattern.match(str(filename))):
-            raise ValueError(f"Invalid filename format: {filename}")
-
-        # Subdir name
-        date_part = match.group(1)
-        year = date_part[:4]
-        month = date_part[4:6]
-        dir_name = f"{year}/{year}-{month}"
+        try:
+            # Get the created date from the filepath
+            file_stat = filepath.stat()
+            created_time = datetime.datetime.fromtimestamp(file_stat.st_birthtime)
+            
+            # Extract the year and month
+            year = created_time.strftime('%Y')
+            month = created_time.strftime('%m')
+            
+            # Generate the directory name in the format year/year-month
+            dir_name = f"{year}/{year}-{month}"    
+        
+        except Exception as e:
+            logger.error(f"Error occurred while finding subdirectory: {e}")
+            raise ValueError(f"Unable to determine a subdir from: {filepath}") from e
 
         return dir_name
-
-    def create_subdir(self, filename : str | Path, parent_directory : Path | None = None) -> Path:
+        
+    def create_subdir(self, filepath : Path, parent_directory : Path | None = None) -> Path:
         """
         Create a subdirectory for a file based on its filename.
 
         Args:
-            filename: The filename to extract the date from.
+            filepath: The file path to extract the date from.
             parent_directory: The parent directory to create the subdirectory in, defaults to self.directory.
 
         Returns:
@@ -334,7 +344,7 @@ class FileOrganizer(FileManager):
         """
         parent_directory = parent_directory or self.get_target_directory()
 
-        subdir = self.find_subdir(filename)
+        subdir = self.find_subdir(filepath)
 
         return self.mkdir(parent_directory / subdir)
 
