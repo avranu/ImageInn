@@ -52,6 +52,7 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
+import asyncio
 import logging
 import os
 import sys
@@ -147,6 +148,22 @@ class ImmichProgressiveUploader(ImmichInterface):
         return result
 
 
+    async def count_directories(self, directory: Path, recursive: bool) -> int:
+        """
+        Asynchronously count the number of directories.
+
+        Args:
+            directory (Path): The root directory to start counting from.
+            recursive (bool): Whether to count directories recursively.
+
+        Returns:
+            int: The total number of directories.
+        """
+        count = 0
+        for _ in self.yield_directories(directory, recursive=recursive):
+            count += 1
+        return count
+
     def upload(self, directory: Path | None = None, recursive: bool = True, max_threads: int = 4):
         """
         Upload files to Immich.
@@ -172,9 +189,14 @@ class ImmichProgressiveUploader(ImmichInterface):
         error_count = 0
         duplicate_count = 0
 
-        with tqdm(desc="Total Progress", unit='dir') as progress_bar:
+        loop = asyncio.get_event_loop()
+        directory_count_future = loop.run_in_executor(None, asyncio.run, self.count_directories(directory, recursive))
+
+        with tqdm(desc="Total Progress", unit='dir', total=None) as progress_bar:
             for subdir in directories:
-                try:
+                if directory_count_future.done():
+                    progress_bar.total = directory_count_future.result()
+                    progress_bar.refresh()
                     with Status(directory=subdir) as status:
 
                         # Check if the directory has changed since the last processed time
