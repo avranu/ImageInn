@@ -1,34 +1,56 @@
-"""
-Upload files to Immich.
-
-This script is used because the immich app isn't reliable for uploading files, and I don't want to
-manually upload files via the web interface (and leave that interface open in Chrome).
-
-Instead, this cli script can be run as a periodic cronjob.
-
-See also the organize.py script for organizing files into directories prior to this script being 
-executed.
-
-This script is referenced in bash_aliases (but not in the github copy of it).
-
-Version 1.0
-Date: 2024-09-20
-Status: Working
-
-Example:
-    >>> python progressive.py
-    >>> python progressive.py /mnt/i/Phone
-    # bash_aliases defines `upload` to run this script for the current dir
-    >>> upload
-    >>> upload -e jpg /mnt/d/Photos
-    >>> upload -t pixel /mnt/i/Phone
-
-TODO:
-    - When supplying arguments to the script (such as --allow-extension), the script will skip some files, but still save
-      last_processed_time and version. Therefore, a subsequent run without those args will still skip some directories.
-    - Don't skip current directory
-    - "dont-skip" argument, or "fast".
-"""
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*    Upload files to Immich.
+*
+*    This script is used because the immich app isn't reliable for uploading files, and I don't want to
+*    manually upload files via the web interface (and leave that interface open in Chrome).
+*
+*    Instead, this cli script can be run as a periodic cronjob.
+*
+*    See also the organize.py script for organizing files into directories prior to this script being 
+*    executed.
+*
+*    This script is referenced in bash_aliases (but not in the github copy of it).
+*
+*        Version: 1.0.0                                                                                                *
+*    Date: 2024-09-20
+*    Status: Working
+*
+*    Example:
+*        >>> python progressive.py
+*        >>> python progressive.py /mnt/i/Phone
+*        # bash_aliases defines `upload` to run this script for the current dir
+*        >>> upload
+*        >>> upload -e jpg /mnt/d/Photos
+*        >>> upload -t pixel /mnt/i/Phone
+*
+*    TODO:
+*        - When supplying arguments to the script (such as --allow-extension), the script will skip some files, but still save
+*        last_processed_time and version. Therefore, a subsequent run without those args will still skip some directories.
+*        - Don't skip current directory
+*        - "dont-skip" argument, or "fast".
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    progressive.py                                                                                       *
+*        Project: imageinn                                                                                             *
+*        Version: 1.0.0                                                                                                *
+*        Created: 2024-09-25                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-20     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 from __future__ import annotations
 import logging
 import os
@@ -150,18 +172,17 @@ class ImmichProgressiveUploader(ImmichInterface):
         error_count = 0
         duplicate_count = 0
 
-        with tqdm(desc="Directories", unit='dir') as progress_bar:
-            for directory in directories:
-
+        with tqdm(desc="Total Progress", unit='dir') as progress_bar:
+            for subdir in directories:
                 try:
-                    with Status(directory=directory) as status:
+                    with Status(directory=subdir) as status:
 
                         # Check if the directory has changed since the last processed time
                         if not status.directory_changed():
-                            logger.debug(f"Skipping directory {directory} as it has not changed since last processed.")
+                            logger.debug("Skipping directory %s as it has not changed since last processed.", subdir)
                             continue
 
-                        files_to_upload = self.get_files(directory)
+                        files_to_upload = self.get_files(subdir)
 
                         with ThreadPoolExecutor(max_workers=max_threads) as executor:
                             futures = []
@@ -175,7 +196,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                                 total=len(futures), 
                                 unit='files', 
                                 leave=False,
-                                desc=f"Uploading {directory.name}"
+                                desc=f"{subdir.absolute()}"
                             ):
 
                                 try:

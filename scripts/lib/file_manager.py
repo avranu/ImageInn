@@ -1,3 +1,27 @@
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    file_manager.py                                                                                      *
+*        Project: imageinn                                                                                             *
+*        Version: 1.0.0                                                                                                *
+*        Created: 2024-09-25                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-20     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 from __future__ import annotations
 import os
 import re
@@ -175,7 +199,7 @@ class FileManager(Script):
                 return [directory]
             return []
 
-        logger.info('Searching %s for directories.', directory.absolute())
+        logger.debug('Searching %s for directories.', directory.absolute())
 
         result = []
         for dirpath, dirnames, _ in os.walk(directory):
@@ -208,7 +232,7 @@ class FileManager(Script):
                 yield directory
             return
 
-        logger.info('Searching %s for directories.', directory.absolute())
+        logger.debug('Searching %s for directories.', directory.absolute())
 
         for dirpath, dirnames, _ in os.walk(directory):
             dirpath_obj = Path(dirpath)
