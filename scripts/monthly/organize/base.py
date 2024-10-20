@@ -29,7 +29,7 @@
 *                                                                                                                      *
 *        File:    organize.py                                                                                          *
 *        Project: imageinn                                                                                             *
-*        Version: 0.0.1                                                                                                *
+*        Version: 1.0.0                                                                                                *
 *        Created: 2024-09-16                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -321,9 +321,10 @@ class FileOrganizer(FileManager):
             # Extract the year and month
             year = created_time.strftime('%Y')
             month = created_time.strftime('%m')
+            day = created_time.strftime('%d')
             
             # Generate the directory name in the format year/year-month
-            dir_name = f"{year}/{year}-{month}"    
+            dir_name = f"{year}/{year}-{month}/{year}-{month}-{day}/"    
         
         except Exception as e:
             logger.error(f"Error occurred while finding subdirectory: {e}")

@@ -3,16 +3,15 @@
 logs/
 
 # Compiled code
-__pycache__/
+__*
 .*_cache
 *.pyc
 *.egg-info
 **/frontend/static/
 
-# Libraries (npm, etc)
+# Libraries and tools
 node_modules/
 package-lock.json
-.direnv/
 .coverage/
 .benchmarks
 
@@ -42,7 +41,7 @@ hugin
 *db.sqlite3
 pgsql
 
-# Images
+# Extensions (Images, etc)
 *.jpg
 *.jpeg
 *.png

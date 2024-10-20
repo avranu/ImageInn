@@ -1,3 +1,27 @@
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    status.py                                                                                            *
+*        Project: imageinn                                                                                             *
+*        Version: 1.0.0                                                                                                *
+*        Created: 2024-09-27                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-19     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 from __future__ import annotations
 import os
 import sys
@@ -11,10 +35,10 @@ from pathlib import Path
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 import threading
 from scripts import setup_logging
+from scripts.thumbnails.upload.meta import STATUS_FILE_NAME
 
 logger = setup_logging()
 
-STATUS_FILE_NAME = 'upload_status.txt'
 # When version increases, directories will be reprocessed even if their last modified time hasn't changed.
 VERSION = 2
 
@@ -23,7 +47,6 @@ class UploadStatus(Enum):
     SKIPPED = 'skipped'
     DUPLICATE = 'duplicate'
     ERROR = 'error'
-
 
 class Status(BaseModel):
     """

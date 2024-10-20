@@ -1,6 +1,6 @@
 {
   "name": "imageinn",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Automate preprocessing photographs.",
   "main": "index.js",
   "scripts": {
