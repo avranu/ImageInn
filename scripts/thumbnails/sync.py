@@ -1,7 +1,7 @@
 """
 Sync JPG files to a thumbnails directory, so that there are no duplicates.
 
-This script is useful for collecting all the jpg files scattered throughout a filesystem so that they can be 
+This script is useful for collecting all the jpg files scattered throughout a filesystem so that they can be
 uploaded to a cloud provider without making a mess.
 
 Usage:
@@ -148,7 +148,7 @@ class JPGSyncer:
         # If windows, rsync isn't available, so copy with shutil
         if os.name == 'nt':
             return self.copy_with_shutil(src, destination)
-                
+
         return self.copy_with_rsync(src, destination)
 
     def resolve_collision(self, dest: Path) -> Path:
@@ -183,7 +183,7 @@ class JPGSyncer:
         if self.dry_run:
             logger.info(f"Copied {src} to {dest}")
             return True
-        
+
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             subprocess.run(["rsync", "-aq", src.as_posix(), dest.as_posix()], check=True)
@@ -206,7 +206,7 @@ class JPGSyncer:
         if self.dry_run:
             logger.info(f"Copied {src} to {dest}")
             return True
-        
+
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
@@ -226,14 +226,14 @@ class JPGSyncer:
         jpg_files = []
         for source_dir in source_dirs:
             jpg_files.extend(self.find_jpg_files(source_dir))
-        
+
         total = len(jpg_files)
 
         if not total:
             logger.info("No JPG files found to sync.")
             return
         logger.info('%s JPG files found.', total)
-        
+
         with ThreadPoolExecutor(max_workers=self.threads) as executor:
             list(tqdm(executor.map(self.process_file, jpg_files), total=total, desc="Syncing JPG files"))
 

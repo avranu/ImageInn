@@ -49,7 +49,7 @@ class FileManager(Script):
     directory: Path = Field(default=Path('.'))
     file_prefix: str = ''
     dry_run: bool = False
-    
+
     _files_moved: list[Path] = PrivateAttr(default_factory=list)
     _files_copied : list[Path] = PrivateAttr(default_factory=list)
     _files_deleted: list[Path] = PrivateAttr(default_factory=list)
@@ -92,10 +92,10 @@ class FileManager(Script):
         Add a file to the list of copied files.
         """
         self._files_copied.append(file_path)
-        
+
     def append_deleted_file(self, file_path: Path) -> None:
         """
-        Add a file to the list of deleted files. 
+        Add a file to the list of deleted files.
         """
         self._files_deleted.append(file_path)
 
@@ -128,7 +128,7 @@ class FileManager(Script):
             case 'xxhash':
                 return xxhash.xxh64()
             case _:
-                return hashlib.new(hasher)                    
+                return hashlib.new(hasher)
 
     def hash_file(self, filename: str | Path, partial: bool = False, hashing_algorithm : str = 'xxhash') -> str:
         """
@@ -148,7 +148,7 @@ class FileManager(Script):
         with self._cache_lock:
             if cache_key in self._hash_cache:
                 return self._hash_cache[cache_key]
-        
+
         filename = Path(filename)
         if not filename.is_absolute():
             filename = self.directory / filename
@@ -176,13 +176,13 @@ class FileManager(Script):
                     hasher.update(chunk)
 
         result = hasher.hexdigest()
-        
+
         with self._cache_lock:
             self._hash_cache[cache_key] = result
 
         return result
 
-    def get_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> list[Path]:
+    def get_all_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> list[Path]:
         """
         Get a list of directories
 
@@ -248,7 +248,24 @@ class FileManager(Script):
 
             yield dirpath_obj
 
-    def get_files(self, directory : Path | None = None) -> list[Path]:
+
+    async def count_directories(self, directory: Path, recursive: bool) -> int:
+        """
+        Asynchronously count the number of directories.
+
+        Args:
+            directory (Path): The root directory to start counting from.
+            recursive (bool): Whether to count directories recursively.
+
+        Returns:
+            int: The total number of directories.
+        """
+        count = 0
+        for _ in self.yield_directories(directory, recursive=recursive):
+            count += 1
+        return count
+
+    def get_all_files(self, directory : Path | None = None) -> list[Path]:
         """
         Get a list of files in a directory.
 
@@ -261,7 +278,43 @@ class FileManager(Script):
         directory = directory or self.directory
         if self.file_prefix:
             return directory.glob(f'{self.file_prefix}*')
-        return directory.iterdir()
+        return [f for f in directory.iterdir() if f.is_file()]
+
+    def yield_files(self, directory : Path | None = None) -> Iterator[Path]:
+        """
+        Yield files in a directory.
+
+        Args:
+            directory: The directory to search. Defaults to self.directory.
+
+        Yields:
+            The next file in the directory.
+        """
+        directory = directory or self.directory
+        if self.file_prefix:
+            for f in directory.glob(f'{self.file_prefix}*'):
+                if f.is_file():
+                    yield f
+        else:
+            for f in directory.iterdir():
+                if f.is_file():
+                    yield f
+
+    async def count_files(self, directory: Path, recursive: bool) -> int:
+        """
+        Asynchronously count the number of files.
+
+        Args:
+            directory (Path): The root directory to start counting from.
+            recursive (bool): Whether to count files recursively.
+
+        Returns:
+            int: The total number of files.
+        """
+        count = 0
+        for _ in self.yield_files(directory):
+            count += 1
+        return count
 
     def file_sizes_match(self, source_path: Path, destination_path: Path) -> bool:
         """
@@ -386,7 +439,7 @@ class FileManager(Script):
         """
         if not self.check_dry_run(f'creating directory {directory}'):
             directory.mkdir(exist_ok=True)
-            
+
         return directory
 
     def delete_file(self, file_path: Path, use_trash : bool = True) -> bool:
@@ -434,7 +487,7 @@ class FileManager(Script):
         trash_file_path = trash_dir / file_path.name
         number = 1
         while trash_file_path.exists():
-            trash_file_path = trash_dir / f"{file_path.stem}_{number}{file_path.suffix}" 
+            trash_file_path = trash_dir / f"{file_path.stem}_{number}{file_path.suffix}"
 
         return trash_file_path
 
@@ -460,7 +513,7 @@ class FileManager(Script):
 
         if destination_path.exists():
             raise FileExistsError(f"Move Destination file already exists: {destination_path}")
-        
+
         if verify:
             source_hash = self.hash_file(source_path)
 
@@ -510,7 +563,7 @@ class FileManager(Script):
                 if source_hash != destination_hash:
                     logger.critical(f"Checksum mismatch after copying {source_path} to {destination_path}")
                     raise ShouldTerminateException(f'Checksum mismatch after copying {source_path} to {destination_path}')
-                
+
         self.append_copied_file(destination_path)
         return destination_path
 

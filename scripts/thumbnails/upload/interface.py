@@ -1,30 +1,46 @@
-#!/usr/bin/env python3
-"""
-Upload files to Immich.
-
-This script is used because the immich app isn't reliable for uploading files, and I don't want to
-manually upload files via the web interface (and leave that interface open in Chrome).
-
-Instead, this cli script can be run as a periodic cronjob.
-
-See also the organize.py script for organizing files into directories prior to this script being 
-executed.
-
-This script is referenced in bash_aliases (but not in the github copy of it).
-
-Version 1.0
-Date: 2024-09-26
-Status: Working
-
-Example:
-    >>> python upload.py
-    >>> python upload.py -d /mnt/i/Phone
-    # bash_aliases defines `upload` to run this script for the current dir
-    >>> upload
-"""
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*    Upload files to Immich.
+*
+*    This script is used because the immich app isn't reliable for uploading files, and I don't want to
+*    manually upload files via the web interface (and leave that interface open in Chrome).
+*
+*    Instead, this cli script can be run as a periodic cronjob.
+*
+*    See also the organize.py script for organizing files into directories prior to this script being
+*    executed.
+*
+*    This script is referenced in bash_aliases (but not in the github copy of it).
+*
+*    Example:
+*        >>> python upload.py
+*        >>> python upload.py -d /mnt/i/Phone
+*        # bash_aliases defines `upload` to run this script for the current dir
+*        >>> upload
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    interface.py                                                                                         *
+*        Project: imageinn                                                                                             *
+*        Version: 1.0.0                                                                                                *
+*        Created: 2024-09-25                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-20     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 from __future__ import annotations
 import os
-import shutil
 import sys
 
 # Add the root directory of the project to sys.path
@@ -63,7 +79,7 @@ class ImmichInterface(FileManager, ABC):
     def validate_directory(cls, v):
         if not v:
             raise ValueError("directory must be set.")
-        
+
         # Allow str and list[str]
         v = Path(v)
 
@@ -72,7 +88,7 @@ class ImmichInterface(FileManager, ABC):
             exists = v.exists()
         except (OSError, Exception):
             exists = False
-            
+
         if not exists:
             logger.error(f"Directory {v} does not exist.")
             raise FileNotFoundError(f"Directory {v} does not exist.")
@@ -176,6 +192,10 @@ class ImmichInterface(FileManager, ABC):
             logger.debug("Ignoring hidden file: %s", image_path)
             return True
 
+        if self.file_prefix and not image_path.name.startswith(self.file_prefix):
+            logger.debug("Ignoring file due to prefix: %s", image_path)
+            return True
+
         if str(image_path) in self.ignore_paths:
             logger.debug("Ignoring file due to path: %s", image_path)
             return True
@@ -189,7 +209,7 @@ class ImmichInterface(FileManager, ABC):
             if status.was_successful(image_path):
                 logger.debug(f"Skipping already uploaded file {image_path}")
                 return True
-            
+
         if image_path.stat().st_size > self.large_file_size:
             logger.debug(f"File {image_path} is larger than {self.large_file_size} bytes and will be skipped.")
             return True
@@ -231,11 +251,10 @@ class ImmichInterface(FileManager, ABC):
                 results.append(result)
             else:
                 errors.append(backup_dir)
-                
+
         if delete and results and not errors:
             self.delete_file(file_path)
             logger.debug(f"Deleted original file {file_path}")
 
         return results
 
-        

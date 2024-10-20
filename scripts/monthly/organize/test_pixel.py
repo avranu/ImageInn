@@ -9,7 +9,7 @@
 *                                                                                                                      *
 *        File:    test_pixel.py                                                                                        *
 *        Project: imageinn                                                                                             *
-*        Version: 0.0.1                                                                                                *
+*        Version: 1.0.0                                                                                                *
 *        Created: 2024-09-16                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -180,7 +180,7 @@ class TestPixelFileOrganizer(unittest.TestCase):
         # Run organize_files
         return_none = self.organizer.organize_files()
         self.assertIsNone(return_none)
-        
+
         # Check that files are moved to correct directories
         target_files = [
             self.organizer.directory / "2021-10" / "PXL_20211009_143747197.jpg",

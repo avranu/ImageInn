@@ -41,8 +41,8 @@ class HuginProvider(AlignmentProvider):
 
 	def next(self, photos: list[Photo] | PhotoStack, allowed_errors : int = 2, minimum_size : int = 2) -> dict[Photo, Photo]:
 		"""
-		Align a single bracket of photos. 
-		
+		Align a single bracket of photos.
+
 		If alignment fails, remove the beginning or end photo and try again, up until the minimum bracket size is reached.
 
 		Args:
@@ -98,10 +98,10 @@ class HuginProvider(AlignmentProvider):
 	def attempt_alignment(self, photos: list[Photo], allowed_errors : int = 2, minimum_size : int = 2) -> dict[Photo, Photo] | None:
 		"""
 		Attempt to align a single bracket of photos without retrying.
-		
+
 		Args:
 			photos (list[Photo]): The photos to align.
-			
+
 		Returns:
 			dict[Photo, Photo]: A dictionary of the original photos and their aligned counterparts.
 		"""
@@ -137,16 +137,16 @@ class HuginProvider(AlignmentProvider):
 					logger.error('OUTPUT: %s', _output)
 					logger.error('ERROR: %s', _error)
 					return None
-				
+
 				if found < minimum_size:
 					logger.error('Could not find at least %d files after alignment. Found %d photos. Missing %d photos: %s', minimum_size, found, len(missing), missing)
 					logger.error('OUTPUT: %s', _output)
 					logger.error('ERROR: %s', _error)
 					return None
-				
+
 				"""
-				Check if the missing photos are at the beginning or end of the bracket. 
-				For example: 
+				Check if the missing photos are at the beginning or end of the bracket.
+				For example:
 					it is okay if photo 1 and 2 are missing, but 3-6 are found.
 					it is okay if photo 1 and 6 are missing, but 2-5 are found.
 					It is NOT okay if photo 1 and 3 are missing, but 2 is found and 4 is found.
@@ -161,7 +161,7 @@ class HuginProvider(AlignmentProvider):
 					logger.error('OUTPUT: %s', _output)
 					logger.error('ERROR: %s', _error)
 					return {}
-					
+
 				# Remove the missing photos from the expected list
 				for idx in missing:
 					photo = photos[idx]

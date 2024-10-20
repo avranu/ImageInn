@@ -1,7 +1,7 @@
 """*********************************************************************************************************************
 *                                                                                                                      *
 *                                                                                                                      *
-    This script organizes files into monthly directories based on the filename. It is useful for dumping 
+    This script organizes files into monthly directories based on the filename. It is useful for dumping
     photos from a phone or camera into a single directory and organizing them later.
 
     Ideally, it should be run as a cron job to automatically organize files on a regular basis.
@@ -90,13 +90,13 @@ class FileOrganizer(FileManager):
     def progress(self) -> tqdm:
         if self._progress is None:
             self._progress = tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1)
-            
+
         return self._progress
-    
+
     @property
     def filename_pattern(self) -> re.Pattern:
         if not self._filename_pattern:
-            self._filename_pattern = re.compile(rf'.*\.(jpg|jpeg|dng|arw|png)', re.IGNORECASE)
+            self._filename_pattern = re.compile(r'.*\.(jpg|jpeg|dng|arw|png)', re.IGNORECASE)
         return self._filename_pattern
 
     @property
@@ -120,7 +120,7 @@ class FileOrganizer(FileManager):
             return self.directory
         return self.target_directory
 
-    def get_files(self, directory : Path | None = None) -> Iterator[Path]:
+    def get_all_files(self, directory : Path | None = None) -> Iterator[Path]:
         """
         Get a list of files in a directory.
 
@@ -176,9 +176,9 @@ class FileOrganizer(FileManager):
         """
         if self.check_dry_run('organizing files'):
             return
-        
+
         # Gather all files to process
-        files_to_process = self.get_files()
+        files_to_process = self.get_all_files()
 
         with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
             list(tqdm(executor.map(self.process_file_threadsafe, files_to_process), desc='Processing files', unit='files'))
@@ -198,7 +198,7 @@ class FileOrganizer(FileManager):
         finally:
             self._update_progress()
 
-        
+
     def process_file(self, file_path: Path) -> Path | None:
         """
         Process a single file.
@@ -242,18 +242,18 @@ class FileOrganizer(FileManager):
         """
         if directory.exists():
             return directory
-        
+
         try:
             result = super().mkdir(directory)
-                
+
             self.directories_created += 1
             if message:
                 logger.debug(f"{message}: {directory.relative_to(self.get_target_directory())}")
         except Exception as e:
             raise ShouldTerminateException(f'Error creating directory: {directory}') from e
-        
+
         return result
-        
+
     def delete_file(self, file_path: Path, message : str = "Deleted file", use_trash : bool = True) -> bool:
         """
         Delete a file.
@@ -271,9 +271,9 @@ class FileOrganizer(FileManager):
         if self.skip_hash:
             logger.critical('Cannot delete files without verifying checksums')
             raise OneFileException('Cannot delete files without verifying checksums')
-        
+
         try:
-            result = super().delete_file(file_path, use_trash)    
+            result = super().delete_file(file_path, use_trash)
             logger.debug(f"{message}: {file_path}")
         except Exception as e:
             raise OneFileException('Error deleting file') from e
@@ -300,7 +300,7 @@ class FileOrganizer(FileManager):
 
         if message:
             logger.debug(f"{message}: {source} to {destination.relative_to(self.directory)}")
-            
+
         return destination
 
     def find_subdir(self, filepath : Path) -> str:
@@ -317,21 +317,21 @@ class FileOrganizer(FileManager):
             # Get the created date from the filepath
             file_stat = filepath.stat()
             created_time = datetime.datetime.fromtimestamp(file_stat.st_birthtime)
-            
+
             # Extract the year and month
             year = created_time.strftime('%Y')
             month = created_time.strftime('%m')
             day = created_time.strftime('%d')
-            
+
             # Generate the directory name in the format year/year-month
-            dir_name = f"{year}/{year}-{month}/{year}-{month}-{day}/"    
-        
+            dir_name = f"{year}/{year}-{month}/{year}-{month}-{day}/"
+
         except Exception as e:
             logger.error(f"Error occurred while finding subdirectory: {e}")
             raise ValueError(f"Unable to determine a subdir from: {filepath}") from e
 
         return dir_name
-        
+
     def create_subdir(self, filepath : Path, parent_directory : Path | None = None) -> Path:
         """
         Create a subdirectory for a file based on its filename.
@@ -373,7 +373,7 @@ class FileOrganizer(FileManager):
             self.append_skipped_file(source_file)
             logger.debug(f"Skipping file {source_file} due to collision with {destination}")
             raise DuplicationHandledException(f"Duplicate file {source_file} handled")
-        
+
         if self.files_match(source_file, destination, self.skip_hash):
             # Files are identical; delete the source file
             self.duplicates_found += 1
@@ -401,14 +401,14 @@ class FileOrganizer(FileManager):
         if (result := self.handle_single_conflict(source_file, target_file)):
             # A viable path was found
             return result
-        
+
         # Files differ; find a new filename
         base = source_file.stem  # Filename without extension
         ext = source_file.suffix  # File extension including the dot
-        
+
         for i in range(max_attempts):
             new_target_file = target_file.parent / f"{base}_{i}{ext}"
-            
+
             if (result := self.handle_single_conflict(source_file, new_target_file)):
                 # A viable path was found
                 return result
@@ -418,10 +418,10 @@ class FileOrganizer(FileManager):
     def report(self, message_prefix : str | None = "Organization Progress:") -> None:
         if self.dry_run:
             message_prefix = f"[DRY RUN] {message_prefix}"
-            
-        logger.info('%s %s files moved, %s files deleted, %s files skipped, %s directories created', 
-                    message_prefix or '', 
-                    self.count_files_moved, 
+
+        logger.info('%s %s files moved, %s files deleted, %s files skipped, %s directories created',
+                    message_prefix or '',
+                    self.count_files_moved,
                     self.count_files_deleted,
                     self.count_files_skipped,
                     self.directories_created
@@ -439,13 +439,13 @@ class FileOrganizer(FileManager):
             description = f'{description}, {self.directories_created} directories created'
         if self.count_files_skipped > 0:
             description = f'{description}, {self.count_files_skipped} skipped'
-            
+
         self.progress.set_description(description)
 
         if increase_progress_bar > 0:
             self.progress.update(increase_progress_bar)
 
-def main():    
+def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize PXL_ files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')
@@ -462,10 +462,10 @@ def main():
         logger.setLevel(logging.DEBUG)
 
     organizer = FileOrganizer(
-        directory       = args.directory, 
+        directory       = args.directory,
         target_directory= args.target,
-        file_prefix     = args.prefix, 
-        batch_size      = args.limit, 
+        file_prefix     = args.prefix,
+        batch_size      = args.limit,
         dry_run         = args.dry_run,
         skip_collision  = args.skip_collision,
         skip_hash       = args.skip_hash

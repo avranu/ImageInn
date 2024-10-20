@@ -55,11 +55,11 @@ class AlignmentProvider(Provider, ABC):
 		if len(brackets) < 1:
 			logger.debug('No brackets to align.')
 			return []
-		
+
 		# Handle just one bracket and return a list of photos
 		if isinstance(brackets[0], Photo):
 			return self._next_bracket(brackets)
-		
+
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
 			futures = [executor.submit(self._next_bracket, bracket) for bracket in brackets]
 			results = []
@@ -72,7 +72,7 @@ class AlignmentProvider(Provider, ABC):
 					logger.error("Timeout while aligning photos.")
 
 			return results
-	
+
 	def _next_bracket_list(self, brackets : list[list[Photo]]) -> list[list[Photo]]:
 		"""
 		Align a list of brackets of photos.
@@ -90,7 +90,7 @@ class AlignmentProvider(Provider, ABC):
 			aligned_brackets.append(list(aligned_bracket.values()))
 
 		return aligned_brackets
-	
+
 	def _next_bracket(self, bracket : list[Photo]) -> list[Photo]:
 		"""
 		Align a single bracket of photos.

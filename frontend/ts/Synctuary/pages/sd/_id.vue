@@ -9,7 +9,7 @@
       <v-btn @click="copySdCard">Copy</v-btn>
     </div>
   </template>
-  
+
   <script>
   export default {
     async asyncData({ $axios, params }) {
@@ -24,4 +24,3 @@
     },
   }
   </script>
-  

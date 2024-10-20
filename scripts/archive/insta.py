@@ -76,7 +76,7 @@ class InstaloaderRunner(BaseModel):
     def validate_profiles(cls, v, values):
         if v:
             return v
-        
+
         if 'profiles_file' in values and values['profiles_file']:
             try:
                 with open(values['profiles_file'], 'r') as f:
@@ -116,7 +116,7 @@ class InstaloaderRunner(BaseModel):
 
         for profile_name in tqdm(self.profiles, desc="Profiles", unit="profile"):
             self.process_profile(profile_name)
-            
+
         self.report()
 
     def process_profile(self, profile_name: str):
@@ -127,28 +127,28 @@ class InstaloaderRunner(BaseModel):
                 self.send_request(profile_name)
                 self._success_profiles.append(profile_name)
                 break
-            
+
             except instaloader.exceptions.ConnectionException as e:
                 if retries >= self.max_retries:
                     self._profile_error(profile_name, f"Max retries exceeded for profile '{profile_name}'.")
                     break
-                
+
                 sleep_time = delay + random.uniform(0, 1)
                 logger.warning(f"Connection error for profile '{profile_name}': {e}. Retrying in {sleep_time:.2f} seconds...")
                 time.sleep(sleep_time)
                 retries += 1
                 # Exponential backoff
                 delay *= 2
-                
+
             except instaloader.exceptions.QueryReturnedNotFoundException:
                 self._profile_error(profile_name, f"Profile {profile_name} not found.")
                 self._failed_profiles.append(profile_name)
                 break
-            
+
             except instaloader.exceptions.PrivateProfileNotFollowedException:
                 self._profile_error(profile_name, f"Profile {profile_name} is private and not followed.")
                 break
-            
+
             except instaloader.exceptions.TooManyRequestsException as e:
                 sleep_time = delay + random.uniform(0, 1)
                 logger.warning(f"Too many requests error for profile '{profile_name}': {e}. Sleeping for {sleep_time:.2f} seconds...")
@@ -156,7 +156,7 @@ class InstaloaderRunner(BaseModel):
                 retries += 1
                 # Exponential backoff
                 delay *= 2
-                
+
             except Exception as e:
                 self._profile_error(profile_name, f"An unexpected error occurred for profile '{profile_name}': {e}")
                 break

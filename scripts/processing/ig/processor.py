@@ -1,12 +1,12 @@
 """
 Process images for Instagram posts.
 
-This script processes JPG images in a directory, scaling them to fit within a square canvas, 
-applies a blurred and enhanced version of the image as the background, and saving the 
+This script processes JPG images in a directory, scaling them to fit within a square canvas,
+applies a blurred and enhanced version of the image as the background, and saving the
 processed image with a suffix.
 
-Usage: 
-    ig.py [-h] [--margin MARGIN] [--size SIZE] [--blur BLUR] [--brightness BRIGHTNESS] 
+Usage:
+    ig.py [-h] [--margin MARGIN] [--size SIZE] [--blur BLUR] [--brightness BRIGHTNESS]
             [--contrast CONTRAST] [--saturation SATURATION] [--border BORDER]
             [--suffix SUFFIX]
             input_dir
@@ -49,12 +49,12 @@ from decimal import Decimal
 import numpy as np
 from scripts.lib.types import Number
 from scripts.processing.ig.meta import (
-    DEFAULT_CANVAS_SIZE, 
-    DEFAULT_MARGIN, 
-    DEFAULT_BLUR, 
-    DEFAULT_BRIGHTNESS, 
-    DEFAULT_CONTRAST, 
-    DEFAULT_SATURATION, 
+    DEFAULT_CANVAS_SIZE,
+    DEFAULT_MARGIN,
+    DEFAULT_BLUR,
+    DEFAULT_BRIGHTNESS,
+    DEFAULT_CONTRAST,
+    DEFAULT_SATURATION,
     DEFAULT_BORDER,
     AdjustmentTypes,
     to_windows_path,
@@ -108,7 +108,7 @@ class IGImageProcessor:
         if self._topaz_available is None:
             self._topaz_available = self.topaz_exe and self.topaz_exe.exists()
             logger.info('Checking if Topaz DeNoise AI is available: ... %s', self._topaz_available)
-            
+
         return self._topaz_available
 
     def _get_images(self) -> list[Path]:
@@ -168,7 +168,7 @@ class IGImageProcessor:
         if not self.progress_bar:
             logger.error('Progress bar not initialized')
             return
-        
+
         if description:
             self.progress_bar.set_description(description)
             logger.debug(description)
@@ -178,7 +178,7 @@ class IGImageProcessor:
     def process_image(self, file_path: Path) -> None:
         """
         Process a single image: scale, apply background edits, and save.
-        
+
         Args:
             file_path (Path): Path to the file to process.
         """
@@ -189,12 +189,12 @@ class IGImageProcessor:
         if not self.skip_image_adjustments:
             if topaz_file_path := self.apply_topaz(file_path):
                 file_path = topaz_file_path
-        
+
         # Create IGImage instance
         self.update_progress(f"Setting up image frame: {file_path.name}")
         image = self.create_image(file_path)
         image.setup()
-        
+
         if topaz_file_path:
             image.adjustments_applied(AdjustmentTypes.TOPAZ)
 
@@ -215,7 +215,7 @@ class IGImageProcessor:
         """
         if not self.topaz_available:
             return None
-        
+
         self.update_progress(f'Applying Topaz DeNoise AI: {image_path.name}')
 
         # Convert paths to windows format for Topaz CLI
@@ -226,7 +226,7 @@ class IGImageProcessor:
         topaz_path = self.topaz_exe
         cmd = [str(topaz_path), input_path, '--output', output_path]
         logger.debug(f"Running command: {cmd}")
-        
+
         # Default Timeout set to 5 minutes
         subprocess.run(cmd, capture_output=True, check=True, timeout=timeout)
 
@@ -239,7 +239,7 @@ class IGImageProcessor:
         # Move topaz output back one dir
         new_path = image_path.parent / f"{image_path.stem}-topaz.jpg"
         topaz_output.rename(new_path)
-        
+
         return new_path
 
     def adjust_image(self, image: IGImage, force : bool = False):
@@ -250,16 +250,16 @@ class IGImageProcessor:
             if not force:
                 logger.debug('Skipping image adjustments')
                 return
-            
+
             logger.debug('Forcing image adjustments')
-        
+
         logger.debug('Analyzing image histogram for adjustments')
         main_image = image.scaled
 
         # Convert to numpy array for analysis
         img_array = np.array(main_image)
         hist, _ = np.histogram(img_array, bins=256, range=(0, 255))
-        
+
         # Calculate saturation
         hsv_img = main_image.convert("HSV")
         h, s, v = hsv_img.split()
@@ -288,12 +288,12 @@ class IGImageProcessor:
     def create_blurred_background(self, image : Image.Image, size : tuple[int, int], luminance : int = 185) -> Image.Image:
         """
         Create a blurred and enhanced version of the image for background.
-        
+
         Returns:
             Image.Image: Processed background image.
         """
         blurred = image.copy().resize(size, Image.LANCZOS)
-        
+
         logger.debug('Applying blur to background image')
         blurred = blurred.filter(ImageFilter.GaussianBlur(DEFAULT_BLUR))
         blurred = blurred.filter(ImageFilter.SMOOTH)
@@ -313,12 +313,12 @@ class IGImageProcessor:
 
         logger.debug('Background image processing complete')
         return blurred
-    
+
 def main() -> None:
     """Main function to parse arguments and start the image processing."""
-    parser = argparse.ArgumentParser(description='''Instagram Image Processor. 
-                    This script processes JPG images in a directory, scaling them to fit within a square canvas, 
-                    applyies a blurred and enhanced version of the image as the background, and saving the 
+    parser = argparse.ArgumentParser(description='''Instagram Image Processor.
+                    This script processes JPG images in a directory, scaling them to fit within a square canvas,
+                    applyies a blurred and enhanced version of the image as the background, and saving the
                     processed image with a suffix.''')
     parser.add_argument('input_dir', type=Path, help='Path to the input directory containing JPG images.')
     parser.add_argument('--margin', '-m', type=int, default=DEFAULT_MARGIN, help='Margin size for the canvas.')

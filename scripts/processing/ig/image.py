@@ -111,17 +111,17 @@ class IGImage:
     def scale_image(self) -> Image.Image:
         """
         Scale the image to fit within the target size, maintaining aspect ratio.
-        
+
         Args:
             image (Image.Image): Original image to be scaled.
-        
+
         Returns:
             Image.Image: Scaled image.
-        """ 
+        """
         target_size = self.target_size
         img_ratio = min(target_size / self.original.width, target_size / self.original.height)
         new_size = (int(self.original.width * img_ratio), int(self.original.height * img_ratio))
-        
+
         logger.debug(f"Scaling image to {new_size}")
         self._scaled = self.original.resize(new_size, Image.LANCZOS)
 
@@ -130,16 +130,16 @@ class IGImage:
     def create_blurred_background(self) -> Image.Image:
         """
         Create a blurred and enhanced version of the image for background.
-        
+
         Returns:
             Image.Image: Processed background image.
         """
-        
+
         img_ratio = max(self.canvas_size / self.original.width, self.canvas_size / self.original.height)
         new_size = (int(self.original.width * img_ratio), int(self.original.height * img_ratio))
-        
+
         self._blurred = self.processor.create_blurred_background(self.original, new_size)
-        
+
         return self._blurred
 
     def setup_canvas(self) -> Image.Image:
@@ -157,7 +157,7 @@ class IGImage:
         x_offset = (canvas_size - self.scaled.width) // 2
         y_offset = (canvas_size - self.scaled.height) // 2
         self.canvas.paste(self.scaled, (x_offset, y_offset))
-            
+
         border_img = ImageOps.expand(self.scaled, self.border_size, fill='black').convert('RGBA')
         self._canvas.paste(border_img, (x_offset - self.border_size, y_offset - self.border_size))
 
@@ -176,12 +176,12 @@ class IGImage:
         """
         if not self.canvas:
             raise ValueError("Canvas not created. Run apply_edits() first.")
-        
+
         logger.debug('Saving processed image')
         if self.output_path.exists():
             logger.debug(f"Overwriting processed image: {self.output_path}")
 
         self.canvas.save(self.output_path)
         logger.debug(f"Processed image saved as {self.output_path}")
-        
+
         return self.output_path

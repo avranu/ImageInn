@@ -71,7 +71,7 @@ class Status(BaseModel):
         if not v.exists():
             logger.error(f"Directory {v} does not exist.")
             raise FileNotFoundError(f"Directory {v} does not exist.")
-        
+
         return v
 
     @property
@@ -96,7 +96,7 @@ class Status(BaseModel):
                             self.last_processed_time = float(line.split(':', 1)[1].strip())
                         if line.startswith('# version:'):
                             self.version = int(line.split(':', 1)[1].strip())
-                            
+
                         continue
                     if line:
                         parts = line.split('\t')
@@ -124,7 +124,7 @@ class Status(BaseModel):
             if not self.statuses:
                 logger.debug('Skipping saving empty status file')
                 return
-            
+
             with self.status_file.open('w') as f:
                 if self.last_processed_time:
                     f.write(f'# last_processed_time: {self.last_processed_time}\n')
@@ -146,7 +146,7 @@ class Status(BaseModel):
     def update_status(self, filename: str | Path, status: UploadStatus):
         """
         Update the status of a file in a thread-safe manner.
-        """ 
+        """
         if isinstance(filename, Path):
             filename = filename.name
 
@@ -159,7 +159,7 @@ class Status(BaseModel):
         """
         if isinstance(filename, Path):
             filename = filename.name
-            
+
         with self.lock:
             return self.statuses.get(filename)
 
@@ -191,7 +191,7 @@ class Status(BaseModel):
         # If our version has changed, we can't trust that our directory iterator will be the same.
         if self.version < VERSION:
             return True
-        
+
         return self.last_processed_time <= self.directory.stat().st_mtime
 
     def __len__(self) -> int:

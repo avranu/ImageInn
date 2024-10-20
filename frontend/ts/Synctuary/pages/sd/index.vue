@@ -5,7 +5,7 @@
       </v-list-item>
     </v-list>
   </template>
-  
+
   <script>
   export default {
     async asyncData({ $axios }) {
@@ -19,4 +19,3 @@
     },
   }
   </script>
-  

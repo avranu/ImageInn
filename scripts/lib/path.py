@@ -406,7 +406,7 @@ class FilePath(Path):
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), self.path)
 
 		absolute_path = os.path.join(self.directory.path, value)
-		
+
 		try:
 			os.rename(self.path, absolute_path)
 		except Exception as e:
@@ -475,7 +475,7 @@ class DirPath(Path):
 			raise ValueError(f"The path {self.path} is not a directory")
 
 		return True
-	
+
 	def ensure_exists(self) -> None:
 		"""
 		Ensure that this directory exists. Create it if it does not.

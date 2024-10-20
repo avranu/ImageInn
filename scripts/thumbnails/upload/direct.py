@@ -101,7 +101,7 @@ def main():
     """
     try:
         logger.warning('Using ImmichDirectUploader is not recommended. Use ImmichProgressiveUploader instead.')
-        
+
         load_dotenv()
 
         url = os.getenv("IMMICH_URL")
@@ -116,14 +116,14 @@ def main():
         parser.add_argument('--ignore-paths', '-i', help="Ignore files with these paths", nargs='+')
         parser.add_argument("--verbose", "-v", help="Enable verbose logging", action="store_true")
         args = parser.parse_args()
-        
+
         if args.verbose:
             logger.setLevel(logging.DEBUG)
 
         if not args.url or not args.api_key or not args.thumbnails_dir:
             logger.error("IMMICH_URL, IMMICH_API_KEY, and CLOUD_THUMBNAILS_DIR must be set.")
             sys.exit(1)
-            
+
         immich = ImmichDirectUploader(
             url=args.url,
             api_key=args.api_key,

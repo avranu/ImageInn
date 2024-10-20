@@ -49,7 +49,7 @@ class EnfuseProvider(HDRProvider):
 		"""
 		if not photos or len(photos) < 2:
 			raise ValueError(f'Not enough photos provided to create HDR at {output_path}')
-		
+
 		# If no output path, create one based on the first photo name
 		if not output_path:
 			output_path = photos[0].append_suffix('_HDR')

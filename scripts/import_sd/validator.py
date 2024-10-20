@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 class Validator:
 	"""
 	Provides methods for validating files and directories.
-	
+
 	Probably depreecated.
 	"""
 	@classmethod

@@ -42,7 +42,7 @@ class TestWorkflow(unittest.TestCase):
 		self.empty_path = os.path.join(self.test_data_path, 'empty')
 		self.backup_path = os.path.join(self.test_data_path, 'backup_network')
 		self.list_path = os.path.join(self.test_data_path, 'file_list.txt')
-		
+
 		# Ensure sd_card_path, network_path and backup_network_path all exist
 		os.makedirs(self.data_path, exist_ok=True)
 		os.makedirs(self.test_data_path, exist_ok=True)

@@ -1,7 +1,7 @@
 """*********************************************************************************************************************
 *                                                                                                                      *
 *                                                                                                                      *
-    This script organizes files into monthly directories based on the filename. It is useful for dumping 
+    This script organizes files into monthly directories based on the filename. It is useful for dumping
     photos from a phone or camera into a single directory and organizing them later.
 
     Ideally, it should be run as a cron job to automatically organize files on a regular basis.
@@ -16,7 +16,7 @@
 *                                                                                                                      *
 *        File:    organize.py                                                                                          *
 *        Project: imageinn                                                                                             *
-*        Version: 0.0.1                                                                                                *
+*        Version: 1.0.0                                                                                                *
 *        Created: 2024-09-16                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -58,7 +58,7 @@ class PixelFileOrganizer(FileOrganizer):
     """
     # Private attributes
     _filename_pattern : re.Pattern | None = PrivateAttr(default=None)
-    
+
     @property
     def filename_pattern(self) -> re.Pattern:
         if not self._filename_pattern:
@@ -91,7 +91,7 @@ class PixelFileOrganizer(FileOrganizer):
 
         return dir_name
 
-def main():    
+def main():
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize PXL_ files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')
@@ -108,10 +108,10 @@ def main():
         logger.setLevel(logging.DEBUG)
 
     organizer = PixelFileOrganizer(
-        directory       = args.directory, 
+        directory       = args.directory,
         target_directory= args.target,
-        file_prefix     = args.prefix, 
-        batch_size      = args.limit, 
+        file_prefix     = args.prefix,
+        batch_size      = args.limit,
         dry_run         = args.dry_run,
         skip_collision  = args.skip_collision,
         skip_hash       = args.skip_hash

@@ -352,7 +352,7 @@ class HDRWorkflow(Workflow):
 		if not images or len(images) < 2:
 			logger.error('Not enough aligned images were created, cannot create HDR. Found %d, expected %d', len(images), len(photos))
 			return None
-		
+
 		# Rename it if we only got a partial alignment result.
 		if len(images) != len(photos):
 			hdrpath = hdrpath.append_suffix('_partial')
@@ -551,11 +551,11 @@ class HDRWorkflow(Workflow):
 				filename = short_filename
 
 		return filename
-	
+
 	def name_hdr(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str | list[str] | DirPath] = None, short : bool = False) -> FilePath:
 		"""
 		Creates a unique name for the HDR image based on the photos that will be combined.
-		
+
 		This method uses self.generate_hdr_name() and calls self.handle_conflict() if it exists.
 
 		Args:
@@ -573,7 +573,7 @@ class HDRWorkflow(Workflow):
 			if not newpath:
 				logger.debug('Skipping bracket, because HDR already exists: "%s"', filepath)
 				return filepath
-			
+
 			filepath = newpath
 
 		return filepath

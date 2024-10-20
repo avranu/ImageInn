@@ -8,9 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 logger = logging.getLogger(__name__)
 
 class Script(BaseModel, ABC):
-    
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
-    
+
     def subprocess(self, command : list[str] | str, **kwargs) -> subprocess.CompletedProcess:
         # default check=True
         if 'check' not in kwargs:
@@ -22,7 +22,7 @@ class Script(BaseModel, ABC):
 
         if isinstance(command, str):
             command = command.split()
-            
+
         try:
             return subprocess.run(command, **kwargs)
         except FileNotFoundError as e:

@@ -30,7 +30,7 @@ def get_topaz_path() -> Path | None:
     if platform.system() == 'Linux':
         logger.info('Detected platform: Linux')
         return Path("/mnt/c/Program Files/Topaz Labs LLC/Topaz Photo AI/tpai.exe")
-        
+
     if platform.system() == 'Windows':
         logger.info('Detected platform: Windows')
         return Path(r"C:/Program Files/Topaz Labs LLC/Topaz Photo AI/tpai.exe")

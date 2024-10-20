@@ -8,17 +8,17 @@
 *
 *    Instead, this cli script can be run as a periodic cronjob.
 *
-*    See also the organize.py script for organizing files into directories prior to this script being 
+*    See also the organize.py script for organizing files into directories prior to this script being
 *    executed.
 *
 *    This script is referenced in bash_aliases (but not in the github copy of it).
 *
+*        Project: imageinn                                                                                             *
 *        Version: 1.0.0                                                                                                *
-*    Date: 2024-09-20
 *    Status: Working
 *
 *    Example:
-*        >>> python progressive.py
+*        Copyright (c) 2024 Jess Mann                                                                                  *
 *        >>> python progressive.py /mnt/i/Phone
 *        # bash_aliases defines `upload` to run this script for the current dir
 *        >>> upload
@@ -77,7 +77,7 @@ from scripts.thumbnails.upload.template import PixelFiles
 logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
-        
+
     def _upload_file(self, image_path: Path, status: Status | None = None) -> UploadStatus:
         """
         Upload a file to Immich.
@@ -147,23 +147,6 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         return result
 
-
-    async def count_directories(self, directory: Path, recursive: bool) -> int:
-        """
-        Asynchronously count the number of directories.
-
-        Args:
-            directory (Path): The root directory to start counting from.
-            recursive (bool): Whether to count directories recursively.
-
-        Returns:
-            int: The total number of directories.
-        """
-        count = 0
-        for _ in self.yield_directories(directory, recursive=recursive):
-            count += 1
-        return count
-
     def upload(self, directory: Path | None = None, recursive: bool = True, max_threads: int = 4):
         """
         Upload files to Immich.
@@ -172,7 +155,7 @@ class ImmichProgressiveUploader(ImmichInterface):
             directory (Path): The directory to upload.
             recursive (bool): Whether to upload recursively.
             max_threads (int): The maximum number of threads for concurrent uploads.
-            
+
         Raises:
             AuthenticationError: If authentication fails with Immich
         """
@@ -194,17 +177,19 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         with tqdm(desc="Total Progress", unit='dir', total=None) as progress_bar:
             for subdir in directories:
-                if directory_count_future.done():
-                    progress_bar.total = directory_count_future.result()
-                    progress_bar.refresh()
-                    with Status(directory=subdir) as status:
+                try:
+                    if progress_bar.total is None and directory_count_future.done():
+                        progress_bar.total = directory_count_future.result()
+                        progress_bar.refresh()
+                        logger.info('Updated the progress bar total!')
 
+                    with Status(directory=subdir) as status:
                         # Check if the directory has changed since the last processed time
                         if not status.directory_changed():
                             logger.debug("Skipping directory %s as it has not changed since last processed.", subdir)
                             continue
 
-                        files_to_upload = self.get_files(subdir)
+                        files_to_upload = self.get_all_files(subdir)
 
                         with ThreadPoolExecutor(max_workers=max_threads) as executor:
                             futures = []
@@ -214,9 +199,9 @@ class ImmichProgressiveUploader(ImmichInterface):
 
                             # Initialize the progress bar
                             for future in tqdm(
-                                as_completed(futures), 
-                                total=len(futures), 
-                                unit='files', 
+                                as_completed(futures),
+                                total=len(futures),
+                                unit='files',
                                 leave=False,
                                 desc=f"{subdir.absolute()}"
                             ):
@@ -236,10 +221,13 @@ class ImmichProgressiveUploader(ImmichInterface):
                                     error_count += 1
                                     logger.error(f"Exception during upload: {e}")
                                     raise
-                                
+
                                 finally:
                                     progress_bar.set_postfix(
-                                        uploaded=uploaded_count, skipped=skipped_count, error=error_count, duplicates=duplicate_count
+                                        error       = error_count,
+                                        skipped     = skipped_count,
+                                        duplicates  = duplicate_count,
+                                        uploaded    = uploaded_count
                                     )
 
                         # At the conclusion of the upload, update the last processed time
@@ -272,7 +260,7 @@ class ImmichProgressiveUploader(ImmichInterface):
             else:
                 # Otherwise, linux, wsl, etc
                 directory = '/mnt/d'
-        
+
         sd_directory = Path(directory)
         if not self.exists(sd_directory):
             logger.error("SD card not found at %s", sd_directory)
@@ -298,10 +286,6 @@ def validate_args(args: argparse.Namespace) -> bool:
     Returns:
         bool: True if the arguments are valid, False otherwise
     """
-    # Wait 10 seconds
-    logger.info('Waiting 1 seconds...')
-    time.sleep(1)
-    
     if not args.url or not args.api_key:
         logger.error("IMMICH_URL and IMMICH_API_KEY must be set.")
         return False
@@ -337,7 +321,7 @@ def main():
         parser.add_argument('--sd', help="Upload files from an SD card", action='store_true')
         parser.add_argument("import_path", nargs='?', default=thumbnails_dir, help="Path to import files from")
         args = parser.parse_args()
-        
+
         if args.verbose:
             logger.setLevel(logging.DEBUG)
 
@@ -354,7 +338,7 @@ def main():
                     case _:
                         logger.error(f"Unknown template: {template}. See --help for available templates.")
                         sys.exit(1)
-            
+
         immich = ImmichProgressiveUploader(
             url=args.url,
             api_key=args.api_key,
@@ -380,7 +364,7 @@ def main():
     except KeyboardInterrupt:
         logger.info("Upload cancelled by user.")
         sys.exit(0)
-        
+
     sys.exit(0)
 
 if __name__ == "__main__":

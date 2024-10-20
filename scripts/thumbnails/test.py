@@ -48,7 +48,7 @@ class TestJPGSyncer(unittest.TestCase):
         dest_path = self.target_dir / "2024/2024-07-30/sample.jpg"
         dest_path.parent.mkdir(parents=True, exist_ok=True)
         dest_path.write_text("This is a test file.")
-        
+
         new_dest_path = self.syncer.resolve_collision(dest_path)
         self.assertEqual(new_dest_path, self.target_dir / "2024/2024-07-30/sample-1.jpg")
 
