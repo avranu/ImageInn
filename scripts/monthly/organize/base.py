@@ -80,9 +80,6 @@ class FileOrganizer(FileManager):
     file_prefix : str = ''
     target_directory : Path | None = None
 
-    duplicates_found: int = 0
-    directories_created: int = 0
-
     # Private attributes
     _progress: tqdm | None = PrivateAttr(default=None)
 
@@ -98,25 +95,16 @@ class FileOrganizer(FileManager):
         self._progress = value
 
     @property
-    def count_files_moved(self) -> int:
-        return len(self._files_moved)
-
-    @property
-    def count_files_copied(self) -> int:
-        return len(self._files_copied)
-
-    @property
-    def count_files_deleted(self) -> int:
-        return len(self._files_deleted)
-
-    @property
-    def count_files_skipped(self) -> int:
-        return len(self._files_skipped)
+    def files_duplicated(self) -> int:
+        return self.get_stat('duplicate_file')
 
     @classmethod
     def get_default_filename_pattern(cls) -> StrPattern:
         # A temporary hack to inject a class attribute into a pydantic model.
         return r'.*[.](jpg|jpeg|webp|png|dng|arw|nef|psd|tif|tiff|mp4)'
+    
+    def record_duplicate_file(self, count : int = 1) -> None:
+        self.record_stat('duplicate_file', count)
 
     def get_target_directory(self) -> Path:
         if not self.target_directory:
@@ -169,9 +157,9 @@ class FileOrganizer(FileManager):
         # Gather subdirectories in the source directory
         directories = self.yield_directories(self.directory)
 
-        with tqdm(desc="Total Progress", unit='dir', total=None) as self.progress:
+        with tqdm(desc="Total Progress", unit='dir', total=None) as progress_bar:
             for subdir in directories:
-                self.progress.set_description(f'{str(subdir.absolute())[-20:]}...')
+                progress_bar.set_description(f'{str(subdir.absolute())[-20:]}...')
                 try:
                     # Gather all files to process
                     files_to_process = self.yield_files(subdir)      
@@ -197,22 +185,31 @@ class FileOrganizer(FileManager):
                         ):
                             try:
                                 future.result()
+                            except OneFileException as ofe:
+                                logger.error(f"Error organizing file: {ofe}")
                             except Exception as e:
-                                # TODO: More specific exception
+                                # log and re-raise
                                 logger.error(f"Error organizing file: {e}")
+                                self.record_error()
+                                raise
                             finally:
-                                self.progress.set_postfix(
-                                    moved       = self.count_files_moved,
-                                    skipped     = self.count_files_skipped,
-                                    deleted     = self.count_files_deleted,
+                                progress_bar.set_postfix(
+                                    moved       = self.files_moved,
+                                    errors      = self.errors,
+                                    skipped     = self.files_skipped,
+                                    deleted     = self.files_deleted,
                                     directories_created = self.directories_created,
                                 )
                 finally:
-                    self.progress.update(1)
+                    progress_bar.update(1)
                     # Remove the directory if it is now empty
                     self.delete_directory_if_empty(subdir)
 
-        logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted', self.count_files_moved, self.count_files_skipped, self.count_files_deleted)
+        logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted', 
+                    self.files_moved, 
+                    self.files_skipped, 
+                    self.files_deleted,
+        )
 
         # After organization, cleanup empty directories
         self.delete_empty_directories()
@@ -247,21 +244,12 @@ class FileOrganizer(FileManager):
         """
         filename = file_path.name
 
-        # Ensure it matches the pattern
-        if not self.filename_match(filename):
-            self.append_skipped_file(file_path)
-            logger.info(f"Skipping file {file_path} due to invalid filename")
-            logger.info('Pattern was: %s', self.filename_pattern)
-            logger.info('Filename was: %s', filename)
-            sys.exit()
-            return None
-
         # Create the subdir
         target_dir = self.create_subdir(file_path)
         destination_path = target_dir / filename
 
         if file_path == destination_path:
-            self.append_skipped_file(file_path)
+            self.record_skip_file()
             logger.debug(f"Skipping file {file_path} as it is already in the correct directory")
             return None
 
@@ -271,7 +259,7 @@ class FileOrganizer(FileManager):
         # TODO: Check file and target file are same drive. If not, verify=True
         return self.move_file(file_path, target_file)
 
-    def mkdir(self, directory: Path, message: str | None = "Created directory") -> Path:
+    def mkdir(self, directory: Path, success_message: str | None = "Created directory", *, parents: bool = True, exist_ok : bool = True) -> Path:
         """
         Create a directory if it does not exist.
 
@@ -289,17 +277,16 @@ class FileOrganizer(FileManager):
             return directory
 
         try:
-            result = super().mkdir(directory)
+            result = super().mkdir(directory, parents=parents, exist_ok=exist_ok)
 
-            self.directories_created += 1
-            if message:
-                logger.debug(f"{message}: {directory}")
-        except Exception as e:
-            raise ShouldTerminateException(f'Error creating directory: {directory}') from e
+            if success_message:
+                logger.debug(f"{success_message}: {directory}")
+        except OSError as ose:
+            raise ShouldTerminateException(f'Error creating directory: {directory} -> {ose}') from ose
 
         return result
 
-    def delete_file(self, file_path: Path, message : str = "Deleted file", use_trash : bool = True) -> bool:
+    def delete_file(self, file_path: Path, use_trash : bool = True) -> bool:
         """
         Delete a file.
 
@@ -319,13 +306,12 @@ class FileOrganizer(FileManager):
 
         try:
             result = super().delete_file(file_path, use_trash)
-            logger.debug(f"{message}: {file_path}")
-        except Exception as e:
-            raise OneFileException('Error deleting file') from e
+        except OSError as ose:
+            raise OneFileException(f'Error deleting file: {ose}') from ose
 
         return result
 
-    def move_file(self, source: Path, destination: Path, message : str | None = "Moved file", verify : bool = False) -> Path:
+    def move_file(self, source: Path, destination: Path, verify : bool = False) -> Path:
         """
         Move a file to a new location.
 
@@ -342,9 +328,6 @@ class FileOrganizer(FileManager):
             ShouldTerminateException: If the checksums do not match after moving the file.
         """
         destination = super().move_file(source, destination, verify=verify)
-
-        if message:
-            logger.debug(f"{message}: {source} to {destination}")
 
         return destination
 
@@ -371,9 +354,9 @@ class FileOrganizer(FileManager):
             # Generate the directory name in the format year/year-month
             dir_name = f"{year}/{year}-{month}-{day}/"
 
-        except Exception as e:
-            logger.error(f"Error occurred while finding subdirectory: {e}")
-            raise ValueError(f"Unable to determine a subdir from: {filepath}") from e
+        except OSError as ose:
+            logger.error(f"Error occurred while finding subdirectory: {ose}")
+            raise ValueError(f"Unable to determine a subdir from: {filepath} -> {ose}") from ose
 
         return dir_name
 
@@ -415,15 +398,16 @@ class FileOrganizer(FileManager):
 
         if self.skip_collision:
             # Skip moving files on collision
-            self.append_skipped_file(source_file)
+            self.record_skip_file()
             logger.debug(f"Skipping file {source_file} due to collision with {destination}")
             raise DuplicationHandledException(f"Duplicate file {source_file} handled")
 
         if self.files_match(source_file, destination, self.skip_hash):
             # Files are identical; delete the source file
-            self.duplicates_found += 1
+            self.record_duplicate_file()
             if not self.skip_hash:
-                self.delete_file(source_file, "Duplicate file found; deleted")
+                logger.debug('Duplicate file found: %s', source_file)
+                self.delete_file(source_file)
             raise DuplicationHandledException(f"Duplicate file {source_file} handled")
 
         return False
@@ -464,12 +448,14 @@ class FileOrganizer(FileManager):
         if self.dry_run:
             message_prefix = f"[DRY RUN] {message_prefix}"
 
-        logger.info('%s %s files moved, %s files deleted, %s files skipped, %s directories created',
+        logger.info('%s %s files moved, %s files deleted, %s files skipped, %s directories created, %s directories removed, %s errors',
                     message_prefix or '',
-                    self.count_files_moved,
-                    self.count_files_deleted,
-                    self.count_files_skipped,
-                    self.directories_created
+                    self.files_moved,
+                    self.files_deleted,
+                    self.files_skipped,
+                    self.directories_created,
+                    self.directories_deleted,
+                    self.errors,
         )
 
 def main():

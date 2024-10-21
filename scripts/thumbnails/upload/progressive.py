@@ -56,12 +56,14 @@ import asyncio
 import logging
 import os
 import sys
+import threading
 import time
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from dotenv import load_dotenv
 import argparse
+from pydantic import PrivateAttr
 from tqdm import tqdm
 
 # Add the root directory of the project to sys.path
@@ -78,6 +80,20 @@ logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
 
+    @property
+    def files_uploaded(self) -> int:
+        return self.get_stat('uploaded_file')
+
+    @property
+    def files_duplicated(self) -> int:
+        return self.get_stat('duplicate_file')
+
+    def record_upload_file(self, count : int = 1) -> None:
+        self.record_stat('uploaded_file', count)
+
+    def record_duplicate_file(self, count : int = 1) -> None:
+        self.record_stat('duplicate_file', count)
+
     def _upload_file(self, image_path: Path, status: Status | None = None, retries: int = 3) -> UploadStatus:
         """
         Upload a file to Immich.
@@ -91,9 +107,11 @@ class ImmichProgressiveUploader(ImmichInterface):
         """
         if self.should_ignore_file(image_path, status):
             logger.debug('Ignoring %s', image_path)
+            self.record_skip_file()
             return UploadStatus.SKIPPED
 
         if self.check_dry_run('running immich upload'):
+            self.record_upload_file()
             return UploadStatus.UPLOADED
 
         command = ["immich", "upload", image_path.as_posix()]
@@ -112,58 +130,40 @@ class ImmichProgressiveUploader(ImmichInterface):
                 # Analyze the output
                 if "All assets were already uploaded" in output:
                     logger.debug("%s already uploaded.", image_path)
+                    self.record_duplicate_file()
                     return UploadStatus.DUPLICATE
                 if "Unsupported file type" in output:
                     logger.debug("Unsupported file type: %s", image_path)
+                    self.record_error()
                     return UploadStatus.ERROR
                 if "Successfully uploaded" in output:
                     logger.debug("Uploaded %s successfully.", image_path)
+                    self.record_upload_file()
                     return UploadStatus.UPLOADED
 
                 logger.info('Unknown output: %s', output)
                 logger.info('By default, marking file %s uploaded successfully.', image_path)
                 return UploadStatus.UPLOADED
+
             except subprocess.CalledProcessError as e:
                 output = e.stdout + e.stderr
                 logger.error(f"Failed to upload {image_path}: {output}")
+
                 if "fetch failed" in output or "ETIMEDOUT" in output or "ENETUNREACH" in output:
                     attempt += 1
                     if attempt <= retries:
                         logger.info(f"Retrying upload for {image_path} in 10 seconds... (Attempt {attempt}/{retries})")
                         time.sleep(10)
-                    else:
-                        logger.error(f"Max retries reached for {image_path}.")
-                        return UploadStatus.ERROR
-                else:
-                    return UploadStatus.ERROR
+                        continue
+                    
+                    logger.error(f"Max retries reached for {image_path}.")
 
-                # Analyze the output
-                if "All assets were already uploaded" in output:
-                    logger.debug("%s already uploaded.", image_path)
-                    return UploadStatus.DUPLICATE
-                if "Unsupported file type" in output:
-                    logger.debug("Unsupported file type: %s", image_path)
-                    return UploadStatus.ERROR
-                if "Successfully uploaded" in output:
-                    logger.debug("Uploaded %s successfully.", image_path)
-                    return UploadStatus.UPLOADED
+                self.record_error()
+                return UploadStatus.ERROR
 
-                logger.info('Unknown output: %s', output)
-                logger.info('By default, marking file %s uploaded successfully.', image_path)
-                return UploadStatus.UPLOADED
-            except subprocess.CalledProcessError as e:
-                output = e.stdout + e.stderr
-                logger.error(f"Failed to upload {image_path}: {output}")
-                if "fetch failed" in output or "ETIMEDOUT" in output or "ENETUNREACH" in output:
-                    attempt += 1
-                    if attempt <= retries:
-                        logger.info(f"Retrying upload for {image_path} in 10 seconds... (Attempt {attempt}/{retries})")
-                        time.sleep(10)
-                    else:
-                        logger.error(f"Max retries reached for {image_path}.")
-                        return UploadStatus.ERROR
-                else:
-                    return UploadStatus.ERROR
+        logger.error('Max retries reached for %s.', image_path)
+        self.record_error()
+        return UploadStatus.ERROR
 
     def upload_file_threadsafe(self, image_path: Path, status: Status | None = None) -> UploadStatus:
         """
@@ -206,11 +206,6 @@ class ImmichProgressiveUploader(ImmichInterface):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
         directories = self.yield_directories(directory, recursive=recursive)
 
-        uploaded_count = 0
-        skipped_count = 0
-        error_count = 0
-        duplicate_count = 0
-
         loop = asyncio.get_event_loop()
         directory_count_future = loop.run_in_executor(None, asyncio.run, self.count_directories(directory, recursive))
 
@@ -246,27 +241,19 @@ class ImmichProgressiveUploader(ImmichInterface):
                             ):
 
                                 try:
-                                    result = future.result()
-                                    if result == UploadStatus.UPLOADED:
-                                        uploaded_count += 1
-                                    elif result == UploadStatus.SKIPPED:
-                                        skipped_count += 1
-                                    elif result == UploadStatus.ERROR:
-                                        error_count += 1
-                                    elif result == UploadStatus.DUPLICATE:
-                                        duplicate_count += 1
-
+                                    future.result()
                                 except Exception as e:
-                                    error_count += 1
+                                    # Catch, report, and re-raise
+                                    self.record_error()
                                     logger.error(f"Exception during upload: {e}")
                                     raise
 
                                 finally:
                                     progress_bar.set_postfix(
-                                        error       = error_count,
-                                        skipped     = skipped_count,
-                                        duplicates  = duplicate_count,
-                                        uploaded    = uploaded_count
+                                        error       = self.errors,
+                                        skipped     = self.files_skipped,
+                                        duplicates  = self.files_duplicated,
+                                        uploaded    = self.files_uploaded,
                                     )
 
                         # At the conclusion of the upload, update the last processed time
@@ -388,21 +375,28 @@ def main():
             templates=templates,
         )
 
-        if args.sd:
-            immich.handle_sd_card(max_threads=args.max_threads)
-        else:
-            immich.upload(max_threads=args.max_threads)
+        try:
+            if args.sd:
+                immich.handle_sd_card(max_threads=args.max_threads)
+            else:
+                immich.upload(max_threads=args.max_threads)
 
-    except AuthenticationError:
-        logger.error("Authentication failed. Check your API key and URL.")
-        sys.exit(1)
-    except (FileNotFoundError, FileExistsError, AppException) as e:
-        logger.error('Exiting. %s', e)
-        raise
-        sys.exit(1)
+        except AuthenticationError:
+            logger.error("Authentication failed. Check your API key and URL.")
+            sys.exit(1)
+        except (FileNotFoundError, FileExistsError, AppException) as e:
+            logger.error('Exiting. %s', e)
+            raise
+            sys.exit(1)
+        finally:
+            logger.info("Stats: %d uploaded, %d skipped, %d duplicates, %d errors",
+                immich.files_uploaded,
+                immich.files_skipped,
+                immich.files_duplicated,
+                immich.errors
+            )
     except KeyboardInterrupt:
         logger.info("Upload cancelled by user.")
-        sys.exit(0)
 
     sys.exit(0)
 

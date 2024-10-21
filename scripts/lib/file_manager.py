@@ -26,12 +26,14 @@ from __future__ import annotations
 import os
 import re
 import sys
+import threading
 from typing import Iterator, Literal
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 import logging
+from collections import defaultdict
 from pathlib import Path
 from functools import lru_cache
 import hashlib
@@ -54,10 +56,8 @@ class FileManager(Script):
     dry_run: bool = False
     filename_pattern : re.Pattern = Field(default=None, validate_default=True)
 
-    _files_moved: list[Path] = PrivateAttr(default_factory=list)
-    _files_copied : list[Path] = PrivateAttr(default_factory=list)
-    _files_deleted: list[Path] = PrivateAttr(default_factory=list)
-    _files_skipped: list[Path] = PrivateAttr(default_factory=list)
+    _stats : dict[str, int] = PrivateAttr(default_factory=lambda: defaultdict(int))
+    _stats_lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
     _hash_cache: LRUCache = PrivateAttr(default_factory=lambda: LRUCache(maxsize=10000))
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
 
@@ -79,44 +79,68 @@ class FileManager(Script):
         return re.compile(str(v), re.IGNORECASE)
 
     @property
-    def files_moved(self) -> list[Path]:
-        return self._files_moved
+    def stats_lock(self) -> threading.Lock:
+        return self._stats_lock
 
     @property
-    def files_deleted(self) -> list[Path]:
-        return self._files_deleted
+    def files_moved(self) -> int:
+        return self.get_stat('files_moved')
 
     @property
-    def files_skipped(self) -> list[Path]:
-        return self._files_skipped
+    def files_copied(self) -> int:
+        return self.get_stat('files_copied')
 
     @property
-    def files_copied(self) -> list[Path]:
-        return self._files_copied
+    def files_deleted(self) -> int:
+        return self.get_stat('files_deleted')
 
-    def append_moved_file(self, file_path: Path) -> None:
-        """
-        Add a file to the list of moved files.
-        """
-        self._files_moved.append(file_path)
+    @property
+    def files_skipped(self) -> int:
+        return self.get_stat('files_skipped')
 
-    def append_copied_file(self, file_path: Path) -> None:
-        """
-        Add a file to the list of copied files.
-        """
-        self._files_copied.append(file_path)
+    @property
+    def directories_created(self) -> int:
+        return self.get_stat('directories_created')
 
-    def append_deleted_file(self, file_path: Path) -> None:
-        """
-        Add a file to the list of deleted files.
-        """
-        self._files_deleted.append(file_path)
+    @property
+    def directories_deleted(self) -> int:
+        return self.get_stat('directories_deleted')
 
-    def append_skipped_file(self, file_path: Path) -> None:
-        """
-        Add a file to the list of skipped files.
-        """
-        self._files_skipped.append(file_path)
+    @property
+    def errors(self) -> int:
+        return self.get_stat('errors')
+
+    def get_stat(self, key: str) -> int:
+        with self._stats_lock:
+            return self._stats[key]
+
+    def record_stat(self, key: str, value: int = 1) -> None:
+        with self._stats_lock:
+            self._stats[key] += value
+
+    def record_error(self, count : int = 1) -> None:
+        self.record_stat('errors', count)
+        
+    def record_move_file(self, count : int = 1) -> None:
+        self.record_stat('files_moved', count)
+
+    def record_copy_file(self, count : int = 1) -> None:
+        self.record_stat('files_copied', count)
+
+    def record_delete_file(self, count : int = 1) -> None:
+        self.record_stat('files_deleted', count)
+
+    def record_skip_file(self, count : int = 1) -> None:
+        self.record_stat('files_skipped', count)
+
+    def record_move_directory(self, count : int = 1) -> None:
+        self.record_stat('directories_created', count)
+
+    def record_delete_directory(self, count : int = 1) -> None:
+        self.record_stat('directories_deleted', count)
+
+    def record_create_directory(self, count : int = 1) -> None:
+        self.record_stat('directories_created', count)
 
     @classmethod
     def get_default_filename_pattern(cls) -> StrPattern:
@@ -212,39 +236,6 @@ class FileManager(Script):
 
         return result
 
-    def get_all_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> list[Path]:
-        """
-        Get a list of directories
-
-        Args:
-            directory (Path): The directory to search.
-            recursive (bool): Whether to search recursively.
-            allow_hidden (bool): Whether to include hidden directories.
-
-        Returns:
-            list[Path]: A list of directories
-        """
-        if not recursive:
-            if allow_hidden or not directory.name.startswith('.'):
-                return [directory]
-            return []
-
-        logger.debug('Searching %s for directories.', directory.absolute())
-
-        result = []
-        for dirpath, dirnames, _ in os.walk(directory):
-            # Remove hidden directories from dirnames so os.walk doesn't traverse into them
-            if not allow_hidden:
-                dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-
-                # Skip the directory if it's hidden
-                if Path(dirpath).name.startswith('.'):
-                    continue
-
-            result.append(Path(dirpath))
-
-        return result
-
     def yield_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> Iterator[Path]:
         """
         Yield directories
@@ -259,7 +250,8 @@ class FileManager(Script):
         """
         if not recursive:
             if allow_hidden or not directory.name.startswith('.'):
-                yield directory
+                if directory.name != '.trash':
+                    yield directory
             return
 
         logger.debug('Searching %s for directories.', directory.absolute())
@@ -267,17 +259,33 @@ class FileManager(Script):
         for dirpath, dirnames, _ in os.walk(directory):
             dirpath_obj = Path(dirpath)
 
+            if dirpath_obj.name == '.trash':
+                continue
+
             # Skip hidden directories if not allowed
             if not allow_hidden:
                 # Remove hidden directories from dirnames so os.walk doesn't traverse into them
                 dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-
+                
                 # Skip the current directory if it's hidden
                 if dirpath_obj.name.startswith('.'):
                     continue
 
             yield dirpath_obj
 
+    def get_all_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> list[Path]:
+        """
+        Get a list of directories
+
+        Args:
+            directory (Path): The directory to search.
+            recursive (bool): Whether to search recursively.
+            allow_hidden (bool): Whether to include hidden directories.
+
+        Returns:
+            list[Path]: A list of directories
+        """
+        return list(self.yield_directories(directory, recursive=recursive, allow_hidden=allow_hidden))
 
     async def count_directories(self, directory: Path, recursive: bool = True) -> int:
         """
@@ -290,25 +298,11 @@ class FileManager(Script):
         Returns:
             int: The total number of directories.
         """
+        # Avoid using a list comprehension to avoid loading all directories into memory
         count = 0
         for _ in self.yield_directories(directory, recursive=recursive):
             count += 1
         return count
-
-    def get_all_files(self, directory : Path | None = None) -> list[Path]:
-        """
-        Get a list of files in a directory.
-
-        Args:
-            directory: The directory to search. Defaults to self.directory.
-
-        Returns:
-            A list of files in the directory which match the file prefix.
-        """
-        directory = directory or self.directory
-        if self.file_prefix:
-            return directory.glob(f'{self.file_prefix}*')
-        return [f for f in directory.iterdir() if f.is_file()]
 
     def yield_files(self, directory : Path | None = None) -> Iterator[Path]:
         """
@@ -331,6 +325,18 @@ class FileManager(Script):
         for f in files:
             if self.should_include_file(f):
                 yield f
+                
+    def get_all_files(self, directory : Path | None = None) -> list[Path]:
+        """
+        Get a list of files in a directory.
+
+        Args:
+            directory: The directory to search. Defaults to self.directory.
+
+        Returns:
+            A list of files in the directory which match the file prefix.
+        """
+        return list(self.yield_files(directory))
 
     def should_include_file(self, item: Path) -> bool:
         """
@@ -343,7 +349,6 @@ class FileManager(Script):
             True if the file should be included, False otherwise.
         """
         if not item.is_file():
-            logger.debug('Skipping non-file: %s', item)
             return False
 
         if not self.filename_match(item.name):
@@ -363,6 +368,7 @@ class FileManager(Script):
         Returns:
             int: The total number of files.
         """
+        # Avoid using a list comprehension to avoid loading all files into memory
         count = 0
         for _ in self.yield_files(directory):
             count += 1
@@ -479,7 +485,7 @@ class FileManager(Script):
             logger.debug(f"Error checking if file exists: {e}")
         return False
 
-    def mkdir(self, directory: Path) -> Path:
+    def mkdir(self, directory: Path, *, parents: bool = True, exist_ok : bool = True) -> Path:
         """
         Create a directory if it does not exist.
 
@@ -490,7 +496,9 @@ class FileManager(Script):
             The directory path.
         """
         if not self.check_dry_run(f'creating directory {directory}'):
-            directory.mkdir(exist_ok=True)
+            directory.mkdir(parents=parents, exist_ok=exist_ok)
+
+        self.record_create_directory()
 
         return directory
 
@@ -519,7 +527,7 @@ class FileManager(Script):
                 file_path.unlink()
 
         if not file_path.exists():
-            self.append_deleted_file(file_path)
+            self.record_delete_file()
             return True
 
         return False
@@ -546,27 +554,41 @@ class FileManager(Script):
             recursive: Whether to delete recursively.
             cleanup: Whether to remove files that stall the process.
         """
+        junk_files = []
         for f in directory.iterdir():
             if f.is_dir():
                 if not recursive:
+                    # A directory exists and we can't remove it...
                     return False
                 
-                if not self.delete_directory_if_empty(f):
+                if self.delete_directory_if_empty(f):
                     # subdir is now deleted, so it doesnt count
                     continue
 
+                return False
+
             if cleanup:
                 # Remove files we don't care about that stall this process.
-                if f.name in ['.picasa.ini', 'Thumbs.db']:
-                    logger.debug('Deleting file="%s" in directory="%s"', f, directory)
-                    if self.delete_file(f):
-                        continue
+                if f.name in ['.picasa.ini', 'Thumbs.db', '.upload_status.txt', 'upload_status.txt']:
+                    # Don't remove junk files unless the rest of the dir is empty
+                    junk_files.append(f)
+                    continue
                 
             # something was found, so it's not empty
             logger.debug('NOT EMPTY: Found file="%s" in dir="%s".', f, directory.absolute())
             return False
+
+        # Nothing found except junk files... time to remove them.
+        for junk in junk_files:
+            logger.debug('Deleting file="%s" in directory="%s"', junk, directory)
+            if not self.delete_file(junk, use_trash=False):
+                logger.error('Unable to delete junk file: %s', junk)
+                return False
         
-        # nothing was found
+        # Nothing was found
+        if not self.check_dry_run(f'deleting empty directory {directory}'):
+            directory.rmdir()
+            self.record_delete_directory()
         return True
 
     def _find_trash_name(self, file_path: Path) -> Path:
@@ -618,7 +640,7 @@ class FileManager(Script):
         destination_dir = destination_path.parent
         if not self.check_dry_run(f'moving {source_path} to {destination_dir}'):
             source_path.rename(destination_path)
-            self.append_moved_file(destination_path)
+            self.record_move_file()
 
             if verify:
                 destination_hash = self.hash_file(destination_path)
@@ -663,7 +685,7 @@ class FileManager(Script):
                     logger.critical(f"Checksum mismatch after copying {source_path} to {destination_path}")
                     raise ShouldTerminateException(f'Checksum mismatch after copying {source_path} to {destination_path}')
 
-        self.append_copied_file(destination_path)
+        self.record_copy_file()
         return destination_path
 
     def check_dry_run(self, message : str | None = None) -> bool:

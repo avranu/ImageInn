@@ -8,6 +8,7 @@ __*
 *.pyc
 *.egg-info
 **/frontend/static/
+*.pynb
 
 # Libraries and tools
 node_modules/
@@ -32,6 +33,7 @@ hugin
 .venv_windows/
 .venv_linux/
 .direnv/
+.*/
 
 # Secrets, authentication, etc
 .env

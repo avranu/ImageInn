@@ -1,22 +1,27 @@
-"""
-
-	Metadata:
-
-		File: fix_created.py
-		Project: imageinn
-		Created Date: 21 Aug 2023
-		Author: Jess Mann
-		Email: jess.a.mann@gmail.com
-
-		-----
-
-		Last Modified: Wed Aug 23 2023
-		Modified By: Jess Mann
-
-		-----
-
-		Copyright (c) 2023 Jess Mann
-"""
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    fix_created.py                                                                                       *
+*        Project: imageinn                                                                                             *
+*        Version: 1.0.0                                                                                                *
+*        Created: 2024-04-30                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-21     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 import argparse
 import os
 from datetime import datetime
@@ -126,7 +131,6 @@ class TimestampUpdater:
 			print(f"An error occurred while processing {filename}: {str(e)}")
 
 		return {}
-
 
 def main():
 	# Get a path using argparse
