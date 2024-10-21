@@ -31,6 +31,7 @@ from typing import Iterator, Literal
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+import logging
 from pathlib import Path
 from functools import lru_cache
 import hashlib
@@ -43,7 +44,7 @@ from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.lib.script import Script
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 type StrPattern = str | re.Pattern | None
 
@@ -51,7 +52,7 @@ class FileManager(Script):
     directory: Path = Field(default=Path('.'))
     file_prefix: str = ''
     dry_run: bool = False
-    filename_pattern : re.Pattern = Field(default=None)
+    filename_pattern : re.Pattern = Field(default=None, validate_default=True)
 
     _files_moved: list[Path] = PrivateAttr(default_factory=list)
     _files_copied : list[Path] = PrivateAttr(default_factory=list)
@@ -59,7 +60,6 @@ class FileManager(Script):
     _files_skipped: list[Path] = PrivateAttr(default_factory=list)
     _hash_cache: LRUCache = PrivateAttr(default_factory=lambda: LRUCache(maxsize=10000))
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
-    _default_filename_pattern : StrPattern = '.*'
 
     @field_validator('directory', mode='before')
     def validate_directory(cls, v):
@@ -69,14 +69,14 @@ class FileManager(Script):
     def validate_filename_pattern(cls, v) -> re.Pattern:
         # None or empty results in None
         if not v:
-            v = cls._default_filename_pattern
+            v = cls.get_default_filename_pattern()
 
         # Already a pattern
         if isinstance(v, re.Pattern):
             return v
         
         # Compile a string into a pattern, so it is cached for repeated use
-        return re.compile(v, re.IGNORECASE)
+        return re.compile(str(v), re.IGNORECASE)
 
     @property
     def files_moved(self) -> list[Path]:
@@ -117,6 +117,11 @@ class FileManager(Script):
         Add a file to the list of skipped files.
         """
         self._files_skipped.append(file_path)
+
+    @classmethod
+    def get_default_filename_pattern(cls) -> StrPattern:
+        # A temporary hack to inject a class attribute into a pydantic model.
+        return '.*'
 
     def get_hasher(self, hasher : str = 'md5') -> hashlib._Hash:
         """
@@ -274,7 +279,7 @@ class FileManager(Script):
             yield dirpath_obj
 
 
-    async def count_directories(self, directory: Path, recursive: bool) -> int:
+    async def count_directories(self, directory: Path, recursive: bool = True) -> int:
         """
         Asynchronously count the number of directories.
 
@@ -316,16 +321,16 @@ class FileManager(Script):
             The next file in the directory.
         """
         directory = directory or self.directory
-        if self.file_prefix:
-            for f in directory.glob(f'{self.file_prefix}*'):
-                if not f.is_file():
-                    continue
 
-                yield f
+        if self.file_prefix:
+            #logger.debug('Yielding files with file_prefix="%s"', self.file_prefix)
+            files = directory.glob(f'{self.file_prefix}*')
         else:
-            for f in directory.iterdir():
-                if f.is_file():
-                    yield f
+            files = directory.iterdir()
+
+        for f in files:
+            if self.should_include_file(f):
+                yield f
 
     def should_include_file(self, item: Path) -> bool:
         """
@@ -338,10 +343,12 @@ class FileManager(Script):
             True if the file should be included, False otherwise.
         """
         if not item.is_file():
+            logger.debug('Skipping non-file: %s', item)
             return False
 
-        if self.filename_match(item.name):
-            return True
+        if not self.filename_match(item.name):
+            logger.debug('Skipping file due to its name: %s', item)
+            return False
 
         return True
 
@@ -503,8 +510,9 @@ class FileManager(Script):
         """
         if use_trash:
             trash_file_path = self._find_trash_name(file_path)
+            trash_dir = trash_file_path.parent
 
-            if not self.check_dry_run(f'moving {file_path} to trash {trash_file_path}'):
+            if not self.check_dry_run(f'moving {file_path} to trash {trash_dir}'):
                 file_path.rename(trash_file_path)
         else:
             if not self.check_dry_run(f'deleting file {file_path}'):
@@ -524,12 +532,42 @@ class FileManager(Script):
 
         count = 0
         for dirpath in self.yield_directories(directory, recursive=True):
-            if not any(dirpath.iterdir()):
-                if not self.check_dry_run(f'deleting empty directory {dirpath}'):
-                    dirpath.rmdir()
+            if self.delete_directory_if_empty(dirpath):
                 count += 1
 
         logger.info('Cleaned up %d empty directories.', count)
+
+    def delete_directory_if_empty(self, directory: Path, recursive : bool = True, cleanup : bool = True) -> bool:
+        """
+        Delete an empty directory, or return False.
+
+        Args:
+            directory: The directory to delete.
+            recursive: Whether to delete recursively.
+            cleanup: Whether to remove files that stall the process.
+        """
+        for f in directory.iterdir():
+            if cleanup:
+                # Remove files we don't care about that stall this process.
+                if f.name in ['.picasa.ini', 'Thumbs.db']:
+                    logger.debug('Deleting file="%s" in directory="%s"', f, directory)
+                    if self.delete_file(f):
+                        continue
+            
+            if not recursive:
+                return False
+            
+            if f.is_dir():
+                if self.delete_directory_if_empty(f):
+                    # subdir is now deleted, so it doesnt count
+                    continue
+                
+            # something was found, so it's not empty
+            logger.debug('NOT EMPTY: Found file="%s" in dir="%s".', f, directory.absolute())
+            return False
+        
+        # nothing was found
+        return True
 
     def _find_trash_name(self, file_path: Path) -> Path:
         """
@@ -577,15 +615,16 @@ class FileManager(Script):
         if verify:
             source_hash = self.hash_file(source_path)
 
-        if not self.check_dry_run(f'moving {source_path} to {destination_path}'):
+        destination_dir = destination_path.parent
+        if not self.check_dry_run(f'moving {source_path} to {destination_dir}'):
             source_path.rename(destination_path)
             self.append_moved_file(destination_path)
 
             if verify:
                 destination_hash = self.hash_file(destination_path)
                 if source_hash != destination_hash:
-                    logger.critical(f"Checksum mismatch after moving {source_path} to {destination_path}")
-                    raise ShouldTerminateException(f'Checksum mismatch after moving {source_path} to {destination_path}')
+                    logger.critical(f"Checksum mismatch after moving {source_path} to {destination_dir}")
+                    raise ShouldTerminateException(f'Checksum mismatch after moving {source_path} to {destination_dir}')
 
         return destination_path
 
@@ -642,7 +681,7 @@ class FileManager(Script):
             return True
 
         if message:
-            logger.debug('Running %s', message)
+            logger.debug('RUN -> %s', message)
         return False
 
     def __hash__(self) -> int:

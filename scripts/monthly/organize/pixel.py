@@ -36,7 +36,7 @@ import os
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-import re
+import logging
 from pathlib import Path
 import logging
 import argparse
@@ -47,7 +47,7 @@ from scripts.exceptions import ShouldTerminateException
 from scripts.lib.file_manager import StrPattern
 from scripts.monthly.organize.base import FileOrganizer
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 class PixelFileOrganizer(FileOrganizer):
     """
@@ -59,8 +59,9 @@ class PixelFileOrganizer(FileOrganizer):
     """
     file_prefix : str = 'PXL_'
 
-    # Private attributes
-    _default_filename_pattern : StrPattern = r'^PXL_(20\d{6})_'
+    @classmethod
+    def get_default_filename_pattern(cls):
+        return r'^PXL_(20\d{6})_'
 
     def find_subdir(self, filepath: Path) -> str:
         """
@@ -89,6 +90,8 @@ class PixelFileOrganizer(FileOrganizer):
         return dir_name
 
 def main():
+    logger = setup_logging()
+    
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize PXL_ files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')

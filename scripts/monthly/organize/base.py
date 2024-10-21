@@ -43,7 +43,8 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
 import sys
 import os
@@ -51,7 +52,6 @@ import os
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-import re
 from pathlib import Path
 import logging
 import argparse
@@ -60,18 +60,19 @@ from tqdm import tqdm
 from pydantic import Field, PrivateAttr, field_validator
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
+from scripts.lib.file_manager import StrPattern
 from scripts.monthly.exceptions import OneFileException, DuplicationHandledException
 from scripts.lib.file_manager import FileManager
 
-logger = setup_logging()
+logger = logging.getLogger(__name__)
 
 class FileOrganizer(FileManager):
     """
     Organize files into monthly directories based on the filename.
 
-    - Filenames are expected to start with 'PXL_' followed by an 8-digit date in the format 'YYYYMMDD'.
-    - Files are moved to a directory named 'YYYY-MM' under the specified directory.
-    - If a file with the same name already exists in the target directory, a unique filename is generated.
+    - Files are moved to a directory named 'YYYY/YYYY-MM-DD' under the specified directory.
+    - If a file with the same name already exists in the target directory, and hashes match, it is deleted.
+        - If the hash does not match, a unique filename is generated.
     """
     batch_size: int = -1
     skip_collision: bool = False
@@ -84,7 +85,6 @@ class FileOrganizer(FileManager):
 
     # Private attributes
     _progress: tqdm | None = PrivateAttr(default=None)
-    _default_filename_pattern : str | None = r'.*\.(jpg|jpeg|dng|arw|png|mp4)'
 
     @property
     def progress(self) -> tqdm:
@@ -92,6 +92,10 @@ class FileOrganizer(FileManager):
             self._progress = tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1)
 
         return self._progress
+
+    @progress.setter
+    def progress(self, value: tqdm) -> None:
+        self._progress = value
 
     @property
     def count_files_moved(self) -> int:
@@ -108,6 +112,11 @@ class FileOrganizer(FileManager):
     @property
     def count_files_skipped(self) -> int:
         return len(self._files_skipped)
+
+    @classmethod
+    def get_default_filename_pattern(cls) -> StrPattern:
+        # A temporary hack to inject a class attribute into a pydantic model.
+        return r'.*[.](jpg|jpeg|webp|png|dng|arw|nef|psd|tif|tiff|mp4)'
 
     def get_target_directory(self) -> Path:
         if not self.target_directory:
@@ -154,32 +163,76 @@ class FileOrganizer(FileManager):
         """
         Organize files into subdirectories based on their date.
         """
-        if self.check_dry_run('organizing files'):
+        if self.check_dry_run(f'organizing files with prefix {self.file_prefix} in {self.directory.absolute()}'):
             return
 
-        # Gather all files to process
-        files_to_process = self.yield_files()
+        # Gather subdirectories in the source directory
+        directories = self.yield_directories(self.directory)
 
-        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-            list(tqdm(executor.map(self.process_file_threadsafe, files_to_process), desc='Processing files', unit='files'))
+        with tqdm(desc="Total Progress", unit='dir', total=None) as self.progress:
+            for subdir in directories:
+                self.progress.set_description(f'{str(subdir.absolute())[-20:]}...')
+                try:
+                    # Gather all files to process
+                    files_to_process = self.yield_files(subdir)      
+
+                    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
+                        futures = []
+                        for file in files_to_process:
+                            futures.append(executor.submit(self.process_file_threadsafe, file))
+
+                        if (count := len(futures)) < 1:
+                            # We will attempt to delete the dir in `finally` below
+                            continue
+
+                        logger.debug('%d files found in %s', count, subdir)
+
+                        # Initialize the progress bar
+                        for future in tqdm(
+                            as_completed(futures),
+                            total=count,
+                            unit='files',
+                            leave=True,
+                            desc=f"{subdir.absolute()}",
+                        ):
+                            try:
+                                future.result()
+                            except Exception as e:
+                                # TODO: More specific exception
+                                logger.error(f"Error organizing file: {e}")
+                            finally:
+                                self.progress.set_postfix(
+                                    moved       = self.count_files_moved,
+                                    skipped     = self.count_files_skipped,
+                                    deleted     = self.count_files_deleted,
+                                    directories_created = self.directories_created,
+                                )
+                finally:
+                    self.progress.update(1)
+                    # Remove the directory if it is now empty
+                    self.delete_directory_if_empty(subdir)
+
+        logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted', self.count_files_moved, self.count_files_skipped, self.count_files_deleted)
 
         # After organization, cleanup empty directories
         self.delete_empty_directories()
 
         self.report('Finished organizing.')
 
-    def process_file_threadsafe(self, file: Path):
+    def process_file_threadsafe(self, file: Path) -> bool:
         """
         Process a single file and handle exceptions safely.
         """
         try:
-            self.process_file(file)
+            if self.process_file(file):
+                return True
         except DuplicationHandledException:
             logger.debug(f"Duplicate file {file} handled")
+            return True
         except OneFileException as e:
             logger.error(f"Error processing file {file}: {e}")
-        finally:
-            self._update_progress()
+
+        return False
 
 
     def process_file(self, file_path: Path) -> Path | None:
@@ -197,14 +250,23 @@ class FileOrganizer(FileManager):
         # Ensure it matches the pattern
         if not self.filename_match(filename):
             self.append_skipped_file(file_path)
-            logger.debug(f"Skipping file {file_path} due to invalid filename")
+            logger.info(f"Skipping file {file_path} due to invalid filename")
+            logger.info('Pattern was: %s', self.filename_pattern)
+            logger.info('Filename was: %s', filename)
+            sys.exit()
             return None
 
         # Create the subdir
         target_dir = self.create_subdir(file_path)
+        destination_path = target_dir / filename
+
+        if file_path == destination_path:
+            self.append_skipped_file(file_path)
+            logger.debug(f"Skipping file {file_path} as it is already in the correct directory")
+            return None
 
         # Handle potential filename collisions. This will throw an exception if the collision cannot be handled.
-        target_file = self.handle_collision(file_path, target_dir / filename)
+        target_file = self.handle_collision(file_path, destination_path)
 
         # TODO: Check file and target file are same drive. If not, verify=True
         return self.move_file(file_path, target_file)
@@ -410,30 +472,14 @@ class FileOrganizer(FileManager):
                     self.directories_created
         )
 
-    def _update_progress(self, increase_progress_bar : int = 1) -> None:
-        description = f'Organizing... {self.count_files_moved} files moved'
-        if self.count_files_deleted > 0:
-            description = f'{description}, {self.count_files_deleted} deleted'
-        """
-        if self.duplicates_found > 0:
-            description = f'{description}, {self.duplicates_found} duplicates'
-        """
-        if self.directories_created > 0:
-            description = f'{description}, {self.directories_created} directories created'
-        if self.count_files_skipped > 0:
-            description = f'{description}, {self.count_files_skipped} skipped'
-
-        self.progress.set_description(description)
-
-        if increase_progress_bar > 0:
-            self.progress.update(increase_progress_bar)
-
 def main():
+    logger = setup_logging()
+    
     # Set up argument parser
-    parser = argparse.ArgumentParser(description='Organize PXL_ files into monthly directories.')
+    parser = argparse.ArgumentParser(description='Organize files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')
     parser.add_argument('-t', '--target', default=None, help='Target directory to move files to')
-    parser.add_argument('-p', '--prefix', default='PXL_', help='File prefix to match (default: PXL_)')
+    parser.add_argument('-p', '--prefix', default='', help='File prefix to match')
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
     parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
