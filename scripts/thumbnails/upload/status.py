@@ -29,6 +29,7 @@ import sys
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
+import time
 from typing import Iterator
 from enum import Enum
 from pathlib import Path
@@ -47,6 +48,10 @@ class UploadStatus(Enum):
     SKIPPED = 'skipped'
     DUPLICATE = 'duplicate'
     ERROR = 'error'
+
+# Maximum time to wait between attempts to save the status file
+# 10 minutes
+MAX_WAIT_TIME = 10 * 60
 
 class Status(BaseModel):
     """
@@ -116,15 +121,37 @@ class Status(BaseModel):
             failure = sum(1 for status in self.statuses.values() if self.was_failed(status))
             logger.debug(f"Loaded status file in {self.directory.name}. Success: {success}, Skipped: {skipped}, Failure: {failure}")
 
-    def save(self):
+    def save(self) -> bool:
         """
         Save the status data to the status file.
+        """
+        # Wait time between attempts in seconds
+        wait_time = 2
+
+        # Retry if failure
+        # -- this occurs if the network is down
+        for attempt in range(100):
+            try:
+                return self._write_status_file()
+            except OSError as e:
+                logger.error("%d: Error saving status file, waiting %d seconds for retry: %s", attempt, wait_time, e)
+                
+            time.sleep(wait_time)
+            # Increase the wait time up to a maximum
+            wait_time = min(wait_time * 2, MAX_WAIT_TIME)
+
+        logger.error("Failed to save status file after %d attempts", attempt)
+        return False
+
+    def _write_status_file(self) -> bool:
+        """
+        Write the status data to the status file.
         """
         with self.lock:
             if not self.statuses:
                 logger.debug('Skipping saving empty status file')
-                return
-
+                return False
+            
             with self.status_file.open('w') as f:
                 if self.last_processed_time:
                     f.write(f'# last_processed_time: {self.last_processed_time}\n')
@@ -135,7 +162,9 @@ class Status(BaseModel):
                     if file_status == UploadStatus.SKIPPED:
                         continue
                     f.write(f'{filename}\t{file_status.value}\n')
-
+                    
+        return True
+                    
     def update_meta(self):
         """
         Update the last processed time to the current time, and update the version.
