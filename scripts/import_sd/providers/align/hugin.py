@@ -29,17 +29,18 @@ from scripts.import_sd.photostack import PhotoStack
 
 logger = logging.getLogger(__name__)
 
+
 class HuginProvider(AlignmentProvider):
 	"""
 	Align images using Hugin's align_image_stack command.
 	"""
-	aligned_path : DirPath
+	aligned_path: DirPath
 
-	def __init__(self, aligned_path : DirPath) -> None:
+	def __init__(self, aligned_path: DirPath) -> None:
 		super().__init__()
 		self.aligned_path = aligned_path
 
-	def next(self, photos: list[Photo] | PhotoStack, allowed_errors : int = 2, minimum_size : int = 2) -> dict[Photo, Photo]:
+	def next(self, photos: list[Photo] | PhotoStack, allowed_errors: int = 2, minimum_size: int = 2) -> dict[Photo, Photo]:
 		"""
 		Align a single bracket of photos.
 
@@ -95,7 +96,7 @@ class HuginProvider(AlignmentProvider):
 
 		return aligned_photos
 
-	def attempt_alignment(self, photos: list[Photo], allowed_errors : int = 2, minimum_size : int = 2) -> dict[Photo, Photo] | None:
+	def attempt_alignment(self, photos: list[Photo], allowed_errors: int = 2, minimum_size: int = 2) -> dict[Photo, Photo] | None:
 		"""
 		Attempt to align a single bracket of photos without retrying.
 
@@ -105,10 +106,10 @@ class HuginProvider(AlignmentProvider):
 		Returns:
 			dict[Photo, Photo]: A dictionary of the original photos and their aligned counterparts.
 		"""
-		aligned_photos : list[Photo] = []
+		aligned_photos: list[Photo] = []
 		expected_photos: dict[Photo, FilePath] = {}
-		idx : int
-		photo : Photo
+		idx: int
+		photo: Photo
 		for idx, photo in enumerate(photos):
 			expected_photos[photo] = self.aligned_path.file(f'aligned_tmp_{idx:04}.tif')
 
@@ -123,7 +124,7 @@ class HuginProvider(AlignmentProvider):
 			_output, _error = self.subprocess(command)
 
 			# Ensure the right number of photos were created
-			missing : dict[int, FilePath] = {}
+			missing: dict[int, FilePath] = {}
 			for idx, (photo, output_photo) in enumerate(expected_photos.items()):
 				if not output_photo.exists():
 					missing[idx] = output_photo
@@ -143,7 +144,6 @@ class HuginProvider(AlignmentProvider):
 					logger.error('OUTPUT: %s', _output)
 					logger.error('ERROR: %s', _error)
 					return None
-
 				"""
 				Check if the missing photos are at the beginning or end of the bracket.
 				For example:
@@ -154,9 +154,9 @@ class HuginProvider(AlignmentProvider):
 				# Get the missing photo indexes
 				missing_idxs = list(missing.keys())
 				# Get the found photo indexes
-				photo_idxs = [ i for i in range(len(photos)) if i not in missing_idxs ]
+				photo_idxs = [i for i in range(len(photos)) if i not in missing_idxs]
 				# Check that photo_idxs are sequential
-				if photo_idxs != list(range(photo_idxs[0], photo_idxs[-1]+1)):
+				if photo_idxs != list(range(photo_idxs[0], photo_idxs[-1] + 1)):
 					logger.error('Aligned photos are missing from the middle of the bracket. Found %d photos. Missing %d photos: %s', minimum_size, found, len(missing), missing)
 					logger.error('OUTPUT: %s', _output)
 					logger.error('ERROR: %s', _error)

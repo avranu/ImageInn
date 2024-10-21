@@ -23,10 +23,12 @@ from datetime import datetime
 import sys
 import exifread
 
+
 class TimestampUpdater:
 	"""
 	Update the created and modified timestamps of a series of photos.
 	"""
+
 	def change_timestamp(self, filename, new_year, new_month, new_day):
 		self.change_system_timestamp(filename, new_year, new_month, new_day)
 		# self.change_exif_timestamp(filename, new_year, new_month, new_day)
@@ -66,7 +68,6 @@ class TimestampUpdater:
 		https://stackoverflow.com/questions/64514225/add-date-taken-exif-xmp-information-to-tif-file-using-python
 		"""
 		raise NotImplementedError("This method is not yet implemented for raw photos.")
-
 		"""
 		# Load the EXIF data from the image file
 		exif_data = piexif.load(filename)
@@ -102,7 +103,7 @@ class TimestampUpdater:
 			print(f"EXIF data not found for file: {filename}")
 		"""
 
-	def get_exif_from_raw(self, filename : str) -> dict[str, str]:
+	def get_exif_from_raw(self, filename: str) -> dict[str, str]:
 		"""
 		Get all exif attributes from a raw photo.
 
@@ -125,6 +126,7 @@ class TimestampUpdater:
 			print(f"An error occurred while processing {filename}: {str(e)}")
 
 		return {}
+
 
 def main():
 	# Get a path using argparse
@@ -178,6 +180,7 @@ def main():
 		print('')
 
 	print("Operation completed.")
+
 
 if __name__ == "__main__":
 	try:

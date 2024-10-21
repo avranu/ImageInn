@@ -21,10 +21,12 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
+
 class Choices(Enum):
 	"""
 	Standard enum methods to make enums more useful.
 	"""
+
 	@classmethod
 	def values(cls) -> list[str]:
 		"""
@@ -40,14 +42,14 @@ class Choices(Enum):
 		return [item.name for item in cls]
 
 	@classmethod
-	def has_value(cls, value : str) -> bool:
+	def has_value(cls, value: str) -> bool:
 		"""
 		Check if the enum has a value.
 		"""
 		return value in cls.values()
 
 	@classmethod
-	def has_name(cls, name : str) -> bool:
+	def has_name(cls, name: str) -> bool:
 		"""
 		Check if the enum has a name.
 		"""

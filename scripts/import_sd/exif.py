@@ -20,6 +20,7 @@
 from __future__ import annotations
 from enum import Enum
 
+
 class ExifTag(str, Enum):
 	"""
 	Enum of EXIF tags.

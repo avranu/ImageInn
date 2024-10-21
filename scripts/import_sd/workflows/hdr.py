@@ -37,13 +37,15 @@ from scripts.import_sd.providers import tiff, merge, align
 
 logger = logging.getLogger(__name__)
 
+
 class Timeout(Choices):
 	"""
 	Enum for the different timeouts.
 	"""
-	HDR = 900			# 15 minutes
-	TIFF = 300			# 5 minutes
-	ALIGN = 300			# 5 minutes # TODO
+	HDR = 900  # 15 minutes
+	TIFF = 300  # 5 minutes
+	ALIGN = 300  # 5 minutes # TODO
+
 
 class TiffMethods(Choices):
 	"""
@@ -52,7 +54,9 @@ class TiffMethods(Choices):
 	RAWPY = 'rawpy'
 	DARKTABLE = 'darktable-cli'
 
+
 MAX_THREADS = 4
+
 
 class OnConflict(Choices):
 	"""
@@ -62,6 +66,7 @@ class OnConflict(Choices):
 	RENAME = 'rename'
 	SKIP = 'skip'
 	FAIL = 'fail'
+
 
 class HDRWorkflow(Workflow):
 	"""
@@ -73,23 +78,23 @@ class HDRWorkflow(Workflow):
 		overwrite_temporary_files (bool): Whether to overwrite temporary files.
 		dry_run (bool): Whether to run the workflow in dry run mode
 	"""
-	raw_extension : str
-	dry_run : bool
-	onconflict : OnConflict
+	raw_extension: str
+	dry_run: bool
+	onconflict: OnConflict
 
-	tif_provider : tiff.TiffProvider
-	align_provider : align.AlignmentProvider
-	hdr_provider : merge.HDRProvider
+	tif_provider: tiff.TiffProvider
+	align_provider: align.AlignmentProvider
+	hdr_provider: merge.HDRProvider
 
-	def __init__(self, base_path : str | list[str] | FilePath, raw_extension : str = 'arw', onconflict : OnConflict = OnConflict.OVERWRITE, dry_run : bool = False):
-		self.base_path 		= base_path
-		self.raw_extension 	= raw_extension
-		self.dry_run 		= dry_run
-		self.onconflict 	= onconflict
+	def __init__(self, base_path: str | list[str] | FilePath, raw_extension: str = 'arw', onconflict: OnConflict = OnConflict.OVERWRITE, dry_run: bool = False):
+		self.base_path = base_path
+		self.raw_extension = raw_extension
+		self.dry_run = dry_run
+		self.onconflict = onconflict
 
-		self.tif_provider 	= tiff.DarktableProvider()
+		self.tif_provider = tiff.DarktableProvider()
 		self.align_provider = align.HuginProvider(self.aligned_path)
-		self.hdr_provider 	= merge.EnfuseProvider()
+		self.hdr_provider = merge.EnfuseProvider()
 
 	@property
 	def hdr_path(self) -> DirPath:
@@ -146,7 +151,7 @@ class HDRWorkflow(Workflow):
 			# Remove the directory if it is now empty
 			self.rmdir(directory)
 
-	def convert_to_tiff(self, files : list[Photo]) -> list[Photo]:
+	def convert_to_tiff(self, files: list[Photo]) -> list[Photo]:
 		"""
 		Convert an ARW file to a TIFF file.
 
@@ -161,7 +166,6 @@ class HDRWorkflow(Workflow):
 			FileFoundError: If self.onconflict is set to "fail" and the tif image already exists.
 		"""
 		job = {}
-
 		'''
 		# Multithreading support
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
@@ -206,7 +210,7 @@ class HDRWorkflow(Workflow):
 
 		return list(results.values())
 
-	def align_images(self, photos : list[Photo] | PhotoStack) -> list[Photo]:
+	def align_images(self, photos: list[Photo] | PhotoStack) -> list[Photo]:
 		"""
 		Use Hugin to align the images.
 
@@ -258,7 +262,7 @@ class HDRWorkflow(Workflow):
 
 		return aligned_photos
 
-	def create_hdr(self, photos : list[Photo] | PhotoStack, filename : Optional[str] = None) -> Photo | None:
+	def create_hdr(self, photos: list[Photo] | PhotoStack, filename: Optional[str] = None) -> Photo | None:
 		"""
 		Use enfuse to create the HDR image.
 
@@ -316,7 +320,7 @@ class HDRWorkflow(Workflow):
 
 		return self.get_photo(filepath)
 
-	def process_single_bracket(self, photos : list[Photo] | PhotoStack) -> Photo | None:
+	def process_single_bracket(self, photos: list[Photo] | PhotoStack) -> Photo | None:
 		"""
 		Process a bracket of photos into a single HDR.
 
@@ -405,7 +409,6 @@ class HDRWorkflow(Workflow):
 			if hdr:
 				logger.info('DONE -- Created HDR image at %s', hdr.path)
 				hdrs.append(hdr)
-
 		'''
 		# Process each bracket using multithreading
 		with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
@@ -451,7 +454,7 @@ class HDRWorkflow(Workflow):
 
 		return stack_collection.get_stacks()
 
-	def handle_conflict(self, path : Photo) -> FilePath | None:
+	def handle_conflict(self, path: Photo) -> FilePath | None:
 		"""
 		Handle a collision, where a temporary photo is being written to a location where a file already exists.
 
@@ -499,7 +502,7 @@ class HDRWorkflow(Workflow):
 			case _:
 				raise ValueError(f'Unknown onconflict value {self.onconflict}')
 
-	def generate_hdr_name(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str | list[str] | DirPath] = None, short : bool = False) -> str:
+	def generate_hdr_name(self, photos: list[Photo] | PhotoStack, output_dir: Optional[str | list[str] | DirPath] = None, short: bool = False) -> str:
 		"""
 		Create a new name for an HDR image based on a list of brackets that will be combined.
 
@@ -552,7 +555,7 @@ class HDRWorkflow(Workflow):
 
 		return filename
 
-	def name_hdr(self, photos : list[Photo] | PhotoStack, output_dir : Optional[str | list[str] | DirPath] = None, short : bool = False) -> FilePath:
+	def name_hdr(self, photos: list[Photo] | PhotoStack, output_dir: Optional[str | list[str] | DirPath] = None, short: bool = False) -> FilePath:
 		"""
 		Creates a unique name for the HDR image based on the photos that will be combined.
 
@@ -578,25 +581,26 @@ class HDRWorkflow(Workflow):
 
 		return filepath
 
+
 def main():
 	"""
 	Entry point for the application.
 	"""
 	# Parse command line arguments
-	parser = argparse.ArgumentParser(
-		description	= 'Run the HDR workflow.',
-		prog		= f'{os.path.basename(sys.argv[0])} {sys.argv[1]}'
-	)
+	parser = argparse.ArgumentParser(description='Run the HDR workflow.', prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}')
 	# Ignore the first argument, which is the script name
-	parser.add_argument('ignored', 				nargs = '?', 					help = argparse.SUPPRESS)
-	parser.add_argument('path', 				type = str, 				 	help = 'The path to the directory that contains the photos.')
-	parser.add_argument('--extension', '-e', 	type = str, default = "arw",	help = 'The extension to use for RAW files.')
-	parser.add_argument('--onconflict', '-c', 	type = str,
-		     									default = OnConflict.OVERWRITE,
-		     									choices = OnConflict.values(),	help = '''How to handle temporary files that already exist.
+	parser.add_argument('ignored', nargs='?', help=argparse.SUPPRESS)
+	parser.add_argument('path', type=str, help='The path to the directory that contains the photos.')
+	parser.add_argument('--extension', '-e', type=str, default="arw", help='The extension to use for RAW files.')
+	parser.add_argument('--onconflict',
+	                    '-c',
+	                    type=str,
+	                    default=OnConflict.OVERWRITE,
+	                    choices=OnConflict.values(),
+	                    help='''How to handle temporary files that already exist.
 																						  This will not alter original RAW files. Only files that this process
 																						  created in a previous run.''')
-	parser.add_argument('--dry-run', 			action = 'store_true', 			help = 'Whether to do a dry run, where no files are actually changed.')
+	parser.add_argument('--dry-run', action='store_true', help='Whether to do a dry run, where no files are actually changed.')
 
 	# Parse the arguments passed in from the user
 	args = parser.parse_args()
@@ -612,6 +616,7 @@ def main():
 
 	logger.error('Create HDR failed')
 	sys.exit(1)
+
 
 if __name__ == '__main__':
 	# Keep terminal open until script finishes and user presses enter

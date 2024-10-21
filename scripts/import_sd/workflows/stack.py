@@ -24,7 +24,6 @@ import sys
 import logging
 from scripts.import_sd.workflow import Workflow
 from scripts.import_sd.stackcollection import StackCollection
-
 """
 from scripts.import_sd.config import MAX_RETRIES
 from scripts.import_sd.operations import CopyOperation
@@ -39,14 +38,15 @@ from scripts.import_sd.stackcollection import StackCollection
 
 logger = logging.getLogger(__name__)
 
+
 class StackWorkflow(Workflow):
 	"""
 	Workflow for stacking photos.
 	"""
-	raw_extension : str
-	dry_run : bool = False
+	raw_extension: str
+	dry_run: bool = False
 
-	def __init__(self, base_path : str | list[str], raw_extension : str = 'arw', dry_run : bool = False):
+	def __init__(self, base_path: str | list[str], raw_extension: str = 'arw', dry_run: bool = False):
 		self.base_path = base_path
 		self.raw_extension = raw_extension.lower()
 		self.dry_run = dry_run
@@ -84,15 +84,13 @@ class StackWorkflow(Workflow):
 
 		return stack_collection.get_stacks()
 
+
 def main():
 	"""
 	Entry point for the application.
 	"""
 	# Parse command line arguments
-	parser = argparse.ArgumentParser(
-		description='Run the Stack workflow.',
-		prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}'
-	)
+	parser = argparse.ArgumentParser(description='Run the Stack workflow.', prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}')
 	# Ignore the first argument, which is the script name
 	parser.add_argument('ignored', nargs='?', help=argparse.SUPPRESS)
 	parser.add_argument('path', type=str, help='The path to the location of photos to stack.')
@@ -115,6 +113,7 @@ def main():
 
 	logger.error('Stack failed')
 	sys.exit(1)
+
 
 if __name__ == '__main__':
 	# Keep terminal open until script finishes and user presses enter

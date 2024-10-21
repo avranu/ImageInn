@@ -28,15 +28,16 @@ logger = logging.getLogger(__name__)
 
 TIME_DIFF_THRESHOLD = 5
 
+
 class PhotoStack:
 	"""
 	Represents a stack of photos.
 
 	Internally, this is represented as a dict.
 	"""
-	_photos : Dict[str, Photo]
-	_bias_gap : Decimal | None = None
-	_value_gap : Decimal | None = None
+	_photos: Dict[str, Photo]
+	_bias_gap: Decimal | None = None
+	_value_gap: Decimal | None = None
 
 	def __init__(self):
 		self._photos = {}
@@ -58,7 +59,7 @@ class PhotoStack:
 		"""
 		return self._bias_gap, self._value_gap
 
-	def add_photo(self, photo : Photo) -> bool:
+	def add_photo(self, photo: Photo) -> bool:
 		"""
 		Add a photo to the stack, if it belongs there.
 
@@ -110,7 +111,7 @@ class PhotoStack:
 
 		return bias, exposure
 
-	def _attribute_matches(self, photo : Photo, comparison : Photo, attribute : str) -> bool:
+	def _attribute_matches(self, photo: Photo, comparison: Photo, attribute: str) -> bool:
 		attr1 = getattr(photo, attribute)
 		attr2 = getattr(comparison, attribute)
 		if attr1 != attr2:
@@ -118,8 +119,7 @@ class PhotoStack:
 			return False
 		return True
 
-
-	def belongs(self, photo : Photo) -> bool:
+	def belongs(self, photo: Photo) -> bool:
 		"""
 		Determines if a photo belongs in the current stack
 
@@ -138,19 +138,19 @@ class PhotoStack:
 		last = photos[-1]
 
 		if not all([
-			self._attribute_matches(photo, last, 'lens'),
-			self._attribute_matches(photo, last, 'camera'),
+		    self._attribute_matches(photo, last, 'lens'),
+		    self._attribute_matches(photo, last, 'camera'),
 		]):
 			return False
 
 		# The exposure_value OR exposure_bias must be different than the current photo (unless they are none)
 		if all([photo.exposure_value == last.exposure_value, photo.exposure_bias == last.exposure_bias]) and \
-		   any([photo.exposure_value is not None, photo.exposure_bias is not None]):
+     any([photo.exposure_value is not None, photo.exposure_bias is not None]):
 			logger.debug("Photo %s exposure value and bias matches (B%s/%s, V%s/%s), so not added", photo.number, photo.exposure_bias, photos[-1].exposure_bias, photo.exposure_value, photos[-1].exposure_value)
 			return False
 
 		# Photo was taken within 5 seconds of the last photo (after accounting for shutter speed TODO)
-		diff : datetime.timedelta = photo.date - last.date
+		diff: datetime.timedelta = photo.date - last.date
 		if diff.total_seconds() > TIME_DIFF_THRESHOLD + photo.ss + last.ss:
 			logger.debug("Photo %s date %s does not match %s", photo.number, photo.date, photos[-1].date)
 			return False

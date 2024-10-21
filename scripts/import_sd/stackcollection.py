@@ -24,15 +24,17 @@ from scripts.import_sd.photostack import PhotoStack
 
 logger = logging.getLogger(__name__)
 
+
 class StackCollection:
 	"""
 	Represents a collection of stacks.
 	"""
+
 	def __init__(self):
 		self.stacks = []
 		self.photos = PhotoStack()
 
-	def append(self, stack : PhotoStack):
+	def append(self, stack: PhotoStack):
 		"""
 		Add a stack to the collection.
 
@@ -62,7 +64,7 @@ class StackCollection:
 		self.photos = PhotoStack()
 		return False
 
-	def add_photo(self, photo : Photo) -> None:
+	def add_photo(self, photo: Photo) -> None:
 		"""
 		Add a photo to the current stack.
 
@@ -79,7 +81,7 @@ class StackCollection:
 		self.finish_stack()
 		self.photos.add_photo(photo)
 
-	def add_photos(self, photos : list[Photo]) -> None:
+	def add_photos(self, photos: list[Photo]) -> None:
 		"""
 		Add a complete list of photos to the current stack.
 

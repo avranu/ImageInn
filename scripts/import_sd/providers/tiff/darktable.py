@@ -26,13 +26,14 @@ from scripts.import_sd.photo import Photo
 
 logger = logging.getLogger(__name__)
 
+
 class DarktableProvider(TiffProvider):
 	"""
 	Converts raw photos to TIFF files using darktable.
 	"""
-	command : str = 'darktable-cli'
+	command: str = 'darktable-cli'
 
-	def next(self, photo : Photo, tiff_path : FilePath) -> Photo | None:
+	def next(self, photo: Photo, tiff_path: FilePath) -> Photo | None:
 		"""
 		Convert a single raw photo to a TIFF file using darktable.
 

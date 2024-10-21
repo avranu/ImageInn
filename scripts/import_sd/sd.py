@@ -32,6 +32,7 @@ from scripts.import_sd.validator import Validator
 
 logger = logging.getLogger(__name__)
 
+
 class SDCard(DirPath):
 	"""
 	Represents an SD card.
@@ -82,7 +83,7 @@ class SDCard(DirPath):
 		raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), '/media')
 
 	@classmethod
-	def sd_contains_photos(cls, sd_path: str, raise_errors : bool = True) -> bool:
+	def sd_contains_photos(cls, sd_path: str, raise_errors: bool = True) -> bool:
 		"""
 		Determines if the SD card is structured in the way we expect to contain DSLR photos.
 
@@ -110,7 +111,7 @@ class SDCard(DirPath):
 		return Validator.is_dir(os.path.join(sd_path, 'DCIM'))
 
 	@classmethod
-	def get_list(cls, media_path : Optional[str] = None) -> list[SDFolder]:
+	def get_list(cls, media_path: Optional[str] = None) -> list[SDFolder]:
 		"""
 		Get all SD cards mounted to the server this code is running on.
 
@@ -171,7 +172,7 @@ class SDCard(DirPath):
 		return self.get_info_for(self.path)
 
 	@classmethod
-	def get_info_for(cls, sd_card_path : Optional[str] = None) -> SDFolder:
+	def get_info_for(cls, sd_card_path: Optional[str] = None) -> SDFolder:
 		"""
 		Get info about the SD card at the given path.
 
@@ -214,16 +215,9 @@ class SDCard(DirPath):
 			num_files += len(files)
 			num_dirs += len(dirs)
 
-		return SDFolder(
-			path = sd_card_path,
-			total = total,
-			used = used,
-			free = free,
-			num_files = num_files,
-			num_dirs = num_dirs
-		)
+		return SDFolder(path=sd_card_path, total=total, used=used, free=free, num_files=num_files, num_dirs=num_dirs)
 
-	def determine_subpath(self, filepath : str) -> str:
+	def determine_subpath(self, filepath: str) -> str:
 		"""
 		Takes a file path and turns it into just the subdirectories of the SD card (ignoring the root DCIM folder)
 

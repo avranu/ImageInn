@@ -23,6 +23,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 # An enum of copy operations (rsync, teracopy, etc)
 class CopyOperation(str, Enum):
 	"""

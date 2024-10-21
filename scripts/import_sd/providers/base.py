@@ -26,10 +26,12 @@ from scripts.lib.path import DirPath
 
 logger = logging.getLogger(__name__)
 
+
 class Provider(ABC):
 	"""
 	Represents a provider of a service, such as a photo alignment provider, or a photo merging provider.
 	"""
+
 	@abstractmethod
 	def run(self, *args, **kwargs) -> Any:
 		"""
@@ -58,7 +60,7 @@ class Provider(ABC):
 		"""
 		raise NotImplementedError("Provider.next() must be implemented in a subclass.")
 
-	def subprocess(self, command : Optional[list[str]] = None, cwd : Optional[DirPath | str] = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
+	def subprocess(self, command: Optional[list[str]] = None, cwd: Optional[DirPath | str] = None, check: bool = True, timeout: Optional[float] = None) -> tuple[str, str]:
 		"""
 		Run a subprocess, printing the command and output to the user.
 

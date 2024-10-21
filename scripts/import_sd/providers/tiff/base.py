@@ -29,11 +29,13 @@ from scripts.import_sd.photo import Photo
 
 logger = logging.getLogger(__name__)
 
+
 class TiffProvider(Provider, ABC):
 	"""
 	Convert raw photos to TIFF files.
 	"""
-	def run(self, files : dict[Photo, FilePath]) -> dict[Photo, Photo]:
+
+	def run(self, files: dict[Photo, FilePath]) -> dict[Photo, Photo]:
 		"""
 		Convert a list of raw photos to TIFF files.
 
@@ -55,8 +57,8 @@ class TiffProvider(Provider, ABC):
 				if not tiff:
 					# Wait a few seconds, then try again.
 					# Sleep a little longer each time, up to a maximum time.
-					sleep_time = min(60, 5 * (i+1))
-					logger.info('Waiting %d seconds and trying again. (%d/%d)', sleep_time, i+1, MAX_RETRIES)
+					sleep_time = min(60, 5 * (i + 1))
+					logger.info('Waiting %d seconds and trying again. (%d/%d)', sleep_time, i + 1, MAX_RETRIES)
 					time.sleep(sleep_time)
 					continue
 

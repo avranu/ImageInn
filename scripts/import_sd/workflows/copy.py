@@ -38,6 +38,7 @@ from scripts.import_sd.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 
+
 class CopyWorkflow(Workflow):
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
@@ -45,12 +46,12 @@ class CopyWorkflow(Workflow):
 	_base_path: DirPath
 	_jpg_path: DirPath
 	_backup_path: DirPath
-	_sd_card : SDCard = None
-	_bucket_path : DirPath = None
-	raw_extension : str
-	dry_run : bool = False
+	_sd_card: SDCard = None
+	_bucket_path: DirPath = None
+	raw_extension: str
+	dry_run: bool = False
 
-	def __init__(self, base_path : str, jpg_path : str, backup_path : str, raw_extension : str = 'arw', sd_card : Optional[str | SDCard] = None, dry_run : bool = False):
+	def __init__(self, base_path: str, jpg_path: str, backup_path: str, raw_extension: str = 'arw', sd_card: Optional[str | SDCard] = None, dry_run: bool = False):
 		"""
 		Args:
 			base_path (str):
@@ -188,7 +189,7 @@ class CopyWorkflow(Workflow):
 
 		return self._bucket_path
 
-	def run(self, operation : CopyOperation = CopyOperation.TERACOPY) -> bool:
+	def run(self, operation: CopyOperation = CopyOperation.TERACOPY) -> bool:
 		"""
 		Copy the SD card to several different network locations, and verify checksums after copy.
 
@@ -205,7 +206,7 @@ class CopyWorkflow(Workflow):
 			True
 		"""
 		logger.info('Copying sd card...')
-		errors : list[str] = []
+		errors: list[str] = []
 
 		# Check if paths are valid and writable
 		if not all(map(Validator.is_dir, [self.sd_card.path, self.base_path, self.jpg_path, self.backup_path])):
@@ -260,7 +261,7 @@ class CopyWorkflow(Workflow):
 
 		return True
 
-	def copy_from_list(self, list_path : str, destination_path: str, checksums_before : dict[str, str], operation : CopyOperation = CopyOperation.TERACOPY) -> bool:
+	def copy_from_list(self, list_path: str, destination_path: str, checksums_before: dict[str, str], operation: CopyOperation = CopyOperation.TERACOPY) -> bool:
 		"""
 		Perform a copy from a list of files to a destination using an arbitrary method, and verify checksums.
 
@@ -333,7 +334,7 @@ class CopyWorkflow(Workflow):
 		return False
 
 	@classmethod
-	def teracopy(cls, source_path : str, destination_path: str) -> bool:
+	def teracopy(cls, source_path: str, destination_path: str) -> bool:
 		"""
 		Use teracopy to copy the source files to the destination directory and verify checksums.
 
@@ -353,7 +354,7 @@ class CopyWorkflow(Workflow):
 		return True
 
 	@classmethod
-	def teracopy_from_list(cls, list_path : str, destination_path: str) -> bool:
+	def teracopy_from_list(cls, list_path: str, destination_path: str) -> bool:
 		"""
 		Use teracopy to copy files using a list of file paths to the destination directory and verify checksums.
 
@@ -387,15 +388,17 @@ class CopyWorkflow(Workflow):
 		count = 0
 
 		extensions = [
-			'.jpg', '.jpeg',
-			'.arw',
-			'.cr2',
-			'.nef',
-			'.dng',
-			'.orf',
-			'.raf',
-			'.tif', '.tiff',
-			'.png',
+		    '.jpg',
+		    '.jpeg',
+		    '.arw',
+		    '.cr2',
+		    '.nef',
+		    '.dng',
+		    '.orf',
+		    '.raf',
+		    '.tif',
+		    '.tiff',
+		    '.png',
 		]
 
 		# Look in the DCIM folder, and all subfolders
@@ -475,7 +478,7 @@ class CopyWorkflow(Workflow):
 		logger.info('Queueing %d files to copy', files.count())
 		return files
 
-	def create_filelist(self, destination_path : str, list_path : Optional[str] = None) -> tuple[str, list[str], list[str], dict[str, str]]:
+	def create_filelist(self, destination_path: str, list_path: Optional[str] = None) -> tuple[str, list[str], list[str], dict[str, str]]:
 		"""
 		Generates a list of files to copy to a given folder.
 
@@ -574,15 +577,13 @@ class CopyWorkflow(Workflow):
 
 		return results
 
+
 def main():
 	"""
 	Entry point for the application.
 	"""
 	# Parse command line arguments
-	parser = argparse.ArgumentParser(
-		description='Copy the SD card to a network location.',
-		prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}'
-	)
+	parser = argparse.ArgumentParser(description='Copy the SD card to a network location.', prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}')
 	# Ignore the first argument, which is the script name
 	parser.add_argument('ignored', nargs='?', help=argparse.SUPPRESS)
 	parser.add_argument('--sd-path', '-s', default=None, type=str, help='The path to the SD card to copy.')
@@ -608,6 +609,7 @@ def main():
 
 	logger.error('SD card copy failed')
 	sys.exit(1)
+
 
 if __name__ == '__main__':
 	# Keep terminal open until script finishes and user presses enter

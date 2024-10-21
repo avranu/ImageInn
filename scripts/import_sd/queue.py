@@ -27,6 +27,7 @@ from scripts.import_sd.photo import Photo
 
 logger = logging.getLogger(__name__)
 
+
 class Queue:
 	"""
 	Represents a queue of files to be copied.
@@ -97,7 +98,7 @@ class Queue:
 
 		return True
 
-	def append_parts(self, photo : Photo, destination_parts : list[str] | str | FilePath) -> bool:
+	def append_parts(self, photo: Photo, destination_parts: list[str] | str | FilePath) -> bool:
 		"""
 		Adds a photo to the queue, if possible, where the destination path is constructed from a list of path parts.
 
@@ -139,7 +140,7 @@ class Queue:
 		self._mismatched[photo] = existing
 		return len(self._mismatched)
 
-	def calculate_checksum(self, photo : FilePath) -> str:
+	def calculate_checksum(self, photo: FilePath) -> str:
 		"""
 		Calculates a checksum for the photo and saves it to the checksums list.
 
@@ -153,7 +154,7 @@ class Queue:
 		self.append_checksum(photo, checksum)
 		return checksum
 
-	def calculate_checksums(self, photos : list[FilePath]) -> dict[str, str]:
+	def calculate_checksums(self, photos: list[FilePath]) -> dict[str, str]:
 		"""
 		Calculates checksums for all photos and saves them to the checksums list.
 
@@ -183,7 +184,7 @@ class Queue:
 		"""
 		self._checksums[photo] = checksum
 
-	def get(self, destination : str) -> list[Photo]:
+	def get(self, destination: str) -> list[Photo]:
 		"""
 		Returns the queue.
 
@@ -247,7 +248,7 @@ class Queue:
 			return None
 		return self._checksums[photo]
 
-	def count(self, category : str = "queued") -> int:
+	def count(self, category: str = "queued") -> int:
 		"""
 		Returns the number of photos in the queue.
 
@@ -307,12 +308,7 @@ class Queue:
 		Returns:
 			dict: A dictionary representation of the queue.
 		"""
-		return {
-			"queue": self._queue,
-			"skipped": self._skipped,
-			"mismatched": self._mismatched,
-			"checksums": self._checksums
-		}
+		return {"queue": self._queue, "skipped": self._skipped, "mismatched": self._mismatched, "checksums": self._checksums}
 
 	def __len__(self) -> int:
 		"""

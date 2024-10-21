@@ -26,11 +26,13 @@ from scripts.import_sd.photo import Photo
 
 logger = logging.getLogger(__name__)
 
+
 class HDRProvider(Provider, ABC):
 	"""
 	This service provider merges a bracket of photos into an HDR image.
 	"""
-	def run(self, brackets: list[Photo], output_path : FilePath | None) -> Photo:
+
+	def run(self, brackets: list[Photo], output_path: FilePath | None) -> Photo:
 		"""
 		Merge the images in a bracket into a single HDR.
 

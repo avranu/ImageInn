@@ -1,8 +1,10 @@
 class AppException(Exception):
 	pass
 
+
 class ShouldTerminateException(AppException):
-    pass
+	pass
+
 
 class TooFastException(AppException):
 	pass

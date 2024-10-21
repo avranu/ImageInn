@@ -25,13 +25,14 @@ import logging
 import logging.config
 import subprocess
 import sys
-from typing import Any,  Optional
+from typing import Any, Optional
 
 from scripts.lib.path import FilePath, DirPath
 from scripts.import_sd.photo import Photo, FakePhoto
 from scripts.import_sd.sd import SDCard
 
 logger = logging.getLogger(__name__)
+
 
 class Actions(Enum):
 	"""
@@ -43,6 +44,7 @@ class Actions(Enum):
 	RENAME = 'rename'
 	STACK = 'stack'
 
+
 class Workflow:
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
@@ -50,11 +52,11 @@ class Workflow:
 	_base_path: DirPath
 	_jpg_path: FilePath
 	_backup_path: DirPath
-	_sd_card : SDCard = None
-	_bucket_path : DirPath | None = None
-	raw_extension : str
-	dry_run : bool = False
-	action : str
+	_sd_card: SDCard = None
+	_bucket_path: DirPath | None = None
+	raw_extension: str
+	dry_run: bool = False
+	action: str
 
 	@property
 	def base_path(self) -> DirPath:
@@ -76,7 +78,7 @@ class Workflow:
 
 		self._base_path = value
 
-	def get_photos(self, directory : Optional[DirPath] = None) -> list[Photo]:
+	def get_photos(self, directory: Optional[DirPath] = None) -> list[Photo]:
 		"""
 		Get a list of photos from a given directory
 
@@ -124,8 +126,7 @@ class Workflow:
 
 		return exists, mismatched
 
-
-	def generate_name(self, photo : Photo | str, short : bool = False, properties : Optional[dict[str, Any]] = None) -> str:
+	def generate_name(self, photo: Photo | str, short: bool = False, properties: Optional[dict[str, Any]] = None) -> str:
 		"""
 		Generate a name for the photo we are copying.
 
@@ -163,16 +164,16 @@ class Workflow:
 
 		# Merge properties from the param and the photo, prioritizing the param
 		props = {
-			'num': properties.get('number', photo.number),
-			'eb': properties.get('exposure_bias', photo.exposure_bias),
-			'ev': properties.get('exposure_value', photo.exposure_value),
-			'b': properties.get('brightness', photo.brightness),
-			'iso': properties.get('iso', photo.iso),
-			'ss': properties.get('ss', photo.ss),
-			'lens': properties.get('lens', photo.lens),
-			'ext': properties.get('extension', photo.extension),
-			'date': properties.get('date', photo.date),
-			'camera': properties.get('camera', photo.camera)
+		    'num': properties.get('number', photo.number),
+		    'eb': properties.get('exposure_bias', photo.exposure_bias),
+		    'ev': properties.get('exposure_value', photo.exposure_value),
+		    'b': properties.get('brightness', photo.brightness),
+		    'iso': properties.get('iso', photo.iso),
+		    'ss': properties.get('ss', photo.ss),
+		    'lens': properties.get('lens', photo.lens),
+		    'ext': properties.get('extension', photo.extension),
+		    'date': properties.get('date', photo.date),
+		    'camera': properties.get('camera', photo.camera)
 		}
 
 		if short is True:
@@ -193,7 +194,7 @@ class Workflow:
 
 		return f"{name}.{props['ext']}"
 
-	def generate_path(self, photo : Photo | str) -> FilePath:
+	def generate_path(self, photo: Photo | str) -> FilePath:
 		"""
 		Figure out an appropriate path to copy the file, given its creation date.
 
@@ -243,10 +244,10 @@ class Workflow:
 			year = f'{photo.date:%Y}'
 			date = f'{photo.date:%Y-%m-%d}'
 
-		return FilePath([self.base_path,year,date,filename])
+		return FilePath([self.base_path, year, date, filename])
 
 	@classmethod
-	def ask_user_continue(cls, message : str = "Errors were found:", errors : Optional[list] = None, continue_message : str = "Continue to the next step? [y/n]", throw_error : bool = True) -> bool:
+	def ask_user_continue(cls, message: str = "Errors were found:", errors: Optional[list] = None, continue_message: str = "Continue to the next step? [y/n]", throw_error: bool = True) -> bool:
 		"""
 		Ask the user if they want to continue copying the SD card, given the errors that occurred, using the CLI.
 
@@ -278,7 +279,7 @@ class Workflow:
 			raise KeyboardInterrupt(f'User decided to abort. Prompt was "{message}"')
 		return False
 
-	def mkdir(self, path : DirPath, exist_ok : bool = True) -> None:
+	def mkdir(self, path: DirPath, exist_ok: bool = True) -> None:
 		"""
 		Create a directory, if it doesn't already exist.
 
@@ -291,7 +292,7 @@ class Workflow:
 			else:
 				os.makedirs(path.path, exist_ok=exist_ok)
 
-	def rename(self, path : FilePath, destination : FilePath) -> None:
+	def rename(self, path: FilePath, destination: FilePath) -> None:
 		"""
 		Rename a file, if it doesn't already exist.
 
@@ -305,7 +306,7 @@ class Workflow:
 			else:
 				os.rename(path.path, destination.path)
 
-	def subprocess(self, command : str | list[str], cwd : Optional[DirPath | str] = None, check : bool = True, timeout : Optional[float] = None) -> tuple[str, str]:
+	def subprocess(self, command: str | list[str], cwd: Optional[DirPath | str] = None, check: bool = True, timeout: Optional[float] = None) -> tuple[str, str]:
 		"""
 		Run a subprocess, printing the command and output to the user.
 
@@ -358,7 +359,7 @@ class Workflow:
 		# Return the output
 		return output.stdout, output.stderr
 
-	def delete(self, path : FilePath) -> None:
+	def delete(self, path: FilePath) -> None:
 		"""
 		Delete a file.
 
@@ -373,7 +374,7 @@ class Workflow:
 			except FileNotFoundError:
 				logger.debug('File "%s" does not exist, so was not deleted.', path)
 
-	def rmdir(self, path : DirPath) -> bool:
+	def rmdir(self, path: DirPath) -> bool:
 		"""
 		Delete a directory.
 
@@ -401,7 +402,7 @@ class Workflow:
 
 		return True
 
-	def get_photo(self, path : str | list[str] | FilePath) -> Photo:
+	def get_photo(self, path: str | list[str] | FilePath) -> Photo:
 		"""
 		Turn a path into a Photo object.
 
@@ -417,24 +418,36 @@ class Workflow:
 			return FakePhoto(path)
 		return Photo(path)
 
+
 def main():
 	"""
 	Entry point for the application.
 	"""
 	# Logging config, which will eventually be migrated to a separate configfile
 	config = {
-		'version': 1,
-		'formatters': {
-			'basic': {'format': '%(asctime)s - %(levelname)s - %(message)s'}
-		},
-		'handlers': {
-			'console': {'class': 'logging.StreamHandler', 'formatter': 'basic', 'level': logging.INFO},
-			'file': {'class': 'logging.FileHandler', 'formatter': 'basic', 'level': logging.DEBUG, 'filename': 'log.txt'}
-		},
-		'root': {
-			'handlers': ['console', 'file'],
-			'level': logging.DEBUG,
-		},
+	    'version': 1,
+	    'formatters': {
+	        'basic': {
+	            'format': '%(asctime)s - %(levelname)s - %(message)s'
+	        }
+	    },
+	    'handlers': {
+	        'console': {
+	            'class': 'logging.StreamHandler',
+	            'formatter': 'basic',
+	            'level': logging.INFO
+	        },
+	        'file': {
+	            'class': 'logging.FileHandler',
+	            'formatter': 'basic',
+	            'level': logging.DEBUG,
+	            'filename': 'log.txt'
+	        }
+	    },
+	    'root': {
+	        'handlers': ['console', 'file'],
+	        'level': logging.DEBUG,
+	    },
 	}
 
 	# Set up logging
@@ -471,6 +484,7 @@ def main():
 
 	# Run the next script
 	subscript()
+
 
 if __name__ == '__main__':
 	# Keep terminal open until script finishes and user presses enter

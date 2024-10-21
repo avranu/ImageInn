@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 BracketOrPhoto = TypeVar('BracketOrPhoto', List[Photo], Photo)
 MAX_THREADS = 4
 
+
 class AlignmentProvider(Provider, ABC):
 	"""
 	This service provider Aligns a bracket of photos.
@@ -73,7 +74,7 @@ class AlignmentProvider(Provider, ABC):
 
 			return results
 
-	def _next_bracket_list(self, brackets : list[list[Photo]]) -> list[list[Photo]]:
+	def _next_bracket_list(self, brackets: list[list[Photo]]) -> list[list[Photo]]:
 		"""
 		Align a list of brackets of photos.
 
@@ -91,7 +92,7 @@ class AlignmentProvider(Provider, ABC):
 
 		return aligned_brackets
 
-	def _next_bracket(self, bracket : list[Photo]) -> list[Photo]:
+	def _next_bracket(self, bracket: list[Photo]) -> list[Photo]:
 		"""
 		Align a single bracket of photos.
 

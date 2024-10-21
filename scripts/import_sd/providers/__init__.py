@@ -18,7 +18,7 @@
 		Copyright (c) 2023 Jess Mann
 """
 __all__ = [
-	'tiff',
-	'merge',
-	'align',
+    'tiff',
+    'merge',
+    'align',
 ]

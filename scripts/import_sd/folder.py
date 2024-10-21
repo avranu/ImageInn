@@ -23,6 +23,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class SDFolder:
 	"""
 	Represents a directory on an SD card.

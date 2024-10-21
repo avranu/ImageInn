@@ -32,15 +32,16 @@ from scripts.import_sd.workflow import Workflow
 
 logger = logging.getLogger(__name__)
 
+
 class RenameWorkflow(Workflow):
 	"""
 	Workflow to rename files from the old naming scheme to the new naming scheme.
 	"""
 	_base_path: DirPath
-	raw_extension : str
-	dry_run : bool = False
+	raw_extension: str
+	dry_run: bool = False
 
-	def __init__(self, base_path : str | list[str] | DirPath, raw_extension : str = 'arw', dry_run : bool = False):
+	def __init__(self, base_path: str | list[str] | DirPath, raw_extension: str = 'arw', dry_run: bool = False):
 		"""
 		Args:
 			base_path (str):
@@ -121,15 +122,13 @@ class RenameWorkflow(Workflow):
 		logger.info('Renamed %d files', count)
 		return results
 
+
 def main():
 	"""
 	Entry point for the application.
 	"""
 	# Parse command line arguments
-	parser = argparse.ArgumentParser(
-		description='Run the Rename workflow.',
-		prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}'
-	)
+	parser = argparse.ArgumentParser(description='Run the Rename workflow.', prog=f'{os.path.basename(sys.argv[0])} {sys.argv[1]}')
 	# Ignore the first argument, which is the script name
 	parser.add_argument('ignored', nargs='?', help=argparse.SUPPRESS)
 	parser.add_argument('path', type=str, help='The path to the network location where the photos are stored.')
@@ -152,6 +151,7 @@ def main():
 
 	logger.error('Rename failed')
 	sys.exit(1)
+
 
 if __name__ == '__main__':
 	# Keep terminal open until script finishes and user presses enter

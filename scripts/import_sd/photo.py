@@ -36,14 +36,15 @@ from scripts.lib.path import FilePath, Path
 
 logger = logging.getLogger(__name__)
 
+
 class Photo(FilePath):
 	"""
 	Allows us to interact with sd cards mounted to the server this code is running on.
 	"""
-	_path : str
-	_number : int
+	_path: str
+	_number: int
 
-	def __init__(self, path : list[str] | str, number : Optional[int] = None):
+	def __init__(self, path: list[str] | str, number: Optional[int] = None):
 		"""
 		Initialise the photo object.
 
@@ -62,7 +63,7 @@ class Photo(FilePath):
 		return self._path
 
 	@path.setter
-	def path(self, value : str | list[str]):
+	def path(self, value: str | list[str]):
 		"""
 		The path to the photo, which must already exist.
 		"""
@@ -212,10 +213,7 @@ class Photo(FilePath):
 		value = self.attr(ExifTag.DIMENSIONS)
 		if not value:
 			return None
-		return {
-			'height': value[0],
-			'width': value[1]
-		}
+		return {'height': value[0], 'width': value[1]}
 
 	@property
 	def exposure_bias(self) -> Decimal | None:
@@ -260,7 +258,7 @@ class Photo(FilePath):
 		if not aperture or not shutter_speed or not iso:
 			return None
 
-		result = math.log2((aperture ** 2) / shutter_speed * iso)
+		result = math.log2((aperture**2) / shutter_speed * iso)
 		result = Decimal(result)
 		return round(result, 2)
 
@@ -642,7 +640,7 @@ class Photo(FilePath):
 		"""
 		return Validator.calculate_checksum(self.path)
 
-	def attr(self, key : ExifTag) -> str | Decimal | int | None:
+	def attr(self, key: ExifTag) -> str | Decimal | int | None:
 		"""
 		Get the EXIF data from the given file.
 
@@ -713,6 +711,7 @@ class FakePhoto(Photo):
 	"""
 	This is used to mock a photo for testing purposes and dry runs.
 	"""
+
 	@property
 	def ss(self) -> Decimal:
 		"""
@@ -797,7 +796,7 @@ class FakePhoto(Photo):
 		"""
 		return Decimal(2.8)
 
-	def attr(self, key : ExifTag) -> str:
+	def attr(self, key: ExifTag) -> str:
 		"""
 		Get fake EXIF data.
 

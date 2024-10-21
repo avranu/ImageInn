@@ -24,10 +24,12 @@ from scripts.lib.path import FilePath
 from scripts.import_sd.providers.tiff.base import TiffProvider
 from scripts.import_sd.photo import Photo
 
+
 class RawpyProvider(TiffProvider):
 	"""
 	Convert raw photos to TIFF files using rawpy.
 	"""
+
 	def next(self, photo: Photo, tiff_path: FilePath) -> Photo | None:
 		"""
 		Convert a single raw photo to a TIFF file using rawpy.

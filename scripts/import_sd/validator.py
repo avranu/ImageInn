@@ -25,12 +25,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class Validator:
 	"""
 	Provides methods for validating files and directories.
 
 	Probably depreecated.
 	"""
+
 	@classmethod
 	def is_dir(cls, path: str) -> bool:
 		"""
@@ -105,7 +107,7 @@ class Validator:
 		return checksums
 
 	@classmethod
-	def calculate_checksum(cls, file_path : str) -> str:
+	def calculate_checksum(cls, file_path: str) -> str:
 		"""
 		Calculate the checksum of the given file.
 
@@ -142,7 +144,7 @@ class Validator:
 		return result
 
 	@classmethod
-	def compare_checksums(cls, source_file : str, destination_file : str) -> bool:
+	def compare_checksums(cls, source_file: str, destination_file: str) -> bool:
 		"""
 		Compare the checksums of two files.
 
@@ -191,7 +193,7 @@ class Validator:
 		return True
 
 	@classmethod
-	def validate_checksum_list(cls, checksums_before : dict[str, str], files : dict[str, str]) -> bool:
+	def validate_checksum_list(cls, checksums_before: dict[str, str], files: dict[str, str]) -> bool:
 		"""
 		Vaidate checksums after copying files and report any mismatches.
 
