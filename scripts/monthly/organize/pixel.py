@@ -44,6 +44,7 @@ from tqdm import tqdm
 from pydantic import PrivateAttr, field_validator
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
+from scripts.lib.file_manager import StrPattern
 from scripts.monthly.organize.base import FileOrganizer
 
 logger = setup_logging()
@@ -56,14 +57,10 @@ class PixelFileOrganizer(FileOrganizer):
     - Files are moved to a directory named 'YYYY-MM' under the specified directory.
     - If a file with the same name already exists in the target directory, a unique filename is generated.
     """
-    # Private attributes
-    _filename_pattern : re.Pattern | None = PrivateAttr(default=None)
+    file_prefix : str = 'PXL_'
 
-    @property
-    def filename_pattern(self) -> re.Pattern:
-        if not self._filename_pattern:
-            self._filename_pattern = re.compile(rf'^{re.escape(self.file_prefix)}(20\d{{6}})_.*\.jpg$')
-        return self._filename_pattern
+    # Private attributes
+    _default_filename_pattern : StrPattern = r'^PXL_(20\d{6})_'
 
     def find_subdir(self, filepath: Path) -> str:
         """
@@ -80,11 +77,11 @@ class PixelFileOrganizer(FileOrganizer):
         """
         filename = filepath.name
 
-        if not (match := self.filename_pattern.match(filename)):
+        if not (matches := self.filename_match(filename)):
             raise ValueError(f"Invalid filename format: {filename}")
 
         # Subdir name
-        date_part = match.group(1)
+        date_part = matches.group(1)
         year = date_part[:4]
         month = date_part[4:6]
         dir_name = f"{year}/{year}-{month}"

@@ -57,7 +57,7 @@ import logging
 import argparse
 from typing import Iterator, Literal
 from tqdm import tqdm
-from pydantic import PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.monthly.exceptions import OneFileException, DuplicationHandledException
@@ -76,7 +76,7 @@ class FileOrganizer(FileManager):
     batch_size: int = -1
     skip_collision: bool = False
     skip_hash : bool = False
-    file_prefix : str = 'PXL_'
+    file_prefix : str = ''
     target_directory : Path | None = None
 
     duplicates_found: int = 0
@@ -84,7 +84,7 @@ class FileOrganizer(FileManager):
 
     # Private attributes
     _progress: tqdm | None = PrivateAttr(default=None)
-    _filename_pattern : re.Pattern | None = PrivateAttr(default=None)
+    _default_filename_pattern : str | None = r'.*\.(jpg|jpeg|dng|arw|png|mp4)'
 
     @property
     def progress(self) -> tqdm:
@@ -92,12 +92,6 @@ class FileOrganizer(FileManager):
             self._progress = tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1)
 
         return self._progress
-
-    @property
-    def filename_pattern(self) -> re.Pattern:
-        if not self._filename_pattern:
-            self._filename_pattern = re.compile(r'.*\.(jpg|jpeg|dng|arw|png)', re.IGNORECASE)
-        return self._filename_pattern
 
     @property
     def count_files_moved(self) -> int:
@@ -119,20 +113,6 @@ class FileOrganizer(FileManager):
         if not self.target_directory:
             return self.directory
         return self.target_directory
-
-    def get_all_files(self, directory : Path | None = None) -> Iterator[Path]:
-        """
-        Get a list of files in a directory.
-
-        Args:
-            directory: The directory to search. Defaults to self.directory.
-
-        Returns:
-            A list of files in the directory which match the file prefix.
-        """
-        directory = directory or self.directory
-        #return directory.glob(f'{self.file_prefix}*.jpg')
-        return self.yield_directories(directory)
 
     def hash_file(self, filename: str | Path, partial : bool = False, hashing_algorithm : str = 'xxhash') -> str:
         """
@@ -178,10 +158,13 @@ class FileOrganizer(FileManager):
             return
 
         # Gather all files to process
-        files_to_process = self.get_all_files()
+        files_to_process = self.yield_files()
 
         with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
             list(tqdm(executor.map(self.process_file_threadsafe, files_to_process), desc='Processing files', unit='files'))
+
+        # After organization, cleanup empty directories
+        self.delete_empty_directories()
 
         self.report('Finished organizing.')
 
@@ -212,7 +195,7 @@ class FileOrganizer(FileManager):
         filename = file_path.name
 
         # Ensure it matches the pattern
-        if not self.filename_pattern.match(filename):
+        if not self.filename_match(filename):
             self.append_skipped_file(file_path)
             logger.debug(f"Skipping file {file_path} due to invalid filename")
             return None
@@ -248,7 +231,7 @@ class FileOrganizer(FileManager):
 
             self.directories_created += 1
             if message:
-                logger.debug(f"{message}: {directory.relative_to(self.get_target_directory())}")
+                logger.debug(f"{message}: {directory}")
         except Exception as e:
             raise ShouldTerminateException(f'Error creating directory: {directory}') from e
 
@@ -299,7 +282,7 @@ class FileOrganizer(FileManager):
         destination = super().move_file(source, destination, verify=verify)
 
         if message:
-            logger.debug(f"{message}: {source} to {destination.relative_to(self.directory)}")
+            logger.debug(f"{message}: {source} to {destination}")
 
         return destination
 
@@ -316,7 +299,7 @@ class FileOrganizer(FileManager):
         try:
             # Get the created date from the filepath
             file_stat = filepath.stat()
-            created_time = datetime.datetime.fromtimestamp(file_stat.st_birthtime)
+            created_time = datetime.datetime.fromtimestamp(file_stat.st_ctime)
 
             # Extract the year and month
             year = created_time.strftime('%Y')
@@ -324,7 +307,7 @@ class FileOrganizer(FileManager):
             day = created_time.strftime('%d')
 
             # Generate the directory name in the format year/year-month
-            dir_name = f"{year}/{year}-{month}/{year}-{month}-{day}/"
+            dir_name = f"{year}/{year}-{month}-{day}/"
 
         except Exception as e:
             logger.error(f"Error occurred while finding subdirectory: {e}")

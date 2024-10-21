@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 import re
 import sys
-from typing import Iterator
+from typing import Iterator, Literal
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -45,10 +45,13 @@ from scripts.lib.script import Script
 
 logger = setup_logging()
 
+type StrPattern = str | re.Pattern | None
+
 class FileManager(Script):
     directory: Path = Field(default=Path('.'))
     file_prefix: str = ''
     dry_run: bool = False
+    filename_pattern : re.Pattern = Field(default=None)
 
     _files_moved: list[Path] = PrivateAttr(default_factory=list)
     _files_copied : list[Path] = PrivateAttr(default_factory=list)
@@ -56,10 +59,24 @@ class FileManager(Script):
     _files_skipped: list[Path] = PrivateAttr(default_factory=list)
     _hash_cache: LRUCache = PrivateAttr(default_factory=lambda: LRUCache(maxsize=10000))
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
+    _default_filename_pattern : StrPattern = '.*'
 
     @field_validator('directory', mode='before')
     def validate_directory(cls, v):
         return Path(v)
+
+    @field_validator('filename_pattern', mode='before')
+    def validate_filename_pattern(cls, v) -> re.Pattern:
+        # None or empty results in None
+        if not v:
+            v = cls._default_filename_pattern
+
+        # Already a pattern
+        if isinstance(v, re.Pattern):
+            return v
+        
+        # Compile a string into a pattern, so it is cached for repeated use
+        return re.compile(v, re.IGNORECASE)
 
     @property
     def files_moved(self) -> list[Path]:
@@ -76,10 +93,6 @@ class FileManager(Script):
     @property
     def files_copied(self) -> list[Path]:
         return self._files_copied
-
-    @property
-    def filename_pattern(self) -> re.Pattern | None:
-        return None
 
     def append_moved_file(self, file_path: Path) -> None:
         """
@@ -129,6 +142,18 @@ class FileManager(Script):
                 return xxhash.xxh64()
             case _:
                 return hashlib.new(hasher)
+
+    def filename_match(self, filename: str | Path) -> re.Match[str] | Literal[False]:
+        """
+        Check if a filename matches the expected pattern.
+        """
+        if isinstance(filename, Path):
+            filename = filename.name
+
+        if (matches := self.filename_pattern.match(filename)):
+            return matches
+
+        return False
 
     def hash_file(self, filename: str | Path, partial: bool = False, hashing_algorithm : str = 'xxhash') -> str:
         """
@@ -293,12 +318,32 @@ class FileManager(Script):
         directory = directory or self.directory
         if self.file_prefix:
             for f in directory.glob(f'{self.file_prefix}*'):
-                if f.is_file():
-                    yield f
+                if not f.is_file():
+                    continue
+
+                yield f
         else:
             for f in directory.iterdir():
                 if f.is_file():
                     yield f
+
+    def should_include_file(self, item: Path) -> bool:
+        """
+        Check if a file should be included.
+
+        Args:
+            item: The file to check.
+
+        Returns:
+            True if the file should be included, False otherwise.
+        """
+        if not item.is_file():
+            return False
+
+        if self.filename_match(item.name):
+            return True
+
+        return True
 
     async def count_files(self, directory: Path, recursive: bool) -> int:
         """
@@ -471,6 +516,21 @@ class FileManager(Script):
 
         return False
 
+    def delete_empty_directories(self, directory: Path | None = None) -> None:
+        """
+        Delete empty directories.
+        """
+        directory = directory or self.directory
+
+        count = 0
+        for dirpath in self.yield_directories(directory, recursive=True):
+            if not any(dirpath.iterdir()):
+                if not self.check_dry_run(f'deleting empty directory {dirpath}'):
+                    dirpath.rmdir()
+                count += 1
+
+        logger.info('Cleaned up %d empty directories.', count)
+
     def _find_trash_name(self, file_path: Path) -> Path:
         """
         Find a unique name for a file in the trash directory.
@@ -580,6 +640,9 @@ class FileManager(Script):
         if self.dry_run:
             logger.info('DRY RUN: Skipped %s', message or 'Operation skipped')
             return True
+
+        if message:
+            logger.debug('Running %s', message)
         return False
 
     def __hash__(self) -> int:
