@@ -547,20 +547,20 @@ class FileManager(Script):
             cleanup: Whether to remove files that stall the process.
         """
         for f in directory.iterdir():
+            if f.is_dir():
+                if not recursive:
+                    return False
+                
+                if not self.delete_directory_if_empty(f):
+                    # subdir is now deleted, so it doesnt count
+                    continue
+
             if cleanup:
                 # Remove files we don't care about that stall this process.
                 if f.name in ['.picasa.ini', 'Thumbs.db']:
                     logger.debug('Deleting file="%s" in directory="%s"', f, directory)
                     if self.delete_file(f):
                         continue
-            
-            if not recursive:
-                return False
-            
-            if f.is_dir():
-                if self.delete_directory_if_empty(f):
-                    # subdir is now deleted, so it doesnt count
-                    continue
                 
             # something was found, so it's not empty
             logger.debug('NOT EMPTY: Found file="%s" in dir="%s".', f, directory.absolute())
