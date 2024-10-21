@@ -78,7 +78,7 @@ logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
 
-    def _upload_file(self, image_path: Path, status: Status | None = None) -> UploadStatus:
+    def _upload_file(self, image_path: Path, status: Status | None = None, retries: int = 3) -> UploadStatus:
         """
         Upload a file to Immich.
 
@@ -97,15 +97,45 @@ class ImmichProgressiveUploader(ImmichInterface):
             return UploadStatus.UPLOADED
 
         command = ["immich", "upload", image_path.as_posix()]
-        try:
-            result = subprocess.run(
-                command,
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True
-            )
-            output = result.stdout + result.stderr
+        attempt = 0
+        while attempt <= retries:
+            try:
+                result = subprocess.run(
+                    command,
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                output = result.stdout + result.stderr
+
+                # Analyze the output
+                if "All assets were already uploaded" in output:
+                    logger.debug("%s already uploaded.", image_path)
+                    return UploadStatus.DUPLICATE
+                if "Unsupported file type" in output:
+                    logger.debug("Unsupported file type: %s", image_path)
+                    return UploadStatus.ERROR
+                if "Successfully uploaded" in output:
+                    logger.debug("Uploaded %s successfully.", image_path)
+                    return UploadStatus.UPLOADED
+
+                logger.info('Unknown output: %s', output)
+                logger.info('By default, marking file %s uploaded successfully.', image_path)
+                return UploadStatus.UPLOADED
+            except subprocess.CalledProcessError as e:
+                output = e.stdout + e.stderr
+                logger.error(f"Failed to upload {image_path}: {output}")
+                if "fetch failed" in output or "ETIMEDOUT" in output or "ENETUNREACH" in output:
+                    attempt += 1
+                    if attempt <= retries:
+                        logger.info(f"Retrying upload for {image_path} in 10 seconds... (Attempt {attempt}/{retries})")
+                        time.sleep(10)
+                    else:
+                        logger.error(f"Max retries reached for {image_path}.")
+                        return UploadStatus.ERROR
+                else:
+                    return UploadStatus.ERROR
 
             # Analyze the output
             if "All assets were already uploaded" in output:
