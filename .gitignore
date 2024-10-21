@@ -8,7 +8,7 @@ __*
 *.pyc
 *.egg-info
 **/frontend/static/
-*.pynb
+*.ipynb
 
 # Libraries and tools
 node_modules/
