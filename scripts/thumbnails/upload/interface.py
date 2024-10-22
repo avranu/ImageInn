@@ -192,10 +192,6 @@ class ImmichInterface(FileManager, ABC):
             logger.debug("Ignoring hidden file: %s", image_path)
             return True
 
-        if self.file_prefix and not image_path.name.startswith(self.file_prefix):
-            logger.debug("Ignoring file due to prefix: %s", image_path)
-            return True
-
         if str(image_path) in self.ignore_paths:
             logger.debug("Ignoring file due to path: %s", image_path)
             return True

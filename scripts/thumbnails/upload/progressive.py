@@ -155,7 +155,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                         logger.info(f"Retrying upload for {image_path} in 10 seconds... (Attempt {attempt}/{retries})")
                         time.sleep(10)
                         continue
-                    
+
                     logger.error(f"Max retries reached for {image_path}.")
 
                 self.record_error()

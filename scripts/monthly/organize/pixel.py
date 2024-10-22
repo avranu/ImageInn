@@ -57,7 +57,7 @@ class PixelFileOrganizer(FileOrganizer):
     - Files are moved to a directory named 'YYYY-MM' under the specified directory.
     - If a file with the same name already exists in the target directory, a unique filename is generated.
     """
-    file_prefix : str = 'PXL_'
+    glob_pattern : str = 'PXL_*'
 
     @classmethod
     def get_default_filename_pattern(cls):
@@ -91,12 +91,12 @@ class PixelFileOrganizer(FileOrganizer):
 
 def main():
     logger = setup_logging()
-    
+
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize PXL_ files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')
     parser.add_argument('-t', '--target', default=None, help='Target directory to move files to')
-    parser.add_argument('-p', '--prefix', default='PXL_', help='File prefix to match (default: PXL_)')
+    parser.add_argument('-g', '--glob-pattern', default='PXL_', help='Glob pattern to use when searching for files (default: PXL_)')
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
     parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
@@ -110,7 +110,7 @@ def main():
     organizer = PixelFileOrganizer(
         directory       = args.directory,
         target_directory= args.target,
-        file_prefix     = args.prefix,
+        glob_pattern     = args.glob_pattern,
         batch_size      = args.limit,
         dry_run         = args.dry_run,
         skip_collision  = args.skip_collision,
@@ -121,11 +121,11 @@ def main():
         organizer.organize_files()
     except ShouldTerminateException as e:
         logger.critical(f"Critical error: {e}")
-        organizer.report('Before error:')
+        logger.info('Before error: %s', organizer.report())
         sys.exit(1)
     except KeyboardInterrupt:
         logger.warning("Operation interrupted by user")
-        organizer.report('Before termination:')
+        logger.info('Before termination: %s', organizer.report())
         sys.exit(1)
 
 if __name__ == "__main__":

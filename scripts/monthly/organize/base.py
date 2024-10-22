@@ -55,8 +55,9 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from pathlib import Path
 import logging
 import argparse
-from typing import Iterator, Literal
+from typing import Any, Iterator, Literal
 from tqdm import tqdm
+from alive_progress import alive_it, alive_bar
 from pydantic import Field, PrivateAttr, field_validator
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
@@ -77,22 +78,19 @@ class FileOrganizer(FileManager):
     batch_size: int = -1
     skip_collision: bool = False
     skip_hash : bool = False
-    file_prefix : str = ''
     target_directory : Path | None = None
 
-    # Private attributes
-    _progress: tqdm | None = PrivateAttr(default=None)
+    @field_validator('target_directory', mode='before')
+    def validate_target_directory(cls, value: Any) -> Path | None:
+        if value is None:
+            return None
 
-    @property
-    def progress(self) -> tqdm:
-        if self._progress is None:
-            self._progress = tqdm(desc='Processing files', leave=False, unit='files', miniters=1000, mininterval=1)
-
-        return self._progress
-
-    @progress.setter
-    def progress(self, value: tqdm) -> None:
-        self._progress = value
+        dir_path = Path(value)
+        if not dir_path.exists():
+            logger.debug('target_directory does not exist. Creating it: "%s"', dir_path)
+            dir_path.mkdir(exist_ok=True, parents=True)
+            
+        return dir_path
 
     @property
     def files_duplicated(self) -> int:
@@ -102,7 +100,12 @@ class FileOrganizer(FileManager):
     def get_default_filename_pattern(cls) -> StrPattern:
         # A temporary hack to inject a class attribute into a pydantic model.
         return r'.*[.](jpg|jpeg|webp|png|dng|arw|nef|psd|tif|tiff|mp4)'
-    
+
+    @classmethod
+    def get_default_glob_pattern(cls) -> str:
+        # A temporary hack to inject a class attribute into a pydantic model.
+        return '*.{jpg,jpeg,webp,png,dng,arw,nef,psd,tif,tiff,mp4}'
+
     def record_duplicate_file(self, count : int = 1) -> None:
         self.record_stat('duplicate_file', count)
 
@@ -151,18 +154,31 @@ class FileOrganizer(FileManager):
         """
         Organize files into subdirectories based on their date.
         """
-        if self.check_dry_run(f'organizing files with prefix {self.file_prefix} in {self.directory.absolute()}'):
+        if self.check_dry_run(f'organizing files with {self.glob_pattern=} in {self.directory.absolute()}'):
             return
 
         # Gather subdirectories in the source directory
         directories = self.yield_directories(self.directory)
+        # Start counting directories asynchronously
+        #total_count_task = asyncio.create_task(self.count_files(self.directory))
 
-        with tqdm(desc="Total Progress", unit='dir', total=None) as progress_bar:
+        with alive_bar(title="Organizing Files", unit='files', unknown='waves') as progress_bar:
+            progress_bar.text(f'Searching... - {self.report()}')
+            total_was_set = False
+            
             for subdir in directories:
-                progress_bar.set_description(f'{str(subdir.absolute())[-20:]}...')
+                # Check if the total dir count is available
+                """
+                if not total_was_set and total_count_task.done():
+                    logger.critical('Total directories: %d', total_count_task.result())
+                    progress_bar.total = total_count_task.result()
+                    progress_bar.unknown = False
+                    total_was_set = True
+                """
+                    
                 try:
                     # Gather all files to process
-                    files_to_process = self.yield_files(subdir)      
+                    files_to_process = self.yield_files(subdir, recursive=False)
 
                     with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                         futures = []
@@ -175,14 +191,7 @@ class FileOrganizer(FileManager):
 
                         logger.debug('%d files found in %s', count, subdir)
 
-                        # Initialize the progress bar
-                        for future in tqdm(
-                            as_completed(futures),
-                            total=count,
-                            unit='files',
-                            leave=True,
-                            desc=f"{subdir.absolute()}",
-                        ):
+                        for future in as_completed(futures):
                             try:
                                 future.result()
                             except OneFileException as ofe:
@@ -193,28 +202,28 @@ class FileOrganizer(FileManager):
                                 self.record_error()
                                 raise
                             finally:
-                                progress_bar.set_postfix(
-                                    moved       = self.files_moved,
-                                    errors      = self.errors,
-                                    skipped     = self.files_skipped,
-                                    deleted     = self.files_deleted,
-                                    directories_created = self.directories_created,
-                                )
+                                progress_bar.text(f'/{str(subdir)[-10:]}/ - {self.report()}')
+                                progress_bar()
                 finally:
-                    progress_bar.update(1)
                     # Remove the directory if it is now empty
                     self.delete_directory_if_empty(subdir)
 
-        logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted', 
-                    self.files_moved, 
-                    self.files_skipped, 
+        logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted',
+                    self.files_moved,
+                    self.files_skipped,
                     self.files_deleted,
         )
 
         # After organization, cleanup empty directories
         self.delete_empty_directories()
+        
+        # Ensure the counting task is complete
+        if not total_count_task.done():
+            # Discard the task
+            total_count_task.cancel()
 
-        self.report('Finished organizing.')
+        logger.info('Finished organizing. %s', self.report())
+        return
 
     def process_file_threadsafe(self, file: Path) -> bool:
         """
@@ -444,28 +453,38 @@ class FileOrganizer(FileManager):
 
         raise OneFileException(f"Could not find a unique filename for {source_file}")
 
-    def report(self, message_prefix : str | None = "Organization Progress:") -> None:
-        if self.dry_run:
-            message_prefix = f"[DRY RUN] {message_prefix}"
+    def report(self) -> str:
+        """
+        Create a report of the file organization.
 
-        logger.info('%s %s files moved, %s files deleted, %s files skipped, %s directories created, %s directories removed, %s errors',
-                    message_prefix or '',
-                    self.files_moved,
-                    self.files_deleted,
-                    self.files_skipped,
-                    self.directories_created,
-                    self.directories_deleted,
-                    self.errors,
-        )
+        Returns:
+            The report string.
+        """
+        # Files
+        buffer = f'{self.files_moved} files moved'
+        if self.files_deleted > 0:
+            buffer = f'{buffer}, {self.files_deleted} deleted'
+        if self.files_skipped > 0:
+            buffer = f'{buffer}, {self.files_skipped} skipped'
+
+        # Directories
+        buffer = f'{buffer}, {self.directories_created} directories created'
+        if self.directories_deleted > 0:
+            buffer = f'{buffer}, {self.directories_deleted} removed'
+
+        # Errors
+        if self.errors > 0:
+            buffer = f'{buffer}, {self.errors} errors'
+        return buffer
 
 def main():
     logger = setup_logging()
-    
+
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')
     parser.add_argument('-t', '--target', default=None, help='Target directory to move files to')
-    parser.add_argument('-p', '--prefix', default='', help='File prefix to match')
+    parser.add_argument('-g', '--glob-pattern', default=None, help='Glob pattern to use when searching for files.')
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
     parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
@@ -479,7 +498,7 @@ def main():
     organizer = FileOrganizer(
         directory       = args.directory,
         target_directory= args.target,
-        file_prefix     = args.prefix,
+        glob_pattern    = args.glob_pattern,
         batch_size      = args.limit,
         dry_run         = args.dry_run,
         skip_collision  = args.skip_collision,
@@ -490,12 +509,14 @@ def main():
         organizer.organize_files()
     except ShouldTerminateException as e:
         logger.critical(f"Critical error: {e}")
-        organizer.report('Before error:')
+        logger.info('Before error: %s', organizer.report())
         sys.exit(1)
     except KeyboardInterrupt:
         logger.warning("Operation interrupted by user")
-        organizer.report('Before termination:')
+        logger.info('Before termination: %s', organizer.report())
         sys.exit(1)
+        
+    return
 
 if __name__ == "__main__":
     main()

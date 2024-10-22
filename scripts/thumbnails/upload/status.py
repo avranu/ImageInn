@@ -135,7 +135,7 @@ class Status(BaseModel):
                 return self._write_status_file()
             except OSError as e:
                 logger.error("%d: Error saving status file, waiting %d seconds for retry: %s", attempt, wait_time, e)
-                
+
             time.sleep(wait_time)
             # Increase the wait time up to a maximum
             wait_time = min(wait_time * 2, MAX_WAIT_TIME)
@@ -151,7 +151,7 @@ class Status(BaseModel):
             if not self.statuses:
                 logger.debug('Skipping saving empty status file')
                 return False
-            
+
             with self.status_file.open('w') as f:
                 if self.last_processed_time:
                     f.write(f'# last_processed_time: {self.last_processed_time}\n')
@@ -162,9 +162,9 @@ class Status(BaseModel):
                     if file_status == UploadStatus.SKIPPED:
                         continue
                     f.write(f'{filename}\t{file_status.value}\n')
-                    
+
         return True
-                    
+
     def update_meta(self):
         """
         Update the last processed time to the current time, and update the version.

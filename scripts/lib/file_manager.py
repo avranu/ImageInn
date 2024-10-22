@@ -23,6 +23,7 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
+import asyncio
 import os
 import re
 import sys
@@ -52,14 +53,18 @@ type StrPattern = str | re.Pattern | None
 
 class FileManager(Script):
     directory: Path = Field(default=Path('.'))
-    file_prefix: str = ''
     dry_run: bool = False
+    glob_pattern: str = '*'
     filename_pattern : re.Pattern = Field(default=None, validate_default=True)
 
     _stats : dict[str, int] = PrivateAttr(default_factory=lambda: defaultdict(int))
     _stats_lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
     _hash_cache: LRUCache = PrivateAttr(default_factory=lambda: LRUCache(maxsize=10000))
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
+
+    @field_validator('glob_pattern', mode='before')
+    def validate_glob_pattern(cls, v):
+        return v or cls.get_default_glob_pattern()
 
     @field_validator('directory', mode='before')
     def validate_directory(cls, v):
@@ -74,7 +79,7 @@ class FileManager(Script):
         # Already a pattern
         if isinstance(v, re.Pattern):
             return v
-        
+
         # Compile a string into a pattern, so it is cached for repeated use
         return re.compile(str(v), re.IGNORECASE)
 
@@ -110,6 +115,14 @@ class FileManager(Script):
     def errors(self) -> int:
         return self.get_stat('errors')
 
+    @classmethod
+    def get_default_glob_pattern(cls) -> str:
+        # A temporary hack to inject a class attribute into a pydantic model.
+        return '*'
+
+    def get_stats(self) -> dict[str, int]:
+        return self._stats.copy()
+
     def get_stat(self, key: str) -> int:
         with self._stats_lock:
             return self._stats[key]
@@ -120,7 +133,7 @@ class FileManager(Script):
 
     def record_error(self, count : int = 1) -> None:
         self.record_stat('errors', count)
-        
+
     def record_move_file(self, count : int = 1) -> None:
         self.record_stat('files_moved', count)
 
@@ -236,7 +249,7 @@ class FileManager(Script):
 
         return result
 
-    def yield_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> Iterator[Path]:
+    def yield_directories(self, directory: Path, *, recursive: bool = True, allow_hidden : bool = False) -> Iterator[Path]:
         """
         Yield directories
 
@@ -266,14 +279,14 @@ class FileManager(Script):
             if not allow_hidden:
                 # Remove hidden directories from dirnames so os.walk doesn't traverse into them
                 dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-                
+
                 # Skip the current directory if it's hidden
                 if dirpath_obj.name.startswith('.'):
                     continue
 
             yield dirpath_obj
 
-    def get_all_directories(self, directory: Path, recursive: bool = True, allow_hidden : bool = False) -> list[Path]:
+    def get_all_directories(self, directory: Path, *, recursive: bool = True, allow_hidden : bool = False) -> list[Path]:
         """
         Get a list of directories
 
@@ -287,7 +300,7 @@ class FileManager(Script):
         """
         return list(self.yield_directories(directory, recursive=recursive, allow_hidden=allow_hidden))
 
-    async def count_directories(self, directory: Path, recursive: bool = True) -> int:
+    async def count_directories(self, directory: Path, *, recursive: bool = True) -> int:
         """
         Asynchronously count the number of directories.
 
@@ -302,9 +315,10 @@ class FileManager(Script):
         count = 0
         for _ in self.yield_directories(directory, recursive=recursive):
             count += 1
+            await asyncio.sleep(0)  # Yield control to the event loop
         return count
 
-    def yield_files(self, directory : Path | None = None) -> Iterator[Path]:
+    def yield_files(self, directory : Path | None = None, *, recursive : bool = True) -> Iterator[Path]:
         """
         Yield files in a directory.
 
@@ -315,18 +329,21 @@ class FileManager(Script):
             The next file in the directory.
         """
         directory = directory or self.directory
-
-        if self.file_prefix:
-            #logger.debug('Yielding files with file_prefix="%s"', self.file_prefix)
-            files = directory.glob(f'{self.file_prefix}*')
+            
+        if recursive:
+            files = directory.rglob(self.glob_pattern)
         else:
-            files = directory.iterdir()
+            files = directory.glob(self.glob_pattern)
 
+        count = 0
         for f in files:
             if self.should_include_file(f):
+                count += 1
+                if count % 100 == 0:
+                    logger.info('Yielded %d files in %s...', count, directory)
                 yield f
-                
-    def get_all_files(self, directory : Path | None = None) -> list[Path]:
+
+    def get_all_files(self, directory : Path | None = None, *, recursive : bool = True) -> list[Path]:
         """
         Get a list of files in a directory.
 
@@ -334,9 +351,9 @@ class FileManager(Script):
             directory: The directory to search. Defaults to self.directory.
 
         Returns:
-            A list of files in the directory which match the file prefix.
+            A list of files in the directory which match the glob pattern.
         """
-        return list(self.yield_files(directory))
+        return list(self.yield_files(directory, recursive))
 
     def should_include_file(self, item: Path) -> bool:
         """
@@ -357,7 +374,7 @@ class FileManager(Script):
 
         return True
 
-    async def count_files(self, directory: Path, recursive: bool) -> int:
+    async def count_files(self, directory: Path, recursive: bool = True) -> int:
         """
         Asynchronously count the number of files.
 
@@ -372,6 +389,10 @@ class FileManager(Script):
         count = 0
         for _ in self.yield_files(directory):
             count += 1
+            await asyncio.sleep(0)  # Yield control to the event loop
+            if count % 100 == 0:
+                logger.info('Counted %d files...', count)
+        logger.critical('Finished counting files!!!')
         return count
 
     def file_sizes_match(self, source_path: Path, destination_path: Path) -> bool:
@@ -560,7 +581,7 @@ class FileManager(Script):
                 if not recursive:
                     # A directory exists and we can't remove it...
                     return False
-                
+
                 if self.delete_directory_if_empty(f):
                     # subdir is now deleted, so it doesnt count
                     continue
@@ -573,7 +594,7 @@ class FileManager(Script):
                     # Don't remove junk files unless the rest of the dir is empty
                     junk_files.append(f)
                     continue
-                
+
             # something was found, so it's not empty
             logger.debug('NOT EMPTY: Found file="%s" in dir="%s".', f, directory.absolute())
             return False
@@ -584,7 +605,7 @@ class FileManager(Script):
             if not self.delete_file(junk, use_trash=False):
                 logger.error('Unable to delete junk file: %s', junk)
                 return False
-        
+
         # Nothing was found
         if not self.check_dry_run(f'deleting empty directory {directory}'):
             directory.rmdir()
