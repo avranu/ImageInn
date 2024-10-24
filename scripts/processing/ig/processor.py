@@ -162,8 +162,7 @@ class IGImageProcessor:
             if self.topaz_output_dir:
                 self.topaz_output_dir.rmdir()
 
-        logger.info(f"Processed {count} images")
-
+        logger.info("Processed %s images", count)
     def update_progress(self, description : str = None) -> None:
         if not self.progress_bar:
             logger.error('Progress bar not initialized')
@@ -225,15 +224,14 @@ class IGImageProcessor:
         # Run Topaz DeNoise AI
         topaz_path = self.topaz_exe
         cmd = [str(topaz_path), input_path, '--output', output_path]
-        logger.debug(f"Running command: {cmd}")
-
+        logger.debug("Running command: %s", cmd)
         # Default Timeout set to 5 minutes
         subprocess.run(cmd, capture_output=True, check=True, timeout=timeout)
 
         # Check for output. Original filename in the output_path dir
         topaz_output = self.topaz_output_dir / f"{image_path.stem}.jpg"
         if not topaz_output.exists():
-            logger.error(f"Topaz output not found: {topaz_output}")
+            logger.error("Topaz output not found: %s", topaz_output)
             return None
 
         # Move topaz output back one dir

@@ -542,7 +542,7 @@ class FileManager(Script):
                 file_path = self.directory / file_path
             return file_path.exists()
         except (OSError, Exception) as e:
-            logger.debug(f"Error checking if file exists: {e}")
+            logger.debug("Error checking if file exists: %s", e)
         return False
 
     def mkdir(self, directory: Path, *, parents: bool = True, exist_ok : bool = True) -> Path:
@@ -787,7 +787,7 @@ class FileManager(Script):
         
         # Destination must be absolute for Path.rename to be consistent
         if not destination_path.is_absolute():
-            logger.debug(f"Making destination path absolute: {destination_path}")
+            logger.debug("Making destination path absolute: %s", destination_path)
             destination_path = self.directory / destination_path
 
         # Convert dirs into file paths
@@ -852,7 +852,7 @@ class FileManager(Script):
                 
         # Destination must be absolute for Path.rename to be consistent
         if not destination_path.is_absolute():
-            logger.debug(f"Making destination path absolute: {destination_path}")
+            logger.debug("Making destination path absolute: %s", destination_path)
             destination_path = self.directory / destination_path
 
         # Convert dirs into file paths

@@ -170,7 +170,7 @@ class InstaloaderRunner(BaseModel):
 
 	def send_request(self, profile_name: str):
 		_profile = instaloader.Profile.from_username(self._instaloader.context, profile_name)
-		logger.info(f"Processing profile '{profile_name}'")
+		logger.info("Processing profile '%s'", profile_name)
 		self._instaloader.download_profile(profile_name, profile_pic=True, stories=True, highlights=True, tagged=True, posts=True, fast_update=True)
 		'''
         Raw output options:
@@ -208,7 +208,7 @@ def main():
 
 		runner.run()
 	except ShouldTerminateException as e:
-		logger.critical(f"Critical error: {e}")
+		logger.critical("Critical error: %s", e)
 		sys.exit(1)
 	except KeyboardInterrupt:
 		logger.warning("Operation interrupted by user")

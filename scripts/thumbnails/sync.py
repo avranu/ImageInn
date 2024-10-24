@@ -1,4 +1,6 @@
-"""
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
 Sync JPG files to a thumbnails directory, so that there are no duplicates.
 
 This script is useful for collecting all the jpg files scattered throughout a filesystem so that they can be
@@ -23,7 +25,27 @@ Usage:
 Examples:
     echo CLOUD_THUMBNAILS_DIR="/mnt/c/Users/username/Pictures/Thumbnails" > .env
     python -m scripts.thumbnails.sync /mnt/i/Photos /mnt/j/Photos
-"""
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    sync.py                                                                                              *
+*        Project: imageinn                                                                                             *
+*        Version: 0.1.0                                                                                                *
+*        Created: 2024-07-30                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-24     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 from __future__ import annotations
 import os
 import logging
@@ -110,7 +132,7 @@ class JPGSyncer:
             bool: True if the file should be skipped, False otherwise.
         """
         if dest.exists() and self.generate_file_hash(src) == self.generate_file_hash(dest):
-            logger.debug(f"Skipping {src} as it already exists with the same content.")
+            logger.debug("Skipping %s as it already exists with the same content.", src)
             return True
         return False
 

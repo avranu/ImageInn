@@ -122,7 +122,7 @@ class IGImage:
         img_ratio = min(target_size / self.original.width, target_size / self.original.height)
         new_size = (int(self.original.width * img_ratio), int(self.original.height * img_ratio))
 
-        logger.debug(f"Scaling image to {new_size}")
+        logger.debug("Scaling image to %s", new_size)
         self._scaled = self.original.resize(new_size, Image.LANCZOS)
 
         return self._scaled

@@ -171,9 +171,10 @@ class FileOrganizer(FileManager):
         # Start counting directories asynchronously
         #total_count_task = asyncio.create_task(self.count_files(self.directory))
 
-        with alive_bar(title=f"{RESET}Organizing {str(self.directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(title=f"{RESET}Organize {str(self.directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(f'{self.report('Searching...')}')
-            total_was_set = False
+            #total_was_set = False
+            consecutive_ofe_errors : int = 0 
             
             for subdir in directories:
                 # Check if the total dir count is available
@@ -203,16 +204,23 @@ class FileOrganizer(FileManager):
                         for future in as_completed(futures):
                             try:
                                 future.result()
+                                consecutive_ofe_errors = 0
                             except OneFileException as ofe:
-                                logger.error(f"Error organizing file: {ofe}")
+                                consecutive_ofe_errors += 1
+                                logger.error("Error organizing file: %s", ofe)
                             except Exception as e:
                                 # log and re-raise
-                                logger.error(f"Error organizing file: {e}")
+                                logger.error("Error organizing file: %s", e)
                                 self.record_error()
                                 raise
+
+                            if consecutive_ofe_errors > 5:
+                                logger.error("Too many consecutive errors in %s. Skipping the rest of the files.", subdir)
+                                raise ShouldTerminateException(f'Too many consecutive errors in {subdir=}. Skipping the rest of the files.')
                 finally:
                     # Remove the directory if it is now empty
-                    self.delete_directory_if_empty(subdir)
+                    if not self.copy_mode:
+                        self.delete_directory_if_empty(subdir)
 
         logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted. Cleaning up...',
                     self.files_moved,
@@ -221,10 +229,11 @@ class FileOrganizer(FileManager):
         )
 
         # After organization, cleanup empty directories
-        result = self.delete_empty_directories()
-        if result and self.directory.samefile('.'):
-            # The dir no longer exists. run "cd .."
-            os.chdir('..')
+        if not self.copy_mode:
+            result = self.delete_empty_directories()
+            if result and self.directory.samefile('.'):
+                # The dir no longer exists. run "cd .."
+                os.chdir('..')
 
         # Ensure the counting task is complete
         """
@@ -244,10 +253,10 @@ class FileOrganizer(FileManager):
             if self.process_file(file):
                 return True
         except DuplicationHandledException:
-            logger.debug(f"Duplicate file {file=} handled")
+            logger.debug(f"Duplicate file {file.absolute()=} handled")
             return True
         except OneFileException as e:
-            logger.error(f"Error processing file {file=}: {e=}")
+            logger.error(f"Error processing file {file.absolute()=}: {e=}")
         finally:
             subdir = file.parent
             self.progress_report(self._shorten_path(subdir))
@@ -267,28 +276,31 @@ class FileOrganizer(FileManager):
         filename = file_path.name
 
         # Create the subdir
-        target_dir = self.create_subdir(file_path)
-        destination_path = target_dir / filename
+        destination_dir = self.create_subdir(file_path)
+        destination_path = destination_dir / filename
 
         if destination_path.exists() and file_path.samefile(destination_path):
             self.record_skip_file()
-            logger.debug(f"Skipping file {file_path} as it is already in the correct directory")
+            logger.debug(f"Skipping file {file_path.absolute()=} as it is already in the correct directory")
             return None
 
         # Loop in case another process hijacks our destination path
         for i in range(3):
             # Handle potential filename collisions. This will throw an exception if the collision cannot be handled.
-            target_file = self.handle_collision(file_path, destination_path)
+            destination_file = self.handle_collision(file_path, destination_path)
 
             try:
                 if self.copy_mode:
-                    return self.copy_file(file_path, target_file)
-                return self.move_file(file_path, target_file)
+                    return self.copy_file(file_path, destination_file)
+                return self.move_file(file_path, destination_file)
             except FileExistsError as fee:
-                logger.warning("File was created by another process. Attempt(%d/3). destination_path='%s' -> %s", i, target_file, fee)
+                logger.warning("File was created by another process. Attempt(%d/3). destination_path='%s' -> %s", i, destination_file, fee)
+                raise ShouldTerminateException(f"File was created by another process. {destination_file.absolute()=} -> {fee=}")
+            except PermissionError as pe:
+                logger.warning("Permission error moving file. Attempt(%d/3). destination_path='%s' -> %s", destination_file, pe)
 
-        logger.error("File could not be moved after 3 attempts. destination_path='%s'", target_file)
-        raise OneFileException(f"File could not be moved after 3 attempts. destination_path='{target_file}'")
+        logger.error("File could not be moved after 3 attempts. destination_path='%s'", destination_file)
+        raise OneFileException(f"File could not be moved after 3 attempts. {destination_file.absolute()=}")
 
     def mkdir(self, directory: Path, success_message: str | None = "Created directory", *, parents: bool = True, exist_ok : bool = True) -> Path:
         """
@@ -372,8 +384,8 @@ class FileOrganizer(FileManager):
             dir_name = f"{year}/{year}-{month}-{day}/"
 
         except OSError as ose:
-            logger.error(f"Error occurred while finding subdirectory: {ose=}")
-            raise ValueError(f"Unable to determine a subdir from: {filepath=} -> {ose=}") from ose
+            logger.error("Error occurred while finding subdirectory: %s", ose)
+            raise ValueError(f"Unable to determine a subdir from: {filepath.absolute()=} -> {ose=}") from ose
 
         return dir_name
 
@@ -420,8 +432,8 @@ class FileOrganizer(FileManager):
         if self.skip_collision:
             # Skip moving files on collision
             self.record_skip_file()
-            logger.debug(f"Skipping file {source_path=} due to collision with {destination_path=}")
-            raise DuplicationHandledException(f"Duplicate file {source_path=} skipped")
+            logger.debug(f"Skipping file {source_path.absolute()=} due to collision with {destination_path.absolute()=}")
+            raise DuplicationHandledException(f"Duplicate file {source_path.absolute()=} skipped")
 
         if self.files_match(source_path, destination_path, skip_hash=self.skip_hash):
             logger.debug('Duplicate file found: %s', source_path)
@@ -431,9 +443,9 @@ class FileOrganizer(FileManager):
                 # Files are identical; delete the source file
                 self.delete_file(source_path)
                 self.delete_file(xmp_source_path)
-                raise DuplicationHandledException(f"Duplicate file {source_path=} deleted")
+                raise DuplicationHandledException(f"Duplicate file {source_path.absolute()=} deleted")
                 
-            raise DuplicationHandledException(f"Duplicate file {source_path=} skipped")
+            raise DuplicationHandledException(f"Duplicate file {source_path.absolute()=} skipped")
 
         # Files differ; the conflict was not handled.
         return False
@@ -469,7 +481,7 @@ class FileOrganizer(FileManager):
                 # A viable path was found
                 return result
 
-        raise OneFileException(f"Could not find a unique filename for {source_file=}... last name tried: {new_target_file=}")
+        raise OneFileException(f"Could not find a unique filename for {source_file.absolute()=}... last name tried: {new_target_file=}")
 
     def report(self, message_prefix : str | None = None) -> str:
         """
@@ -590,7 +602,7 @@ def main() -> int:
                 logger.error("Invalid action: %s", args.action)
                 return 1
     except ShouldTerminateException as e:
-        logger.critical(f"Critical error: {e}")
+        logger.critical("Critical error: %s", e)
         logger.info('Before error: %s', organizer.report())
         return 1
     except KeyboardInterrupt:

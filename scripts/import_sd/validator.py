@@ -66,7 +66,7 @@ class Validator:
 			bool: True if the path exists and is a directory, False otherwise.
 		"""
 		if not os.path.exists(path):
-			logger.info(f'Creating directory: {path}')
+			logger.info('Creating directory: %s', path)
 			os.makedirs(path, exist_ok=True)
 
 		return cls.is_dir(path)
@@ -102,8 +102,7 @@ class Validator:
 				if cls.is_file(file_path) and os.access(file_path, os.R_OK):
 					checksums[file_path] = cls.calculate_checksum(file_path)
 				else:
-					logger.error(f'File not accessible: {file_path}')
-
+					logger.error('File not accessible: %s', file_path)
 		return checksums
 
 	@classmethod
@@ -125,7 +124,7 @@ class Validator:
 			'098f6bcd4621d373cade4e832627b4f6'
 		"""
 		if not cls.is_file(file_path) or not os.access(file_path, os.R_OK):
-			logger.error(f'File not accessible: {file_path}')
+			logger.error('File not accessible: %s', file_path)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), file_path)
 
 		# We use sha256 because rsync uses MD5, and we want to do both
@@ -187,7 +186,7 @@ class Validator:
 					mismatches += 1
 
 		if mismatches:
-			logger.critical(f'Checksum mismatch for {mismatches} files')
+			logger.critical('Checksum mismatch for %s files', mismatches)
 			return False
 
 		return True
@@ -211,14 +210,13 @@ class Validator:
 			# Get the checksum before copying
 			checksum_before = checksums_before.get(source_file_path)
 			if checksum_before is None or checksum_before != cls.calculate_checksum(destination_file_path):
-				logger.critical(f'Checksum not found, or mismatched, for {source_file_path}')
+				logger.critical('Checksum not found, or mismatched, for %s', source_file_path)
 				mismatches += 1
 				continue
 
-			logger.debug(f'Checksum match for {source_file_path}')
-
+			logger.debug('Checksum match for %s', source_file_path)
 		if mismatches:
-			logger.critical(f'Checksum list mismatch for {mismatches} files')
+			logger.critical('Checksum list mismatch for %s files', mismatches)
 			return False
 
 		return True

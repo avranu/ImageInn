@@ -93,8 +93,7 @@ class ImmichDirectUploader(ImmichInterface):
             subprocess.run(command, check=True)
             logger.info("Files uploaded successfully.")
         except subprocess.CalledProcessError as e:
-            logger.error(f"File upload failed: {e}")
-
+            logger.error("File upload failed: %s", e)
 def main():
     """
     Called when the script is run from the command line. Parses arguments and uploads files to Immich.

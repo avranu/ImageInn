@@ -26,7 +26,7 @@
 *                                                                                                                      *
 *        File:    interface.py                                                                                         *
 *        Project: imageinn                                                                                             *
-*        Version: 1.0.0                                                                                                *
+*        Version: 0.1.0                                                                                                *
 *        Created: 2024-09-25                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -90,7 +90,7 @@ class ImmichInterface(FileManager, ABC):
             exists = False
 
         if not exists:
-            logger.error(f"Directory {v} does not exist.")
+            logger.error("Directory %s does not exist.", v)
             raise FileNotFoundError(f"Directory {v} does not exist.")
         return v
 
@@ -148,7 +148,7 @@ class ImmichInterface(FileManager, ABC):
             self._authenticated = True
             logger.info("Authenticated successfully.")
         except subprocess.CalledProcessError as e:
-            logger.error(f"Authentication failed: {e}")
+            logger.error("Authentication failed: %s", e)
             raise AuthenticationError("Authentication failed.") from e
 
     @abstractmethod
@@ -203,7 +203,7 @@ class ImmichInterface(FileManager, ABC):
 
         if status:
             if status.was_successful(image_path):
-                logger.debug(f"Skipping already uploaded file {image_path}")
+                logger.debug("Skipping already uploaded file %s", image_path)
                 return True
 
         if image_path.stat().st_size > self.large_file_size:
@@ -250,7 +250,6 @@ class ImmichInterface(FileManager, ABC):
 
         if delete and results and not errors:
             self.delete_file(file_path)
-            logger.debug(f"Deleted original file {file_path}")
-
+            logger.debug("Deleted original file %s", file_path)
         return results
 

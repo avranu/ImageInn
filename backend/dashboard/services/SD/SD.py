@@ -186,7 +186,7 @@ class SDCards:
 			'098f6bcd4621d373cade4e832627b4f6'
 		"""
 		if not os.path.isfile(file_path) or not os.access(file_path, os.R_OK):
-			logger.error(f'File not accessible: {file_path}')
+			logger.error('File not accessible: %s', file_path)
 			raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), file_path)
 
 		# We use sha256 because rsync uses MD5, and we want to do both
@@ -213,12 +213,12 @@ class SDCards:
 
 		# Ensure the path exists
 		if not os.path.exists(sd_card_path):
-			logger.error(f'The SD card path does not exist: {sd_card_path}')
+			logger.error('The SD card path does not exist: %s', sd_card_path)
 			return False
 
 		# Ensure the path is a directory
 		if not os.path.isdir(sd_card_path):
-			logger.error(f'The SD card path is not a directory: {sd_card_path}')
+			logger.error('The SD card path is not a directory: %s', sd_card_path)
 			return False
 
 		return True
@@ -246,12 +246,12 @@ class SDCards:
 
 		# Verify we can write to the network path
 		if not os.access(network_path, os.W_OK):
-			logger.error(f'Cannot write to network path: {network_path}')
+			logger.error('Cannot write to network path: %s', network_path)
 			return False
 
 		# Verify we can write to the backup network path
 		if not os.access(backup_network_path, os.W_OK):
-			logger.error(f'Cannot write to backup network path: {backup_network_path}')
+			logger.error('Cannot write to backup network path: %s', backup_network_path)
 			return False
 
 		# Calculate checksums before rsync
@@ -294,7 +294,7 @@ class SDCards:
 						error_count += 1
 
 		if error_count > 0:
-			logger.critical(f'Checksum mismatch for {error_count} files')
+			logger.critical('Checksum mismatch for %s files', error_count)
 			return False
 
 		return True

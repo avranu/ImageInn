@@ -77,15 +77,6 @@ from scripts.thumbnails.upload.template import PixelFiles
 
 logger = setup_logging()
 
-
-# Define a Protocol for alive_bar()
-class ProgressBar(Protocol):
-    def __call__(self, *args, **kwargs) -> None:
-        ...
-
-    def text(self, text: str) -> None:
-        ...
-
 class ImmichProgressiveUploader(ImmichInterface):
 
     _progress_bar : ProgressBar | None = PrivateAttr(default=None)
@@ -167,8 +158,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                         time.sleep(10)
                         continue
 
-                    logger.error(f"Max retries reached for {image_path}.")
-
+                    logger.error("Max retries reached for %s.", image_path)
                 return UploadStatus.ERROR
 
         logger.error('Max retries reached for %s.', image_path)
@@ -267,7 +257,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                             except Exception as e:
                                 # Catch, report, and re-raise
                                 self.record_error()
-                                logger.error(f"Exception during upload: {e}")
+                                logger.error("Exception during upload: %s", e)
                                 raise
 
                     # At the conclusion of the upload, update the last processed time
@@ -420,7 +410,7 @@ def main():
                     case 'pixel':
                         templates.append(PixelFiles)
                     case _:
-                        logger.error(f"Unknown template: {template}. See --help for available templates.")
+                        logger.error("Unknown template: %s. See --help for available templates.", template)
                         sys.exit(1)
 
         immich = ImmichProgressiveUploader(

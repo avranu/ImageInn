@@ -469,7 +469,7 @@ class CopyWorkflow(Workflow):
 				elif photo.is_jpg():
 					files.append_parts(photo, [self.jpg_path, folder, filename])
 				else:
-					logger.warning(f'Unknown file type {filename}')
+					logger.warning('Unknown file type %s', filename)
 					continue
 
 				# Add ALL files to the backup path
@@ -563,7 +563,7 @@ class CopyWorkflow(Workflow):
 
 				# If we couldn't find a unique name, skip the file
 				if os.path.exists(new_file_path):
-					logger.critical(f'Could not find a unique name for {file_path}')
+					logger.critical('Could not find a unique name for %s', file_path)
 					self.ask_user_continue(f'Checksums mismatch for {file_path}, and cannot create a unique name for it.')
 					results[file_path] = None
 					continue

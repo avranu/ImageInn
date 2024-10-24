@@ -58,7 +58,7 @@ def main():
             fpath = os.path.join(path, f)
             if os.path.isfile(fpath):
                 files.append(fpath)
-        except OSError as e:
+        except OSError:
             continue
 
     # Iterate through files and update the timestamps

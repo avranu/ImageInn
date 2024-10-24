@@ -74,7 +74,7 @@ class Status(BaseModel):
         v = Path(v)
 
         if not v.exists():
-            logger.error(f"Directory {v} does not exist.")
+            logger.error("Directory %s does not exist.", v)
             raise FileNotFoundError(f"Directory {v} does not exist.")
 
         return v
