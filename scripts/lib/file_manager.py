@@ -53,7 +53,23 @@ logger = logging.getLogger(__name__)
 
 type StrPattern = str | re.Pattern | None
 
-JUNK_FILENAMES = ['.picasa.ini', 'Thumbs.db', '.upload_status.txt', 'upload_status.txt']
+JUNK_FILENAMES = [
+    '.picasa.ini', 
+    'Thumbs.db', 
+    '.upload_status.txt', 
+    'upload_status.txt',
+]
+
+# SONY JUNK
+SONY_JUNK_FILENAMES = [
+    'INDEX.BDM',
+    'MOVIEOBJ.BDM',
+    'MEDIAPRO',
+    'MEDIAPRO.XML',
+    'STATUS.BIN',
+    'CAMSET01.DAT',
+    'SONYCARD.IND',
+]
 
 class FileManager(Script):
     directory: Path = Field(default=Path('.'))
@@ -67,6 +83,8 @@ class FileManager(Script):
     _stats_lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
     _hash_cache: LRUCache = PrivateAttr(default_factory=lambda: LRUCache(maxsize=10000))
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
+
+    _sony_clip_pattern : re.Pattern | None = None
 
     @field_validator('glob_pattern', mode='before')
     def validate_glob_pattern(cls, v):
@@ -120,6 +138,12 @@ class FileManager(Script):
     @property
     def errors(self) -> int:
         return self.get_stat('errors')
+
+    @property
+    def sony_clip_pattern(self) -> re.Pattern:
+        if not self._sony_clip_pattern:
+            self._sony_clip_pattern = re.compile(r'.*/M4ROOT/CLIP/\w+[.](xml|XML)$')
+        return self._sony_clip_pattern
 
     @classmethod
     def get_default_glob_pattern(cls) -> str:
@@ -603,14 +627,11 @@ class FileManager(Script):
         junk_files = []
         for f in directory.iterdir():
             if f.is_dir():
-                if not recursive:
-                    # A directory exists and we can't remove it...
-                    return False
-
-                if self.delete_directory_if_empty(f):
+                if recursive and self.delete_directory_if_empty(f):
                     # subdir is now deleted, so it doesnt count
                     continue
 
+                # A directory exists and we can't remove it...
                 return False
 
             if cleanup:
@@ -621,7 +642,7 @@ class FileManager(Script):
                     continue
 
             # something was found, so it's not empty
-            logger.debug('NOT EMPTY: Found file="%s" in dir="%s".', f, directory.absolute())
+            logger.info('NOT EMPTY: Found file="%s" in dir="%s".', f, directory.absolute())
             return False
 
         # Nothing found except junk files... time to remove them.
@@ -653,13 +674,23 @@ class FileManager(Script):
         Returns:
             True if the file is junk, False otherwise.
         """
+        # We may check this a few times, so cache it here
+        name = file_path.name
+        filesize = file_path.stat().st_size
+        is_hidden = name.startswith('.')
+
         # Check known junk filenames
-        if file_path.name in JUNK_FILENAMES:
+        if name in JUNK_FILENAMES:
             return True
 
-        # We may check this a few times, so cache it here
-        filesize = file_path.stat().st_size
-        is_hidden = file_path.name.startswith('.')
+        # Less than 10k
+        if filesize < (1024 * 10):
+            if name in SONY_JUNK_FILENAMES:
+                return True
+
+            # Check if path ends with M4ROOT/CLIP/\w+.xml
+            if self.sony_clip_pattern.match(str(file_path)):
+                return True
 
         # really EXTREMELY small (50 bytes)
         if filesize < 50:
@@ -763,6 +794,10 @@ class FileManager(Script):
         if destination_path.is_dir():
             destination_path = destination_path / source_path.name
 
+        # Move XMP files alongside photos
+        source_xmp_path : Path | None = source_path.with_suffix('.xmp')
+        destination_xmp_path : Path | None = destination_path.with_suffix('.xmp')
+
         if destination_path.exists():
             raise FileExistsError(f"Move Destination file already exists: {destination_path}")
 
@@ -779,6 +814,14 @@ class FileManager(Script):
                 if source_hash != destination_hash:
                     logger.critical(f"Checksum mismatch after moving {source_path} to {destination_dir}")
                     raise ShouldTerminateException(f'Checksum mismatch after moving {source_path} to {destination_dir}')
+
+            # Copy xmp files after verification, so errors don't interfere.
+            # ... do not verify xmp files, as they are not critical
+            try:
+                if source_xmp_path.exists(follow_symlinks=False):
+                    source_xmp_path.rename(destination_xmp_path)
+            except Exception as e:
+                logger.warning('Error moving XMP file: %s', e)
 
         return destination_path
 

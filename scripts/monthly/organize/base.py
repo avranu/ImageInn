@@ -55,7 +55,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from pathlib import Path
 import logging
 import argparse
-from typing import Any, Callable, Iterator, Literal, Protocol
+from typing import Any, Callable, Iterator, Literal, Optional, Protocol
 from alive_progress import alive_it, alive_bar
 from pydantic import Field, PrivateAttr, field_validator
 from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET
@@ -110,7 +110,7 @@ class FileOrganizer(FileManager):
     @classmethod
     def get_default_filename_pattern(cls) -> StrPattern:
         # A temporary hack to inject a class attribute into a pydantic model.
-        return r'.*[.](jpg|jpeg|webp|png|dng|arw|nef|psd|tif|tiff|mp4)'
+        return r'.*[.](jpg|jpeg|webp|png|heic|dng|arw|nef|psd|tif|tiff|mp4)'
 
     def record_duplicate_file(self, count : int = 1) -> None:
         self.record_stat('duplicate_file', count)
@@ -221,8 +221,11 @@ class FileOrganizer(FileManager):
         )
 
         # After organization, cleanup empty directories
-        self.delete_empty_directories()
-        
+        result = self.delete_empty_directories()
+        if result and self.directory.samefile('.'):
+            # The dir no longer exists. run "cd .."
+            os.chdir('..')
+
         # Ensure the counting task is complete
         """
         if not total_count_task.done():
@@ -391,13 +394,13 @@ class FileOrganizer(FileManager):
 
         return self.mkdir(parent_directory / subdir)
 
-    def handle_single_conflict(self, source_file : Path, destination: Path) -> Path | Literal[False]:
+    def handle_single_conflict(self, source_path : Path, destination_path: Path) -> Path | Literal[False]:
         """
         Handle a single filename conflict.
 
         Args:
-            source_file: The source file.
-            destination: The target file.
+            source_path: The source file.
+            destination_path: The target file.
 
         Returns:
             The target file if a viable path was found, or False if the file should be skipped.
@@ -406,26 +409,31 @@ class FileOrganizer(FileManager):
             DuplicationHandledException: If the duplicate file was handled.
             OneFileException: If an error occurs while deleting the source file, or hashing either file.
         """
-        if not destination.exists():
-            # No conflict; return the target file
-            return destination
+        # XMP files go with their respective RAW files
+        xmp_source_path = source_path.with_suffix('.xmp')
+        xmp_destination_path = destination_path.with_suffix('.xmp')
+        
+        if not destination_path.exists() and not xmp_destination_path.exists():
+            # No conflict; return the destination file
+            return destination_path
         
         if self.skip_collision:
             # Skip moving files on collision
             self.record_skip_file()
-            logger.debug(f"Skipping file {source_file=} due to collision with {destination=}")
-            raise DuplicationHandledException(f"Duplicate file {source_file=} skipped")
+            logger.debug(f"Skipping file {source_path=} due to collision with {destination_path=}")
+            raise DuplicationHandledException(f"Duplicate file {source_path=} skipped")
 
-        if self.files_match(source_file, destination, skip_hash=self.skip_hash):
-            logger.debug('Duplicate file found: %s', source_file)
+        if self.files_match(source_path, destination_path, skip_hash=self.skip_hash):
+            logger.debug('Duplicate file found: %s', source_path)
             self.record_duplicate_file()
             
             if not self.keep_duplicates and not self.copy_mode and not self.skip_hash:
                 # Files are identical; delete the source file
-                self.delete_file(source_file)
-                raise DuplicationHandledException(f"Duplicate file {source_file=} deleted")
+                self.delete_file(source_path)
+                self.delete_file(xmp_source_path)
+                raise DuplicationHandledException(f"Duplicate file {source_path=} deleted")
                 
-            raise DuplicationHandledException(f"Duplicate file {source_file=} skipped")
+            raise DuplicationHandledException(f"Duplicate file {source_path=} skipped")
 
         # Files differ; the conflict was not handled.
         return False
@@ -445,10 +453,6 @@ class FileOrganizer(FileManager):
         Raises:
             OneFileException: If a unique filename could not be found.
         """
-        if not target_file.exists():
-            # No conflict; return the target file
-            return target_file
-        
         if (result := self.handle_single_conflict(source_file, target_file)):
             # A viable path was found
             return result
@@ -523,7 +527,22 @@ class FileOrganizer(FileManager):
         self.progress_bar.text(self.report(message_prefix))
         self.progress_bar()
 
-def main():
+class ArgsNamespace(argparse.Namespace):
+    directory: str
+    target: str
+    glob_pattern: Optional[str]
+    copy: bool
+    keep_duplicates: bool
+    limit: int
+    verbose: bool
+    action: str
+    trash: str
+    skip_collision: bool
+    skip_hash: bool
+    dry_run: bool
+
+
+def main() -> int:
     logger = setup_logging()
 
     DEFAULT_TARGET = os.getenv('IMAGEINN_ORGANIZE_TARGET', '.')
@@ -538,11 +557,12 @@ def main():
     parser.add_argument('-k', '--keep-duplicates', action='store_true', help="Keep duplicate files in the source directory (don't delete)")
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
+    parser.add_argument('--action', default='organize', choices=['organize', 'cleanup'], help='Action to perform')
     parser.add_argument('--trash', default=DEFAULT_TRASH, help='Directory to move deleted files to. Defaults to env variable ORGANIZE_IMAGE_TRASH, which is "{DEFAULT_TRASH}", or ./.trash/')
     parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
     parser.add_argument('--skip-hash', action='store_true', help='Skip verifying file hashes')
     parser.add_argument('--dry-run', action='store_true', help='Simulate the file organization without moving files')
-    args = parser.parse_args()
+    args = parser.parse_args(namespace=ArgsNamespace())
 
     if args.verbose:
         logger.setLevel(logging.DEBUG)
@@ -561,21 +581,29 @@ def main():
     )
 
     try:
-        organizer.organize_files()
+        match str(args.action).lower():
+            case 'organize':
+                organizer.organize_files()
+            case 'cleanup':
+                organizer.delete_empty_directories()
+            case _:
+                logger.error("Invalid action: %s", args.action)
+                return 1
     except ShouldTerminateException as e:
         logger.critical(f"Critical error: {e}")
         logger.info('Before error: %s', organizer.report())
-        sys.exit(1)
+        return 1
     except KeyboardInterrupt:
         logger.warning("Operation interrupted by user")
         logger.info('Before termination: %s', organizer.report())
-        sys.exit(1)
+        return 1
     except Exception as e:
         logger.error('Uncaught error: %s', e)
         logger.info(organizer.report('Before error'))
         raise
         
-    return
+    return 0
 
 if __name__ == "__main__":
-    main()
+    exit_code = main()
+    sys.exit(exit_code)
