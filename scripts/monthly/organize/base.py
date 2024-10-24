@@ -29,7 +29,7 @@
 *                                                                                                                      *
 *        File:    organize.py                                                                                          *
 *        Project: imageinn                                                                                             *
-*        Version: 1.0.0                                                                                                *
+*        Version: 0.1.0                                                                                                *
 *        Created: 2024-09-16                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -55,10 +55,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from pathlib import Path
 import logging
 import argparse
-from typing import Any, Iterator, Literal
-from tqdm import tqdm
+from typing import Any, Callable, Iterator, Literal, Protocol
 from alive_progress import alive_it, alive_bar
 from pydantic import Field, PrivateAttr, field_validator
+from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.lib.file_manager import StrPattern
@@ -72,13 +72,18 @@ class FileOrganizer(FileManager):
     Organize files into monthly directories based on the filename.
 
     - Files are moved to a directory named 'YYYY/YYYY-MM-DD' under the specified directory.
-    - If a file with the same name already exists in the target directory, and hashes match, it is deleted.
-        - If the hash does not match, a unique filename is generated.
+    - If a file with the same name already exists in the target directory:
+        - if hashes match, it is deleted.
+        - if hashes do not match, a unique filename is generated.
     """
     batch_size: int = -1
     skip_collision: bool = False
     skip_hash : bool = False
     target_directory : Path | None = None
+    copy_mode : bool = False
+    keep_duplicates : bool = False
+
+    _progress_bar : ProgressBar | None = PrivateAttr(default=None)
 
     @field_validator('target_directory', mode='before')
     def validate_target_directory(cls, value: Any) -> Path | None:
@@ -93,6 +98,12 @@ class FileOrganizer(FileManager):
         return dir_path
 
     @property
+    def progress_bar(self) -> ProgressBar:
+        if not self._progress_bar:
+            self._progress_bar = alive_bar(title="Organizing Files", unit='files', unknown='waves')
+        return self._progress_bar
+
+    @property
     def files_duplicated(self) -> int:
         return self.get_stat('duplicate_file')
 
@@ -100,11 +111,6 @@ class FileOrganizer(FileManager):
     def get_default_filename_pattern(cls) -> StrPattern:
         # A temporary hack to inject a class attribute into a pydantic model.
         return r'.*[.](jpg|jpeg|webp|png|dng|arw|nef|psd|tif|tiff|mp4)'
-
-    @classmethod
-    def get_default_glob_pattern(cls) -> str:
-        # A temporary hack to inject a class attribute into a pydantic model.
-        return '*.{jpg,jpeg,webp,png,dng,arw,nef,psd,tif,tiff,mp4}'
 
     def record_duplicate_file(self, count : int = 1) -> None:
         self.record_stat('duplicate_file', count)
@@ -145,6 +151,7 @@ class FileOrganizer(FileManager):
 
         Raises:
             OneFileException: If an error occurs while hashing either file.
+            ValueError: If the source and destination files are the same.
         """
         skip_hash = skip_hash or self.skip_hash
 
@@ -157,13 +164,15 @@ class FileOrganizer(FileManager):
         if self.check_dry_run(f'organizing files with {self.glob_pattern=} in {self.directory.absolute()}'):
             return
 
+        print(f'Organizing files in {BLUE}{self.directory.absolute()}{RESET} to {GREEN}{self.get_target_directory().absolute()}{RESET}')
+
         # Gather subdirectories in the source directory
         directories = self.yield_directories(self.directory)
         # Start counting directories asynchronously
         #total_count_task = asyncio.create_task(self.count_files(self.directory))
 
-        with alive_bar(title="Organizing Files", unit='files', unknown='waves') as progress_bar:
-            progress_bar.text(f'Searching... - {self.report()}')
+        with alive_bar(title=f"Organizing {str(self.directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+            self.progress_bar.text(f'{self.report('Searching...')}')
             total_was_set = False
             
             for subdir in directories:
@@ -189,7 +198,7 @@ class FileOrganizer(FileManager):
                             # We will attempt to delete the dir in `finally` below
                             continue
 
-                        logger.debug('%d files found in %s', count, subdir)
+                        logger.debug('%d files found in /%s/', count, subdir)
 
                         for future in as_completed(futures):
                             try:
@@ -201,14 +210,11 @@ class FileOrganizer(FileManager):
                                 logger.error(f"Error organizing file: {e}")
                                 self.record_error()
                                 raise
-                            finally:
-                                progress_bar.text(f'/{str(subdir)[-10:]}/ - {self.report()}')
-                                progress_bar()
                 finally:
                     # Remove the directory if it is now empty
                     self.delete_directory_if_empty(subdir)
 
-        logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted',
+        logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted. Cleaning up...',
                     self.files_moved,
                     self.files_skipped,
                     self.files_deleted,
@@ -218,11 +224,13 @@ class FileOrganizer(FileManager):
         self.delete_empty_directories()
         
         # Ensure the counting task is complete
+        """
         if not total_count_task.done():
             # Discard the task
             total_count_task.cancel()
+        """
 
-        logger.info('Finished organizing. %s', self.report())
+        logger.info(self.report('Finished organizing.'))
         return
 
     def process_file_threadsafe(self, file: Path) -> bool:
@@ -233,13 +241,15 @@ class FileOrganizer(FileManager):
             if self.process_file(file):
                 return True
         except DuplicationHandledException:
-            logger.debug(f"Duplicate file {file} handled")
+            logger.debug(f"Duplicate file {file=} handled")
             return True
         except OneFileException as e:
-            logger.error(f"Error processing file {file}: {e}")
+            logger.error(f"Error processing file {file=}: {e=}")
+        finally:
+            subdir = file.parent
+            self.progress_report(self._shorten_path(subdir))
 
         return False
-
 
     def process_file(self, file_path: Path) -> Path | None:
         """
@@ -257,16 +267,25 @@ class FileOrganizer(FileManager):
         target_dir = self.create_subdir(file_path)
         destination_path = target_dir / filename
 
-        if file_path == destination_path:
+        if destination_path.exists() and file_path.samefile(destination_path):
             self.record_skip_file()
             logger.debug(f"Skipping file {file_path} as it is already in the correct directory")
             return None
 
-        # Handle potential filename collisions. This will throw an exception if the collision cannot be handled.
-        target_file = self.handle_collision(file_path, destination_path)
+        # Loop in case another process hijacks our destination path
+        for i in range(3):
+            # Handle potential filename collisions. This will throw an exception if the collision cannot be handled.
+            target_file = self.handle_collision(file_path, destination_path)
 
-        # TODO: Check file and target file are same drive. If not, verify=True
-        return self.move_file(file_path, target_file)
+            try:
+                if self.copy_mode:
+                    return self.copy_file(file_path, target_file)
+                return self.move_file(file_path, target_file)
+            except FileExistsError as fee:
+                logger.warning("File was created by another process. Attempt(%d/3). destination_path='%s' -> %s", i, target_file, fee)
+
+        logger.error("File could not be moved after 3 attempts. destination_path='%s'", target_file)
+        raise OneFileException(f"File could not be moved after 3 attempts. destination_path='{target_file}'")
 
     def mkdir(self, directory: Path, success_message: str | None = "Created directory", *, parents: bool = True, exist_ok : bool = True) -> Path:
         """
@@ -289,9 +308,9 @@ class FileOrganizer(FileManager):
             result = super().mkdir(directory, parents=parents, exist_ok=exist_ok)
 
             if success_message:
-                logger.debug(f"{success_message}: {directory}")
+                logger.debug(f"{success_message}: {directory=}")
         except OSError as ose:
-            raise ShouldTerminateException(f'Error creating directory: {directory} -> {ose}') from ose
+            raise ShouldTerminateException(f'Error creating directory: {directory=} -> {ose=}') from ose
 
         return result
 
@@ -309,37 +328,23 @@ class FileOrganizer(FileManager):
         Raises:
             OneFileException: If an error occurs while deleting the file.
         """
+        # This should never happen, but safety check
         if self.skip_hash:
             logger.critical('Cannot delete files without verifying checksums')
-            raise OneFileException('Cannot delete files without verifying checksums')
+            raise ShouldTerminateException('Cannot delete files without verifying checksums')
+
+        # This should never happen, but safety check
+        if self.copy_mode:
+            logger.critical('Cannot delete files in copy mode')
+            raise ShouldTerminateException('Cannot delete files in copy mode')
 
         try:
             result = super().delete_file(file_path, use_trash)
         except OSError as ose:
-            raise OneFileException(f'Error deleting file: {ose}') from ose
+            raise OneFileException(f'Error deleting file: {ose=}') from ose
 
         return result
-
-    def move_file(self, source: Path, destination: Path, verify : bool = False) -> Path:
-        """
-        Move a file to a new location.
-
-        Args:
-            source: The source file to move.
-            destination: The destination path.
-            message: An optional message to log.
-
-        Returns:
-            The destination path.
-
-        Raises:
-            OneFileException: If an error occurs while moving the file, or hashing either file.
-            ShouldTerminateException: If the checksums do not match after moving the file.
-        """
-        destination = super().move_file(source, destination, verify=verify)
-
-        return destination
-
+    
     def find_subdir(self, filepath : Path) -> str:
         """
         Find the subdirectory for a file based on its filename.
@@ -364,8 +369,8 @@ class FileOrganizer(FileManager):
             dir_name = f"{year}/{year}-{month}-{day}/"
 
         except OSError as ose:
-            logger.error(f"Error occurred while finding subdirectory: {ose}")
-            raise ValueError(f"Unable to determine a subdir from: {filepath} -> {ose}") from ose
+            logger.error(f"Error occurred while finding subdirectory: {ose=}")
+            raise ValueError(f"Unable to determine a subdir from: {filepath=} -> {ose=}") from ose
 
         return dir_name
 
@@ -404,21 +409,25 @@ class FileOrganizer(FileManager):
         if not destination.exists():
             # No conflict; return the target file
             return destination
-
+        
         if self.skip_collision:
             # Skip moving files on collision
             self.record_skip_file()
-            logger.debug(f"Skipping file {source_file} due to collision with {destination}")
-            raise DuplicationHandledException(f"Duplicate file {source_file} handled")
+            logger.debug(f"Skipping file {source_file=} due to collision with {destination=}")
+            raise DuplicationHandledException(f"Duplicate file {source_file=} skipped")
 
-        if self.files_match(source_file, destination, self.skip_hash):
-            # Files are identical; delete the source file
+        if self.files_match(source_file, destination, skip_hash=self.skip_hash):
+            logger.debug('Duplicate file found: %s', source_file)
             self.record_duplicate_file()
-            if not self.skip_hash:
-                logger.debug('Duplicate file found: %s', source_file)
+            
+            if not self.keep_duplicates and not self.copy_mode and not self.skip_hash:
+                # Files are identical; delete the source file
                 self.delete_file(source_file)
-            raise DuplicationHandledException(f"Duplicate file {source_file} handled")
+                raise DuplicationHandledException(f"Duplicate file {source_file=} deleted")
+                
+            raise DuplicationHandledException(f"Duplicate file {source_file=} skipped")
 
+        # Files differ; the conflict was not handled.
         return False
 
     def handle_collision(self, source_file: Path, target_file: Path, max_attempts : int = 1000) -> Path:
@@ -436,6 +445,10 @@ class FileOrganizer(FileManager):
         Raises:
             OneFileException: If a unique filename could not be found.
         """
+        if not target_file.exists():
+            # No conflict; return the target file
+            return target_file
+        
         if (result := self.handle_single_conflict(source_file, target_file)):
             # A viable path was found
             return result
@@ -444,6 +457,7 @@ class FileOrganizer(FileManager):
         base = source_file.stem  # Filename without extension
         ext = source_file.suffix  # File extension including the dot
 
+        new_target_file : Path | None = None
         for i in range(max_attempts):
             new_target_file = target_file.parent / f"{base}_{i}{ext}"
 
@@ -451,42 +465,80 @@ class FileOrganizer(FileManager):
                 # A viable path was found
                 return result
 
-        raise OneFileException(f"Could not find a unique filename for {source_file}")
+        raise OneFileException(f"Could not find a unique filename for {source_file=}... last name tried: {new_target_file=}")
 
-    def report(self) -> str:
+    def report(self, message_prefix : str | None = None) -> str:
         """
         Create a report of the file organization.
+
+        Args:
+            message_prefix: An optional message to prefix the report with.
 
         Returns:
             The report string.
         """
-        # Files
-        buffer = f'{self.files_moved} files moved'
-        if self.files_deleted > 0:
-            buffer = f'{buffer}, {self.files_deleted} deleted'
-        if self.files_skipped > 0:
-            buffer = f'{buffer}, {self.files_skipped} skipped'
+        buffer = []
 
+        if message_prefix:
+            buffer.append(f'{BLUE}{message_prefix[-30:]:31s}{RESET}')
+        
+        # Files
+        file_buffer = []
+        if self.files_moved > 0:
+            file_buffer.append(f'{self.files_moved} moved')
+        if self.files_deleted > 0:
+            file_buffer.append(f'{self.files_deleted} deleted')
+        if self.files_skipped > 0:
+            file_buffer.append(f'{self.files_skipped} skipped')
+            
         # Directories
-        buffer = f'{buffer}, {self.directories_created} directories created'
+        directory_buffer = []
+        if self.directories_created > 0:
+            directory_buffer.append(f'{self.directories_created} created')
         if self.directories_deleted > 0:
-            buffer = f'{buffer}, {self.directories_deleted} removed'
+            directory_buffer.append(f'{self.directories_deleted} removed')
+
+
+        if file_buffer:
+            files_str = f"{PURPLE}Files [{', '.join(file_buffer)}]{RESET}"
+            buffer.append(f"{files_str:50s}")
+        if directory_buffer:
+            directory_str = f"{YELLOW}Directories [{', '.join(directory_buffer)}]{RESET}"
+            buffer.append(f"{directory_str:50s}")
 
         # Errors
         if self.errors > 0:
-            buffer = f'{buffer}, {self.errors} errors'
-        return buffer
+            error_str = f"{RED}Errors: {self.errors}{RESET}"
+            buffer.append(f'{error_str:12s}')
+            
+        return f"{RESET}{' '.join(buffer) or 'No files changed'}{RESET}"
+
+    def progress_report(self, message_prefix : str | None = None):
+        """
+        Report progress to the progress bar.
+
+        Args:
+            message_prefix: An optional message to prefix the report with.
+        """
+        self.progress_bar.text(self.report(message_prefix))
+        self.progress_bar()
 
 def main():
     logger = setup_logging()
 
+    DEFAULT_TARGET = os.getenv('IMAGEINN_ORGANIZE_TARGET', '.')
+    DEFAULT_TRASH = os.getenv('IMAGEINN_ORGANIZE_TRASH', None)
+
     # Set up argument parser
     parser = argparse.ArgumentParser(description='Organize files into monthly directories.')
     parser.add_argument('-d', '--directory', default='.', help='Directory to organize (default: current directory)')
-    parser.add_argument('-t', '--target', default=None, help='Target directory to move files to')
+    parser.add_argument('-t', '--target', default=DEFAULT_TARGET, help=f'Target directory to move files to (defaults to env var IMAGEINN_ORGANIZE_TARGET, which is "{DEFAULT_TARGET}")')
     parser.add_argument('-g', '--glob-pattern', default=None, help='Glob pattern to use when searching for files.')
+    parser.add_argument('-c', '--copy', action='store_true', help='Copy files instead of moving them')
+    parser.add_argument('-k', '--keep-duplicates', action='store_true', help="Keep duplicate files in the source directory (don't delete)")
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
+    parser.add_argument('--trash', default=DEFAULT_TRASH, help='Directory to move deleted files to. Defaults to env variable ORGANIZE_IMAGE_TRASH, which is "{DEFAULT_TRASH}", or ./.trash/')
     parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
     parser.add_argument('--skip-hash', action='store_true', help='Skip verifying file hashes')
     parser.add_argument('--dry-run', action='store_true', help='Simulate the file organization without moving files')
@@ -502,7 +554,10 @@ def main():
         batch_size      = args.limit,
         dry_run         = args.dry_run,
         skip_collision  = args.skip_collision,
-        skip_hash       = args.skip_hash
+        skip_hash       = args.skip_hash,
+        copy_mode       = args.copy,
+        keep_duplicates = args.keep_duplicates,
+        trash_directory = args.trash,
     )
 
     try:
@@ -515,6 +570,10 @@ def main():
         logger.warning("Operation interrupted by user")
         logger.info('Before termination: %s', organizer.report())
         sys.exit(1)
+    except Exception as e:
+        logger.error('Uncaught error: %s', e)
+        logger.info(organizer.report('Before error'))
+        raise
         
     return
 

@@ -9,7 +9,7 @@
 *                                                                                                                      *
 *        File:    file_manager.py                                                                                      *
 *        Project: imageinn                                                                                             *
-*        Version: 1.0.0                                                                                                *
+*        Version: 0.1.0                                                                                                *
 *        Created: 2024-09-25                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -29,6 +29,8 @@ import re
 import sys
 import threading
 from typing import Iterator, Literal
+
+from alive_progress import alive_bar
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -51,8 +53,12 @@ logger = logging.getLogger(__name__)
 
 type StrPattern = str | re.Pattern | None
 
+JUNK_FILENAMES = ['.picasa.ini', 'Thumbs.db', '.upload_status.txt', 'upload_status.txt']
+
 class FileManager(Script):
     directory: Path = Field(default=Path('.'))
+    trash_directory : Path | None = None
+
     dry_run: bool = False
     glob_pattern: str = '*'
     filename_pattern : re.Pattern = Field(default=None, validate_default=True)
@@ -119,6 +125,11 @@ class FileManager(Script):
     def get_default_glob_pattern(cls) -> str:
         # A temporary hack to inject a class attribute into a pydantic model.
         return '*'
+
+    def get_trash_directory(self) -> Path:
+        if not self.trash_directory:
+            self.trash_directory = self.directory / '.trash'
+        return self.trash_directory
 
     def get_stats(self) -> dict[str, int]:
         return self._stats.copy()
@@ -262,10 +273,11 @@ class FileManager(Script):
 
         """
         if not recursive:
-            if allow_hidden or not directory.name.startswith('.'):
-                if directory.name != '.trash':
-                    yield directory
-            return
+            if directory.name.startswith('.'):
+                if not allow_hidden or directory.name == '.trash':
+                    return
+                
+            yield directory
 
         logger.debug('Searching %s for directories.', directory.absolute())
 
@@ -335,13 +347,10 @@ class FileManager(Script):
         else:
             files = directory.glob(self.glob_pattern)
 
-        count = 0
         for f in files:
             if self.should_include_file(f):
-                count += 1
-                if count % 100 == 0:
-                    logger.info('Yielded %d files in %s...', count, directory)
                 yield f
+        return
 
     def get_all_files(self, directory : Path | None = None, *, recursive : bool = True) -> list[Path]:
         """
@@ -353,7 +362,7 @@ class FileManager(Script):
         Returns:
             A list of files in the directory which match the glob pattern.
         """
-        return list(self.yield_files(directory, recursive))
+        return list(self.yield_files(directory, recursive=recursive))
 
     def should_include_file(self, item: Path) -> bool:
         """
@@ -387,11 +396,9 @@ class FileManager(Script):
         """
         # Avoid using a list comprehension to avoid loading all files into memory
         count = 0
-        for _ in self.yield_files(directory):
+        for _ in self.yield_files(directory, recursive=recursive):
             count += 1
             await asyncio.sleep(0)  # Yield control to the event loop
-            if count % 100 == 0:
-                logger.info('Counted %d files...', count)
         logger.critical('Finished counting files!!!')
         return count
 
@@ -471,9 +478,17 @@ class FileManager(Script):
 
         Returns:
             True if the files match, False otherwise.
+
+        Raises:
+            ValueError: If the source and destination files are the same.
         """
         if not destination_path.exists():
             return False
+
+        # If the files refer to the same destination, 
+        # ...we're doing something upstream that we don't think we're doing
+        if source_path.samefile(destination_path):
+            raise ValueError(f"Source and destination files are the same: {source_path}")
 
         # Compare file sizes
         if not self.file_sizes_match(source_path, destination_path):
@@ -559,12 +574,22 @@ class FileManager(Script):
         """
         directory = directory or self.directory
 
-        count = 0
-        for dirpath in self.yield_directories(directory, recursive=True):
-            if self.delete_directory_if_empty(dirpath):
-                count += 1
+        if not directory.exists():
+            logger.warning('delete_empty_directories on directory that does not exist: %s', directory)
+            return
 
-        logger.info('Cleaned up %d empty directories.', count)
+        with alive_bar(title=f"Organizing {str(directory)[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+            count = 0
+            skipped = 0
+            for dirpath in self.yield_directories(directory, recursive=True):
+                if self.delete_directory_if_empty(dirpath):
+                    count += 1
+                else:
+                    skipped += 1
+                self._progress_bar()
+                self._progress_bar.text(f'Cleaning directories: {count} deleted, {skipped} skipped')
+
+        logger.info('Cleaned up %d empty directories. %d remain.', count, skipped)
 
     def delete_directory_if_empty(self, directory: Path, recursive : bool = True, cleanup : bool = True) -> bool:
         """
@@ -590,7 +615,7 @@ class FileManager(Script):
 
             if cleanup:
                 # Remove files we don't care about that stall this process.
-                if f.name in ['.picasa.ini', 'Thumbs.db', '.upload_status.txt', 'upload_status.txt']:
+                if self.is_junk(f):
                     # Don't remove junk files unless the rest of the dir is empty
                     junk_files.append(f)
                     continue
@@ -608,9 +633,78 @@ class FileManager(Script):
 
         # Nothing was found
         if not self.check_dry_run(f'deleting empty directory {directory}'):
-            directory.rmdir()
-            self.record_delete_directory()
+            try:
+                # use absolute to avoid Path('.').rmdir(), which generates an OSError
+                directory.absolute().rmdir()
+            except OSError as ose:
+                logger.error('Unable to delete directory: %s -> %s', directory, ose)
+                return False
+
+        self.record_delete_directory()
         return True
+
+    def is_junk(self, file_path : Path) -> bool:
+        """
+        Check if a file is junk.
+
+        Args:
+            file_path: The file to check.
+
+        Returns:
+            True if the file is junk, False otherwise.
+        """
+        # Check known junk filenames
+        if file_path.name in JUNK_FILENAMES:
+            return True
+
+        # We may check this a few times, so cache it here
+        filesize = file_path.stat().st_size
+        is_hidden = file_path.name.startswith('.')
+
+        # really EXTREMELY small (50 bytes)
+        if filesize < 50:
+            if is_hidden:
+                return True
+
+            if self.is_temporary_file(file_path):
+                return True
+            
+        # completely empty
+        if filesize == 0:
+            if not file_path.suffix or file_path.suffix == '.txt':
+                return True
+
+        # No condition was met, so it's not junk
+        return False
+
+    def is_temporary_file(self, file_path : Path) -> bool:
+        """
+        Check if a file is temporary.
+
+        Args:
+            file_path: The file to check.
+
+        Returns:
+            True if the file is temporary, False otherwise.
+        """
+        if file_path.suffix == '.tmp':
+            return True
+
+        if file_path.name.startswith('~'):
+            return True
+
+        if not file_path.suffix:
+            if file_path.name.startswith('tmp_') or file_path.name.startswith('temp_'):
+                return True
+            if file_path.name.endswith('_tmp') or file_path.name.endswith('_temp'):
+                return True
+
+        # Swap files
+        if file_path.suffix == '.swp':
+            return True        
+
+        # No conditions met
+        return False
 
     def _find_trash_name(self, file_path: Path) -> Path:
         """
@@ -622,7 +716,7 @@ class FileManager(Script):
         Returns:
             The path to the file in the trash directory.
         """
-        trash_dir = self.directory / '.trash'
+        trash_dir = self.get_trash_directory()
         trash_dir.mkdir(exist_ok=True)
 
         trash_file_path = trash_dir / file_path.name
@@ -632,17 +726,34 @@ class FileManager(Script):
 
         return trash_file_path
 
-    def move_file(self, source_path: Path, destination_path: Path, verify : bool = True) -> Path:
+    def move_file(self, source_path: Path, destination_path: Path, verify : bool | None = None) -> Path:
         """
         Move a file to a new location.
 
         Args:
-            source: The source file to move.
-            destination: The destination path.
+            source: 
+                The source file to move.
+            destination: 
+                The destination path.
+            verify: 
+                Whether to verify the move by comparing checksums. 
+                If None, verify will be set to True if the source and destination are on different drives.
+                The rationale is that moving files to the same drive just modifies the pointer, and the file data should not change,
+                however, moving files to a different drive will require a full copy, so the file data should be verified.
 
         Returns:
             The destination path.
+
+        Raises:
+            FileExistsError: If the destination file already exists.
         """
+        if verify is None:
+            # Check if source_path and destination_path are on the same drive
+            if source_path.resolve().drive != destination_path.resolve().drive:
+                verify = True
+            else:
+                verify = False
+        
         # Destination must be absolute for Path.rename to be consistent
         if not destination_path.is_absolute():
             logger.debug(f"Making destination path absolute: {destination_path}")
@@ -671,17 +782,31 @@ class FileManager(Script):
 
         return destination_path
 
-    def copy_file(self, source_path : Path, destination_path : Path, verify : bool = True) -> Path:
+    def copy_file(self, source_path : Path, destination_path : Path, verify : bool | None = None) -> Path:
         """
         Copy a file to a new location.
 
         Args:
-            source: The source file to copy.
-            destination: The destination path.
+            source: 
+                The source file to copy.
+            destination: 
+                The destination path.
+            verify:
+                Whether to verify the copy by comparing checksums. 
+                If None, verify will be set to True if the source and destination are on different drives.
+                The rationale is that copying files to the same drive just duplicates the file data, and the file data should not change,
+                however, copying files to a different drive will require a full copy, so the file data should be verified.
 
         Returns:
             The destination path.
         """
+        if verify is None:
+            # Check if source_path and destination_path are on the same drive
+            if source_path.resolve().drive != destination_path.resolve().drive:
+                verify = True
+            else:
+                verify = False
+                
         # Destination must be absolute for Path.rename to be consistent
         if not destination_path.is_absolute():
             logger.debug(f"Making destination path absolute: {destination_path}")
@@ -720,12 +845,22 @@ class FileManager(Script):
             True if running in dry-run mode, False otherwise.
         """
         if self.dry_run:
-            logger.info('DRY RUN: Skipped %s', message or 'Operation skipped')
+            logger.info('DRY RUN: Skipped %s', message or 'Operation')
             return True
 
         if message:
             logger.debug('RUN -> %s', message)
         return False
+
+    def _shorten_path(self, fullpath : Path | str, max_size : int = 30) -> str:
+        # Ensure it's a str
+        fullpath = f'{str(fullpath)}/'
+
+        if len(fullpath) <= max_size:
+            return fullpath
+        
+        index_start = -1 * (max_size - 5)
+        return f'... {fullpath[index_start:]}'
 
     def __hash__(self) -> int:
         return hash(self.directory)

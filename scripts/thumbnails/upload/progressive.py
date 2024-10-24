@@ -13,10 +13,6 @@
 *
 *    This script is referenced in bash_aliases (but not in the github copy of it).
 *
-*        Project: imageinn                                                                                             *
-*        Version: 1.0.0                                                                                                *
-*    Status: Working
-*
 *    Example:
 *        Copyright (c) 2024 Jess Mann                                                                                  *
 *        >>> python progressive.py /mnt/i/Phone
@@ -38,7 +34,7 @@
 *                                                                                                                      *
 *        File:    progressive.py                                                                                       *
 *        Project: imageinn                                                                                             *
-*        Version: 1.0.0                                                                                                *
+*        Version: 0.1.0                                                                                                *
 *        Created: 2024-09-25                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -61,15 +57,18 @@ import time
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Protocol
 from dotenv import load_dotenv
 import argparse
 from pydantic import PrivateAttr
 from tqdm import tqdm
+from alive_progress import alive_it, alive_bar
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 from scripts import setup_logging
+from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET
 from scripts.exceptions import AppException
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.interface import ImmichInterface
@@ -78,8 +77,25 @@ from scripts.thumbnails.upload.template import PixelFiles
 
 logger = setup_logging()
 
+
+# Define a Protocol for alive_bar()
+class ProgressBar(Protocol):
+    def __call__(self, *args, **kwargs) -> None:
+        ...
+
+    def text(self, text: str) -> None:
+        ...
+
 class ImmichProgressiveUploader(ImmichInterface):
 
+    _progress_bar : ProgressBar | None = PrivateAttr(default=None)
+    
+    @property
+    def progress_bar(self) -> ProgressBar:
+        if not self._progress_bar:
+            self._progress_bar = alive_bar(title="Organizing Files", unit='files', unknown='waves')
+        return self._progress_bar
+    
     @property
     def files_uploaded(self) -> int:
         return self.get_stat('uploaded_file')
@@ -107,11 +123,9 @@ class ImmichProgressiveUploader(ImmichInterface):
         """
         if self.should_ignore_file(image_path, status):
             logger.debug('Ignoring %s', image_path)
-            self.record_skip_file()
             return UploadStatus.SKIPPED
 
         if self.check_dry_run('running immich upload'):
-            self.record_upload_file()
             return UploadStatus.UPLOADED
 
         command = ["immich", "upload", image_path.as_posix()]
@@ -130,20 +144,17 @@ class ImmichProgressiveUploader(ImmichInterface):
                 # Analyze the output
                 if "All assets were already uploaded" in output:
                     logger.debug("%s already uploaded.", image_path)
-                    self.record_duplicate_file()
                     return UploadStatus.DUPLICATE
                 if "Unsupported file type" in output:
                     logger.debug("Unsupported file type: %s", image_path)
-                    self.record_error()
                     return UploadStatus.ERROR
                 if "Successfully uploaded" in output:
                     logger.debug("Uploaded %s successfully.", image_path)
-                    self.record_upload_file()
                     return UploadStatus.UPLOADED
 
                 logger.info('Unknown output: %s', output)
-                logger.info('By default, marking file %s uploaded successfully.', image_path)
-                return UploadStatus.UPLOADED
+                logger.info('By default, issuing an error.', image_path)
+                return UploadStatus.ERROR
 
             except subprocess.CalledProcessError as e:
                 output = e.stdout + e.stderr
@@ -158,11 +169,9 @@ class ImmichProgressiveUploader(ImmichInterface):
 
                     logger.error(f"Max retries reached for {image_path}.")
 
-                self.record_error()
                 return UploadStatus.ERROR
 
         logger.error('Max retries reached for %s.', image_path)
-        self.record_error()
         return UploadStatus.ERROR
 
     def upload_file_threadsafe(self, image_path: Path, status: Status | None = None) -> UploadStatus:
@@ -178,11 +187,28 @@ class ImmichProgressiveUploader(ImmichInterface):
         """
         filename = image_path.name
 
-        result = self._upload_file(image_path, status)
+        try:
+            result = self._upload_file(image_path, status)
 
-        # Do not save skipped statuses, because it would change 'uploaded' to 'skipped' in our file on a 2nd run.
-        if status is not None and result != UploadStatus.SKIPPED:
+            match result:
+                case UploadStatus.UPLOADED:
+                    self.record_upload_file()
+                case UploadStatus.DUPLICATE:
+                    self.record_duplicate_file()
+                case UploadStatus.SKIPPED:
+                    self.record_skip_file()
+                case UploadStatus.ERROR:
+                    self.record_error()
+                case _:
+                    logger.error('Unknown upload status: %s', result)
+                    self.record_error()
+
             status.update_status(filename, result)
+                
+        finally:
+            subdir = image_path.parent
+            self.progress_bar.text(self.report(f'/{str(subdir)[-25:]}/'))
+            self.progress_bar()
 
         return result
 
@@ -206,61 +232,47 @@ class ImmichProgressiveUploader(ImmichInterface):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
         directories = self.yield_directories(directory, recursive=recursive)
 
+        '''
         loop = asyncio.get_event_loop()
-        directory_count_future = loop.run_in_executor(None, asyncio.run, self.count_directories(directory, recursive))
+        directory_count_future = loop.run_in_executor(None, asyncio.run, self.count_directories(directory, recursive=recursive))
+        '''
 
-        with tqdm(desc="Total Progress", unit='dir', total=None) as progress_bar:
+        with alive_bar(title=f"Uploading {str(directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+            self.progress_bar.text(self.report('Searching...'))
             for subdir in directories:
-                try:
-                    if progress_bar.total is None and directory_count_future.done():
-                        progress_bar.total = directory_count_future.result()
-                        progress_bar.refresh()
-                        logger.info('Updated the progress bar total!')
+                '''
+                if progress_bar.total is None and directory_count_future.done():
+                    progress_bar.total = directory_count_future.result()
+                    progress_bar.refresh()
+                    logger.info('Updated the progress bar total!')
+                '''
+                with Status(directory=subdir) as status:
+                    # Check if the directory has changed since the last processed time
+                    if not status.directory_changed():
+                        logger.debug("Skipping directory %s as it has not changed since last processed.", subdir)
+                        continue
 
-                    with Status(directory=subdir) as status:
-                        # Check if the directory has changed since the last processed time
-                        if not status.directory_changed():
-                            logger.debug("Skipping directory %s as it has not changed since last processed.", subdir)
-                            continue
+                    files_to_upload = self.yield_files(subdir)
 
-                        files_to_upload = self.get_all_files(subdir)
+                    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                        futures = []
+                        for file in files_to_upload:
+                            future = executor.submit(self.upload_file_threadsafe, file, status)
+                            futures.append(future)
 
-                        with ThreadPoolExecutor(max_workers=max_threads) as executor:
-                            futures = []
-                            for file in files_to_upload:
-                                future = executor.submit(self.upload_file_threadsafe, file, status)
-                                futures.append(future)
+                        # Initialize the progress bar
+                        for future in as_completed(futures):
+                            try:
+                                future.result()
+                            except Exception as e:
+                                # Catch, report, and re-raise
+                                self.record_error()
+                                logger.error(f"Exception during upload: {e}")
+                                raise
 
-                            # Initialize the progress bar
-                            for future in tqdm(
-                                as_completed(futures),
-                                total=len(futures),
-                                unit='files',
-                                leave=False,
-                                desc=f"{subdir.absolute()}"
-                            ):
-
-                                try:
-                                    future.result()
-                                except Exception as e:
-                                    # Catch, report, and re-raise
-                                    self.record_error()
-                                    logger.error(f"Exception during upload: {e}")
-                                    raise
-
-                                finally:
-                                    progress_bar.set_postfix(
-                                        error       = self.errors,
-                                        skipped     = self.files_skipped,
-                                        duplicates  = self.files_duplicated,
-                                        uploaded    = self.files_uploaded,
-                                    )
-
-                        # At the conclusion of the upload, update the last processed time
-                        # -- if the upload is cancelled, the last processed time will not be updated
-                        status.update_meta()
-                finally:
-                    progress_bar.update(1)
+                    # At the conclusion of the upload, update the last processed time
+                    # -- if the upload is cancelled, the last processed time will not be updated
+                    status.update_meta()
 
     def handle_sd_card(self, directory : Path | str = '', max_threads: int = 4) -> bool:
         """
@@ -301,6 +313,52 @@ class ImmichProgressiveUploader(ImmichInterface):
         # Otherwise, upload files from the root directory
         self.upload(sd_directory, max_threads)
         return True
+
+    
+    def report(self, message_prefix : str | None = None) -> str:
+        """
+        Create a report of the process so far.
+
+        Args:
+            message_prefix: An optional message to prefix the report with.
+
+        Returns:
+            The report string.
+        """
+        # Files
+        file_buffer = []
+        if self.files_uploaded > 0:
+            file_buffer.append(f'{self.files_uploaded} uploaded')
+        if self.files_duplicated > 0:
+            file_buffer.append(f'{self.files_duplicated} duplicates')
+        if self.files_moved > 0:
+            file_buffer.append(f'{self.files_moved} moved')
+        if self.files_deleted > 0:
+            file_buffer.append(f'{self.files_deleted} deleted')
+        if self.files_skipped > 0:
+            file_buffer.append(f'{self.files_skipped} skipped')
+            
+        # Directories
+        directory_buffer = []
+        if self.directories_created > 0:
+            directory_buffer.append(f'{self.directories_created} created')
+        if self.directories_deleted > 0:
+            directory_buffer.append(f'{self.directories_deleted} deleted')
+
+        buffer = []
+        if message_prefix:
+            buffer.append(f'{BLUE}{message_prefix[-30:]:31s}{RESET}')
+        if file_buffer:
+            files_str = f"{PURPLE}Files [{', '.join(file_buffer)}]{RESET}"
+            buffer.append(f"{files_str:50s}")
+        if directory_buffer:
+            directory_str = f"{YELLOW}Directories [{', '.join(directory_buffer)}]{RESET}"
+            buffer.append(f"{directory_str:50s}")
+        if self.errors > 0:
+            error_str = f"{RED}Errors: {self.errors}{RESET}"
+            buffer.append(f'{error_str:12s}')
+            
+        return f"{RESET}{' '.join(buffer) or '...'}{RESET}"
 
 def validate_args(args: argparse.Namespace) -> bool:
     """

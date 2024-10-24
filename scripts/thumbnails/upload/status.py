@@ -9,7 +9,7 @@
 *                                                                                                                      *
 *        File:    status.py                                                                                            *
 *        Project: imageinn                                                                                             *
-*        Version: 1.0.0                                                                                                *
+*        Version: 0.1.0                                                                                                *
 *        Created: 2024-09-27                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -41,7 +41,7 @@ from scripts.thumbnails.upload.meta import STATUS_FILE_NAME
 logger = setup_logging()
 
 # When version increases, directories will be reprocessed even if their last modified time hasn't changed.
-VERSION = 2
+VERSION = 3
 
 class UploadStatus(Enum):
     UPLOADED = 'uploaded'
@@ -180,6 +180,10 @@ class Status(BaseModel):
             filename = filename.name
 
         with self.lock:
+            if status == UploadStatus.SKIPPED and filename in self.statuses:
+                # Do not overwrite a status with "skipped"
+                return
+            
             self.statuses[filename] = status
 
     def get_status(self, filename: str | Path) -> UploadStatus | None:
