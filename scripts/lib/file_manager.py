@@ -642,7 +642,7 @@ class FileManager(Script):
                     continue
 
             # something was found, so it's not empty
-            logger.info('NOT EMPTY: Found file="%s" in dir="%s".', f, directory.absolute())
+            logger.debug('Directory not empty: Found file="%s" in dir="%s".', f, directory.absolute())
             return False
 
         # Nothing found except junk files... time to remove them.

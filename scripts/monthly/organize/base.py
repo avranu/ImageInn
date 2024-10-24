@@ -100,7 +100,7 @@ class FileOrganizer(FileManager):
     @property
     def progress_bar(self) -> ProgressBar:
         if not self._progress_bar:
-            self._progress_bar = alive_bar(title="Organizing Files", unit='files', unknown='waves')
+            self._progress_bar = alive_bar(title=f"{RESET}Organizing Files", unit='files', unknown='waves')
         return self._progress_bar
 
     @property
@@ -164,14 +164,14 @@ class FileOrganizer(FileManager):
         if self.check_dry_run(f'organizing files with {self.glob_pattern=} in {self.directory.absolute()}'):
             return
 
-        print(f'Organizing files in {BLUE}{self.directory.absolute()}{RESET} to {GREEN}{self.get_target_directory().absolute()}{RESET}')
+        print(f'{RESET}Organizing files in {BLUE}{self.directory.absolute()}{RESET} to {GREEN}{self.get_target_directory().absolute()}{RESET}')
 
         # Gather subdirectories in the source directory
         directories = self.yield_directories(self.directory)
         # Start counting directories asynchronously
         #total_count_task = asyncio.create_task(self.count_files(self.directory))
 
-        with alive_bar(title=f"Organizing {str(self.directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(title=f"{RESET}Organizing {str(self.directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(f'{self.report('Searching...')}')
             total_was_set = False
             
