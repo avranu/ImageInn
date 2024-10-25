@@ -46,6 +46,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
+import subprocess
 import sys
 import os
 
@@ -171,7 +172,7 @@ class FileOrganizer(FileManager):
         # Start counting directories asynchronously
         #total_count_task = asyncio.create_task(self.count_files(self.directory))
 
-        with alive_bar(title=f"{RESET}Organize {str(self.directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(title=f"{RESET}Organize {self._shortpath(self.directory.absolute())}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(f'{self.report('Searching...')}')
             #total_was_set = False
             consecutive_ofe_errors : int = 0 
@@ -256,10 +257,10 @@ class FileOrganizer(FileManager):
             logger.debug(f"Duplicate file {file.absolute()=} handled")
             return True
         except OneFileException as e:
-            logger.error(f"Error processing file {file.absolute()=}: {e=}")
+            logger.error("Error processing file (process_file_threadsafe) %s: %s", file.absolute(), e)
         finally:
             subdir = file.parent
-            self.progress_report(self._shorten_path(subdir))
+            self.progress_report(self._shortpath(subdir))
 
         return False
 
@@ -298,6 +299,8 @@ class FileOrganizer(FileManager):
                 raise ShouldTerminateException(f"File was created by another process. {destination_file.absolute()=} -> {fee=}")
             except PermissionError as pe:
                 logger.warning("Permission error moving file. Attempt(%d/3). destination_path='%s' -> %s", destination_file, pe)
+            except subprocess.TimeoutExpired as te:
+                logger.warning("Timeout error moving file. Attempt(%d/3). destination_path='%s' -> %s", destination_file, te)
 
         logger.error("File could not be moved after 3 attempts. destination_path='%s'", destination_file)
         raise OneFileException(f"File could not be moved after 3 attempts. {destination_file.absolute()=}")
@@ -356,6 +359,8 @@ class FileOrganizer(FileManager):
         try:
             result = super().delete_file(file_path, use_trash)
         except OSError as ose:
+            logger.error('Unable to delete the file: file_path="%s" -> %s', file_path.absolute(), ose)
+            logger.exception(ose)
             raise OneFileException(f'Error deleting file: {ose=}') from ose
 
         return result
@@ -442,7 +447,8 @@ class FileOrganizer(FileManager):
             if not self.keep_duplicates and not self.copy_mode and not self.skip_hash:
                 # Files are identical; delete the source file
                 self.delete_file(source_path)
-                self.delete_file(xmp_source_path)
+                if xmp_source_path.exists(follow_symlinks=False):
+                    self.delete_file(xmp_source_path)
                 raise DuplicationHandledException(f"Duplicate file {source_path.absolute()=} deleted")
                 
             raise DuplicationHandledException(f"Duplicate file {source_path.absolute()=} skipped")
@@ -502,6 +508,8 @@ class FileOrganizer(FileManager):
         file_buffer = []
         if self.files_moved > 0:
             file_buffer.append(f'{self.files_moved} moved')
+        if self.files_copied > 0:
+            file_buffer.append(f'{self.files_copied} copied')
         if self.files_deleted > 0:
             file_buffer.append(f'{self.files_deleted} deleted')
         if self.files_skipped > 0:

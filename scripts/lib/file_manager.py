@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import subprocess
 import sys
 import threading
 from typing import Iterator, Literal
@@ -78,6 +79,7 @@ class FileManager(Script):
     dry_run: bool = False
     glob_pattern: str = '*'
     filename_pattern : re.Pattern = Field(default=None, validate_default=True)
+    skip_mtime_compare : bool = False
 
     _stats : dict[str, int] = PrivateAttr(default_factory=lambda: defaultdict(int))
     _stats_lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
@@ -518,8 +520,8 @@ class FileManager(Script):
         if not self.file_sizes_match(source_path, destination_path):
             return False
 
-        # Compare modification times
-        if not self.file_times_match(source_path, destination_path):
+        # Compare modification times 
+        if not self.skip_mtime_compare and not self.file_times_match(source_path, destination_path):
             return False
 
         if skip_hash:
@@ -757,7 +759,7 @@ class FileManager(Script):
 
         return trash_file_path
 
-    def move_file(self, source_path: Path, destination_path: Path, verify : bool | None = None) -> Path:
+    def move_file(self, source_path: Path, destination_path: Path) -> Path:
         """
         Move a file to a new location.
 
@@ -778,13 +780,6 @@ class FileManager(Script):
         Raises:
             FileExistsError: If the destination file already exists.
         """
-        if verify is None:
-            # Check if source_path and destination_path are on the same drive
-            if source_path.resolve().drive != destination_path.resolve().drive:
-                verify = True
-            else:
-                verify = False
-        
         # Destination must be absolute for Path.rename to be consistent
         if not destination_path.is_absolute():
             logger.debug("Making destination path absolute: %s", destination_path)
@@ -801,31 +796,58 @@ class FileManager(Script):
         if destination_path.exists():
             raise FileExistsError(f"Move Destination file already exists: {destination_path}")
 
-        if verify:
-            source_hash = self.hash_file(source_path)
-
         destination_dir = destination_path.parent
         if not self.check_dry_run(f'moving {source_path} to {destination_dir}'):
-            source_path.rename(destination_path)
+            # This verifies the destination path and compares checksums
+            self._move_file(source_path, destination_path)
             self.record_move_file()
-
-            if verify:
-                destination_hash = self.hash_file(destination_path)
-                if source_hash != destination_hash:
-                    logger.critical(f"Checksum mismatch after moving {source_path} to {destination_dir}")
-                    raise ShouldTerminateException(f'Checksum mismatch after moving {source_path} to {destination_dir}')
 
             # Copy xmp files after verification, so errors don't interfere.
             # ... do not verify xmp files, as they are not critical
             try:
                 if source_xmp_path.exists(follow_symlinks=False):
-                    source_xmp_path.rename(destination_xmp_path)
-            except Exception as e:
-                logger.warning('Error moving XMP file: %s', e)
+                    self._move_file(source_xmp_path, destination_xmp_path)
+            except OSError as ose:
+                logger.warning('Error moving XMP file: %s', ose)
 
         return destination_path
 
-    def copy_file(self, source_path : Path, destination_path : Path, verify : bool | None = None) -> Path:
+    def _move_file(self, source_path : Path, destination_path : Path) -> bool:
+        """
+        Move a file to a new location.
+
+        Args:
+            source: 
+                The source file to move.
+            destination: 
+                The destination path.
+
+        Returns:
+            bool: True if the file was moved, False otherwise.
+
+        Raises:
+            subprocess.CalledProcessError: If an error occurs while moving the file.
+            FileNotFoundError: If the file is not found after moving.
+            ValueError: If the checksums do not match after moving.
+        """
+        # If the drive is the same, then simply rename it to avoid "actually" copying the file.
+        # ... this is faster and eliminates corruption while copying the data.
+        if source_path.resolve().drive == destination_path.resolve().drive:
+            source_path.rename(destination_path)
+            return destination_path.exists()
+        
+        # If the drives are different, try using rsync
+        logger.debug('Drives are different, so moving file with rsync: %s -> %s', source_path, destination_path)
+        # hashes are checked during this command. May raise ValueError
+        result = self._copy_with_rsync(source_path, destination_path)
+
+        # We know hashes match, so delete the source file
+        if result:
+            self.delete_file(source_path)
+
+        return result
+
+    def copy_file(self, source_path : Path, destination_path : Path) -> Path:
         """
         Copy a file to a new location.
 
@@ -842,14 +864,7 @@ class FileManager(Script):
 
         Returns:
             The destination path.
-        """
-        if verify is None:
-            # Check if source_path and destination_path are on the same drive
-            if source_path.resolve().drive != destination_path.resolve().drive:
-                verify = True
-            else:
-                verify = False
-                
+        """     
         # Destination must be absolute for Path.rename to be consistent
         if not destination_path.is_absolute():
             logger.debug("Making destination path absolute: %s", destination_path)
@@ -862,20 +877,89 @@ class FileManager(Script):
         if destination_path.exists():
             raise FileExistsError(f"Copy Destination file already exists: {destination_path}")
 
-        if verify:
-            source_hash = self.hash_file(source_path)
-
         if not self.check_dry_run(f'copying {source_path} to {destination_path}'):
-            shutil.copy2(source_path, destination_path)
-
-            if verify:
-                destination_hash = self.hash_file(destination_path)
-                if source_hash != destination_hash:
-                    logger.critical(f"Checksum mismatch after copying {source_path} to {destination_path}")
-                    raise ShouldTerminateException(f'Checksum mismatch after copying {source_path} to {destination_path}')
+            try:
+                # This verifies the file checksum after copy.
+                self._copy_with_rsync(source_path, destination_path)
+            except PermissionError as pe:
+                if 'Operation not permitted' in str(pe) and destination_path.exists():
+                    logger.warning('WARNING: Permission error (likely due to copying metadata). source_path="%s", destination_path="%s" -> %s', source_path.absolute(), destination_path.absolute(), pe)
+                    raise ShouldTerminateException(f'Permission error copying file: {source_path} -> {destination_path}') from pe
+                else:
+                    raise
+            except subprocess.TimeoutExpired as te:
+                logger.error('Timeout error copying file: %s -> %s -> %s', source_path, destination_path, te)
+                raise
 
         self.record_copy_file()
         return destination_path
+
+    def _copy_with_shutil(self, source_path : Path, destination_path : Path) -> bool:
+        """
+        Copy a file to a new location using shutil.
+
+        Args:
+            source: 
+                The source file to copy.
+            destination: 
+                The destination path.
+
+        Returns:
+            The destination path.
+
+        Raises:
+            FileNotFoundError: If the file is not found after copying.
+            ValueError: If the checksums do not match after copying.
+        """
+        source_hash = self.hash_file(source_path)
+        
+        result = shutil.copy2(source_path, destination_path)
+
+        if not result or not destination_path.exists():
+            raise FileNotFoundError(f"Unable to find file after copy: {destination_path}")
+
+        destination_hash = self.hash_file(destination_path)
+        if source_hash != destination_hash:
+            logger.critical(f"Checksum mismatch after copying with shutil {source_path} to {destination_path}")
+            raise ValueError(f"Checksum mismatch after copying with shutil {source_path} to {destination_path}")
+
+        return True
+
+    def _copy_with_rsync(self, source_path : Path, destination_path : Path) -> bool:
+        """
+        Copy a file to a new location using rsync.
+
+        Args:
+            source: 
+                The source file to copy.
+            destination: 
+                The destination path.
+
+        Returns:
+            The destination path.
+
+        Raises:
+            subprocess.CalledProcessError: If an error occurs while copying the file.
+            FileNotFoundError: If the file is not found after copying.
+            ValueError: If the checksums do not match after copying.
+        """
+        source_hash = self.hash_file(source_path)
+        
+        try:
+            self.subprocess(['rsync', '-a', '--times', str(source_path), str(destination_path)])
+        except subprocess.CalledProcessError as e:
+            logger.error('Error copying file with rsync: %s', e)
+            raise
+
+        if not destination_path.exists():
+            raise FileNotFoundError(f"Unable to find file after copy with rsync: {destination_path}")
+
+        destination_hash = self.hash_file(destination_path)
+        if source_hash != destination_hash:
+            logger.critical(f"Checksum mismatch after copying with rsync {source_path} to {destination_path}")
+            raise ValueError(f"Checksum mismatch after copying with rsync {source_path} to {destination_path}")
+
+        return True
 
     def check_dry_run(self, message : str | None = None) -> bool:
         """
@@ -895,7 +979,7 @@ class FileManager(Script):
             logger.debug('RUN -> %s', message)
         return False
 
-    def _shorten_path(self, fullpath : Path | str, max_size : int = 30) -> str:
+    def _shortpath(self, fullpath : Path | str, max_size : int = 30) -> str:
         # Ensure it's a str
         fullpath = f'{str(fullpath)}/'
 
