@@ -42,6 +42,7 @@ hugin
 *.sqlite3-journal
 *db.sqlite3
 pgsql
+*.db
 
 # Extensions (Images, etc)
 *.jpg

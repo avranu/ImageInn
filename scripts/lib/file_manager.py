@@ -315,10 +315,10 @@ class FileManager(Script):
             # Skip hidden directories if not allowed
             if not allow_hidden:
                 # Remove hidden directories from dirnames so os.walk doesn't traverse into them
-                dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+                dirnames[:] = [d for d in dirnames if not (d.startswith('.') and d != '.thumbnails')]
 
                 # Skip the current directory if it's hidden
-                if dirpath_obj.name.startswith('.'):
+                if dirpath_obj.name.startswith('.') and dirpath_obj.name != '.thumbnails':
                     continue
 
             yield dirpath_obj

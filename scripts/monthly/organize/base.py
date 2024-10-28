@@ -297,11 +297,7 @@ class FileOrganizer(FileManager):
                     if not self.copy_mode:
                         self.delete_directory_if_empty(subdir)
 
-        logger.info('Moving files complete. Total: %d moved, %d skipped, %s deleted. Cleaning up...',
-                    self.files_moved,
-                    self.files_skipped,
-                    self.files_deleted,
-        )
+        self.report('Moving files complete')
 
         # After organization, cleanup empty directories
         if not self.copy_mode:
@@ -443,7 +439,7 @@ class FileOrganizer(FileManager):
             raise ShouldTerminateException('Cannot delete files in copy mode')
 
         try:
-            result = super().delete_file(file_path, use_trash, dont_record=dont_record)
+            result = super().delete_file(file_path, use_trash=use_trash, dont_record=dont_record)
         except OSError as ose:
             logger.error('Unable to delete the file: file_path="%s" -> %s', file_path.absolute(), ose)
             logger.exception(ose)
