@@ -49,6 +49,7 @@ from ftplib import FTP
 import subprocess
 import sys
 import os
+import time
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -59,7 +60,7 @@ import argparse
 from typing import Any, Literal, Optional, Protocol
 from alive_progress import alive_it, alive_bar
 from pydantic import Field, PrivateAttr, field_validator
-from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET
+from scripts.lib.types import ProgressBar, RESET, RED, GREEN, YELLOW, BLUE, PURPLE, CYAN, WHITE, BLACK, BOLD, UNDERLINE, DIM
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.lib.file_manager import StrPattern
@@ -245,7 +246,7 @@ class FileOrganizer(FileManager):
         # Start counting directories asynchronously
         #total_count_task = asyncio.create_task(self.count_files(self.directory))
 
-        with alive_bar(title=f"{RESET}Organize {self._shortpath(self.directory.absolute())}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(title=f"{BOLD}{BLUE}Organize{RESET} {self._shortpath(self.directory.absolute())}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(f'{self.report('Searching...')}')
             #total_was_set = False
             consecutive_ofe_errors : int = 0 
@@ -370,10 +371,15 @@ class FileOrganizer(FileManager):
             except FileExistsError as fee:
                 logger.warning("File was created by another process. Attempt(%d/3). destination_path='%s' -> %s", i, destination_file, fee)
                 raise ShouldTerminateException(f"File was created by another process. {destination_file.absolute()=} -> {fee=}")
+            except FileNotFoundError as fnf:
+                logger.warning("File not found while moving file. Attempt(%d/3). source_path='%s' -> %s", i, file_path, fnf)
             except PermissionError as pe:
                 logger.warning("Permission error moving file. Attempt(%d/3). destination_path='%s' -> %s", destination_file, pe)
             except subprocess.TimeoutExpired as te:
                 logger.warning("Timeout error moving file. Attempt(%d/3). destination_path='%s' -> %s", destination_file, te)
+
+            # Wait a bit before trying again
+            time.sleep(1)
 
         logger.error("File could not be moved after 3 attempts. destination_path='%s'", destination_file)
         raise OneFileException(f"File could not be moved after 3 attempts. {destination_file.absolute()=}")
@@ -412,7 +418,7 @@ class FileOrganizer(FileManager):
 
         return result
 
-    def delete_file(self, file_path: Path, use_trash : bool = True) -> bool:
+    def delete_file(self, file_path: Path, *, use_trash : bool = True, dont_record : bool = False) -> bool:
         """
         Delete a file.
 
@@ -437,7 +443,7 @@ class FileOrganizer(FileManager):
             raise ShouldTerminateException('Cannot delete files in copy mode')
 
         try:
-            result = super().delete_file(file_path, use_trash)
+            result = super().delete_file(file_path, use_trash, dont_record=dont_record)
         except OSError as ose:
             logger.error('Unable to delete the file: file_path="%s" -> %s', file_path.absolute(), ose)
             logger.exception(ose)

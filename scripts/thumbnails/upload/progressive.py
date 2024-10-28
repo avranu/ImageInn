@@ -68,7 +68,7 @@ from alive_progress import alive_it, alive_bar
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 from scripts import setup_logging
-from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET
+from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET, BOLD, DIM
 from scripts.exceptions import AppException
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.interface import ImmichInterface
@@ -227,7 +227,7 @@ class ImmichProgressiveUploader(ImmichInterface):
         directory_count_future = loop.run_in_executor(None, asyncio.run, self.count_directories(directory, recursive=recursive))
         '''
 
-        with alive_bar(title=f"Uploading {str(directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(title=f"{BOLD}{GREEN}Uploading{RESET} {str(directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(self.report('Searching...'))
             for subdir in directories:
                 '''

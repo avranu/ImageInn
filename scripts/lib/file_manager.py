@@ -246,28 +246,27 @@ class FileManager(Script):
         Returns:
             The hash of the file.
         """
-        filename = Path(filename).resolve()
-        cache_key = (filename, partial)
+        cache_key = (str(filename), partial)
 
         with self._cache_lock:
             if cache_key in self._hash_cache:
                 return self._hash_cache[cache_key]
 
-        filename = Path(filename)
-        if not filename.is_absolute():
-            filename = self.directory / filename
+        filepath = Path(filename)
+        if not filepath.is_absolute():
+            filepath = self.directory / filepath
 
-        if not filename.exists():
-            raise FileNotFoundError(f"File not found: {filename}")
+        if not filepath.exists():
+            raise FileNotFoundError(f"File not found to hash: {filepath}")
 
         hasher = self.get_hasher(hashing_algorithm)
 
-        file_size = filename.stat().st_size
+        file_size = self.file_stat(filepath).st_size
 
         # Define the size of the chunks to read
         chunk_size = 1024 * 1024  # 1MB
 
-        with open(filename, "rb") as f:
+        with open(filepath, "rb") as f:
             if partial and file_size > 2 * chunk_size:
                 # Read the first chunk_size bytes
                 hasher.update(f.read(chunk_size))
@@ -564,7 +563,7 @@ class FileManager(Script):
 
         return directory
 
-    def delete_file(self, file_path: Path, use_trash : bool = True) -> bool:
+    def delete_file(self, file_path: Path, *, use_trash : bool = True, dont_record : bool = False) -> bool:
         """
         Delete a file.
 
@@ -589,7 +588,8 @@ class FileManager(Script):
                 file_path.unlink()
 
         if not file_path.exists():
-            self.record_delete_file()
+            if not dont_record:
+                self.record_delete_file()
             return True
 
         return False
@@ -681,7 +681,7 @@ class FileManager(Script):
         """
         # We may check this a few times, so cache it here
         name = file_path.name
-        filesize = file_path.stat().st_size
+        filesize = self.file_stat(file_path).st_size
         is_hidden = name.startswith('.')
 
         # Check known junk filenames
@@ -741,6 +741,66 @@ class FileManager(Script):
 
         # No conditions met
         return False
+
+    def is_same_filesystem(self, source_path: Path, destination_path: Path) -> bool:
+        """
+        Check if two paths are on the same filesystem.
+
+        Args:
+            source_path: The source path.
+            destination_path: The destination path.
+
+        Returns:
+            True if the paths are on the same filesystem, False otherwise.
+
+        Raises:
+            FileNotFoundError: If the source or destination path (as well as an ancestor of them) does not exist.
+            PermissionError: If permission is denied to access the file system.
+        """
+        source_dev = self.get_filesystem(source_path)
+        destination_dev = self.get_filesystem(destination_path)
+
+        return source_dev == destination_dev
+
+    def get_filesystem(self, filepath: Path) -> int:
+        """
+        Recursively find the filesystem ID of the nearest existing ancestor of a path.
+
+        Args:
+            filepath: The path to check.
+
+        Returns:
+            The filesystem ID of the nearest existing ancestor of the path.
+
+        Raises:
+            FileNotFoundError: If no existing ancestor is found. I'm not sure under what conditions this would occur.
+            PermissionError: If permission is denied to access the file system.
+
+        Example:
+            >>> fm = FileManager()
+            >>> fm.filesystem(Path('/home/user/file.txt'))
+            2053
+        """
+        # Create a list of the path and all its ancestors
+        ancestors = [filepath] + list(filepath.parents)
+
+        for ancestor in ancestors:
+            try:         
+                # os.stat().st_dev is more reliable on windows and linux than Path().drive
+                # ...windows will return an empty string for the latter in WSL.
+                return ancestor.stat().st_dev
+            except FileNotFoundError:
+                # If the ancestor doesn't exist, move to the next one
+                continue
+            except PermissionError as e:
+                logger.error(f"Permission denied getting file stat: {e.filename} -> {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Error accessing file system for path {ancestor.resolve()} while getting stat -> {e}")
+                raise
+            
+        # Reached the root without finding an existing path
+        raise FileNotFoundError(f"Cannot get stat for any ancestors of: {filepath.resolve()}")
 
     def _find_trash_name(self, file_path: Path) -> Path:
         """
@@ -802,7 +862,10 @@ class FileManager(Script):
         destination_dir = destination_path.parent
         if not self.check_dry_run(f'moving {source_path} to {destination_dir}'):
             # This verifies the destination path and compares checksums
-            self._move_file(source_path, destination_path)
+            if not self._move_file(source_path, destination_path):
+                logger.error('Unable to move file: %s -> %s', source_path, destination_path)
+                raise FileNotFoundError(f'Unable to move file: {source_path} -> {destination_path}')
+            
             self.record_move_file()
 
             # Copy xmp files after verification, so errors don't interfere.
@@ -835,7 +898,7 @@ class FileManager(Script):
         """
         # If the drive is the same, then simply rename it to avoid "actually" copying the file.
         # ... this is faster and eliminates corruption while copying the data.
-        if source_path.resolve().drive == destination_path.resolve().drive:
+        if self.is_same_filesystem(source_path, destination_path):
             source_path.rename(destination_path)
             return destination_path.exists()
         
@@ -846,7 +909,8 @@ class FileManager(Script):
 
         # We know hashes match, so delete the source file
         if result:
-            self.delete_file(source_path)
+            # It was really a move, not a copy and delete, so don't record the deletion as a deletion.
+            self.delete_file(source_path, dont_record=True)
 
         return result
 
@@ -949,7 +1013,7 @@ class FileManager(Script):
         source_hash = self.hash_file(source_path)
         
         try:
-            self.subprocess(['rsync', '-a', '--times', str(source_path), str(destination_path)])
+            self.subprocess(['rsync', '-a', '--times', str(source_path.absolute()), str(destination_path.absolute())])
         except subprocess.CalledProcessError as e:
             logger.error('Error copying file with rsync: %s', e)
             raise
