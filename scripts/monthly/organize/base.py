@@ -57,6 +57,7 @@ from pathlib import Path
 import logging
 import argparse
 from typing import Any, Callable, Iterator, Literal, Optional, Protocol
+from ftplib import FTP
 from alive_progress import alive_it, alive_bar
 from pydantic import Field, PrivateAttr, field_validator
 from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET
@@ -158,7 +159,25 @@ class FileOrganizer(FileManager):
 
         return super().files_match(source_file, destination_path, skip_hash)
 
-    def organize_files(self) -> None:
+    def fetch_files_from_ftp(self, host: str, user: str, passwd: str, remote_dir: str = '/device/DCIM/Camera') -> None:
+        """
+        Connect to an FTP server and download files from a specified directory.
+
+        Args:
+            host: The FTP server host.
+            user: The FTP username.
+            passwd: The FTP password.
+            remote_dir: The remote directory to fetch files from.
+        """
+        with FTP(host) as ftp:
+            ftp.login(user=user, passwd=passwd)
+            ftp.cwd(remote_dir)
+            filenames = ftp.nlst()
+
+            for filename in filenames:
+                local_filepath = self.directory / filename
+                with open(local_filepath, 'wb') as local_file:
+                    ftp.retrbinary(f'RETR {filename}', local_file.write)
         """
         Organize files into subdirectories based on their date.
         """
@@ -582,12 +601,30 @@ def main() -> int:
     parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
     parser.add_argument('--skip-hash', action='store_true', help='Skip verifying file hashes')
     parser.add_argument('--dry-run', action='store_true', help='Simulate the file organization without moving files')
+    parser.add_argument('--ftp-host', help='FTP host to connect to')
+    parser.add_argument('--ftp-user', help='FTP username')
+    parser.add_argument('--ftp-pass', help='FTP password')
     args = parser.parse_args(namespace=ArgsNamespace())
 
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
-    organizer = FileOrganizer(
+    if args.ftp_host:
+        organizer = FileOrganizer(
+            directory       = args.directory,
+            target_directory= args.target,
+            glob_pattern    = args.glob_pattern,
+            batch_size      = args.limit,
+            dry_run         = args.dry_run,
+            skip_collision  = args.skip_collision,
+            skip_hash       = args.skip_hash,
+            copy_mode       = args.copy,
+            keep_duplicates = args.keep_duplicates,
+            trash_directory = args.trash,
+        )
+        organizer.fetch_files_from_ftp(args.ftp_host, args.ftp_user, args.ftp_pass)
+    else:
+        organizer = FileOrganizer(
         directory       = args.directory,
         target_directory= args.target,
         glob_pattern    = args.glob_pattern,
