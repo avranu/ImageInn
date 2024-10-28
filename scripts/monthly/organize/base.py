@@ -43,9 +43,9 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
-import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
+from ftplib import FTP
 import subprocess
 import sys
 import os
@@ -56,8 +56,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from pathlib import Path
 import logging
 import argparse
-from typing import Any, Callable, Iterator, Literal, Optional, Protocol
-from ftplib import FTP
+from typing import Any, Literal, Optional, Protocol
 from alive_progress import alive_it, alive_bar
 from pydantic import Field, PrivateAttr, field_validator
 from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET
@@ -158,26 +157,81 @@ class FileOrganizer(FileManager):
         skip_hash = skip_hash or self.skip_hash
 
         return super().files_match(source_file, destination_path, skip_hash)
-
-    def fetch_files_from_ftp(self, host: str, user: str, passwd: str, remote_dir: str = '/device/DCIM/Camera') -> None:
+    
+    def fetch_files_from_ftp(self, host: str, user: str, password: str, remote_dir: str = '/device/DCIM/Camera') -> None:
         """
         Connect to an FTP server and download files from a specified directory.
 
-        Args:
-            host: The FTP server host.
-            user: The FTP username.
-            passwd: The FTP password.
-            remote_dir: The remote directory to fetch files from.
-        """
-        with FTP(host) as ftp:
-            ftp.login(user=user, passwd=passwd)
-            ftp.cwd(remote_dir)
-            filenames = ftp.nlst()
+        Untested!
 
-            for filename in filenames:
-                local_filepath = self.directory / filename
-                with open(local_filepath, 'wb') as local_file:
-                    ftp.retrbinary(f'RETR {filename}', local_file.write)
+        Args:
+            host: The FTP server hostname
+            user: The FTP username
+            password: The FTP password
+            remote_dir: The remote directory to download files from
+        """
+        logger.critical('WARNING: This feature is untested.')
+        import time
+        time.sleep(20)
+        try:
+            with FTP(host) as ftp:
+                ftp.login(user=user, passwd=password)
+                logger.info("Connected to FTP server: %s", host)
+
+                ftp.cwd(remote_dir)
+                file_list = ftp.nlst()
+
+                # Use a progress bar to show file download progress
+                with alive_bar(len(file_list), title="Downloading and Organizing from FTP", unit='files') as progress_bar:
+                    for filename in file_list:
+                        local_file_path: Path | None = None
+                        try:
+                            # Get the modification time of the remote file
+                            mdtm_response = ftp.sendcmd(f"MDTM {filename}")
+                            # The response is in the format '213 YYYYMMDDHHMMSS'
+                            mod_time_str = mdtm_response[4:].strip()
+                            mod_time = datetime.datetime.strptime(mod_time_str, "%Y%m%d%H%M%S")
+
+                            # Determine the expected destination directory and file path
+                            destination_dir = self.create_subdir_from_date(mod_time)
+                            destination_path = destination_dir / filename
+
+                            if destination_path.exists():
+                                logger.debug("File already exists locally, skipping: %s", filename)
+                                continue
+
+                            # Create a temporary file path in a temp directory
+                            temp_dir = self.mkdir('.ftp_downloads')
+                            local_file_path = temp_dir / filename
+
+                            # Download the file to temporary location
+                            with open(local_file_path, 'wb') as local_file:
+                                ftp.retrbinary(f"RETR {filename}", local_file.write)
+                            logger.debug("Downloaded: %s", filename)
+
+                            # Now process the file as per copy mode
+                            self.process_file_threadsafe(local_file_path)
+
+                        except PermissionError as e:
+                            logger.warning("Permission error downloading %s: %s", filename, e)
+                        except Exception as e:
+                            logger.error("Error downloading file %s: %s", filename, e)
+
+                        finally:
+                            # Delete the temporary file if it still exists
+                            if local_file_path and local_file_path.exists():
+                                local_file_path.unlink()
+                            progress_bar()
+
+                # Optionally, remove the temp directory if empty
+                if temp_dir.exists() and not any(temp_dir.iterdir()):
+                    temp_dir.rmdir()
+
+        except Exception as e:
+            logger.error("Failed to fetch files from FTP: %s", e)
+            raise ShouldTerminateException("FTP fetch failed.") from e
+
+    def organize_files(self) -> None:
         """
         Organize files into subdirectories based on their date.
         """
@@ -324,13 +378,15 @@ class FileOrganizer(FileManager):
         logger.error("File could not be moved after 3 attempts. destination_path='%s'", destination_file)
         raise OneFileException(f"File could not be moved after 3 attempts. {destination_file.absolute()=}")
 
-    def mkdir(self, directory: Path, success_message: str | None = "Created directory", *, parents: bool = True, exist_ok : bool = True) -> Path:
+    def mkdir(self, directory: Path | str, success_message: str | None = "Created directory", *, parents: bool = True, exist_ok : bool = True) -> Path:
         """
         Create a directory if it does not exist.
 
         Args:
-            directory: The directory to create.
-            message: An optional message to log.
+            directory (str | Path): The directory to create. If a string, it is treated as a relative path to self.directory.
+            message (str): An optional message to log.
+            parents (bool): If True, create parent directories as needed.
+            exist_ok (bool): If True, do not raise an exception if the directory already exists.
 
         Returns:
             The directory path.
@@ -338,6 +394,11 @@ class FileOrganizer(FileManager):
         Raises:
             ShouldTerminateException: If an error occurs while creating the directory.
         """
+        if not isinstance(directory, Path):
+            directory = Path(directory)
+            if not directory.is_absolute():
+                directory = self.directory / directory
+            
         if directory.exists():
             return directory
 
@@ -427,6 +488,23 @@ class FileOrganizer(FileManager):
         parent_directory = parent_directory or self.get_target_directory()
 
         subdir = self.find_subdir(filepath)
+
+        return self.mkdir(parent_directory / subdir)
+
+    def create_subdir_from_date(self, modified_date : datetime.datetime, parent_directory : Path | None = None) -> Path:
+        """
+        Create a subdirectory based on a date.
+
+        Args:
+            date: The date to create the subdirectory for.
+            parent_directory: The parent directory to create the subdirectory in, defaults to self.directory.
+
+        Returns:
+            The path to the subdirectory.
+        """
+        parent_directory = parent_directory or self.get_target_directory()
+
+        subdir = modified_date.strftime('%Y/%Y-%m-%d/')
 
         return self.mkdir(parent_directory / subdir)
 
@@ -579,6 +657,9 @@ class ArgsNamespace(argparse.Namespace):
     skip_collision: bool
     skip_hash: bool
     dry_run: bool
+    ftp_host: str
+    ftp_user: str
+    ftp_pass: str
 
 
 def main() -> int:
@@ -625,17 +706,17 @@ def main() -> int:
         organizer.fetch_files_from_ftp(args.ftp_host, args.ftp_user, args.ftp_pass)
     else:
         organizer = FileOrganizer(
-        directory       = args.directory,
-        target_directory= args.target,
-        glob_pattern    = args.glob_pattern,
-        batch_size      = args.limit,
-        dry_run         = args.dry_run,
-        skip_collision  = args.skip_collision,
-        skip_hash       = args.skip_hash,
-        copy_mode       = args.copy,
-        keep_duplicates = args.keep_duplicates,
-        trash_directory = args.trash,
-    )
+            directory       = args.directory,
+            target_directory= args.target,
+            glob_pattern    = args.glob_pattern,
+            batch_size      = args.limit,
+            dry_run         = args.dry_run,
+            skip_collision  = args.skip_collision,
+            skip_hash       = args.skip_hash,
+            copy_mode       = args.copy,
+            keep_duplicates = args.keep_duplicates,
+            trash_directory = args.trash,
+        )
 
     try:
         match str(args.action).lower():

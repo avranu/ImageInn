@@ -626,6 +626,9 @@ class FileManager(Script):
             recursive: Whether to delete recursively.
             cleanup: Whether to remove files that stall the process.
         """
+        if not directory.exists():
+            return True
+        
         junk_files = []
         for f in directory.iterdir():
             if f.is_dir():
