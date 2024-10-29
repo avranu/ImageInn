@@ -49,6 +49,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.lib.script import Script
+from scripts.lib.types import YELLOW, RESET, GREEN
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,8 @@ JUNK_FILENAMES = [
     'Thumbs.db', 
     '.upload_status.txt', 
     'upload_status.txt',
+    'index.php',
+    'index.php~',
 ]
 
 # SONY JUNK
@@ -78,6 +81,7 @@ class FileManager(Script):
 
     dry_run: bool = False
     glob_pattern: str = '*'
+    extensions : list[str] = Field(default_factory=list)
     filename_pattern : re.Pattern = Field(default=None, validate_default=True)
     skip_mtime_compare : bool = False
 
@@ -152,9 +156,42 @@ class FileManager(Script):
         # A temporary hack to inject a class attribute into a pydantic model.
         return '*'
 
+    def guess_drive_root(self, filepath: Path | None = None) -> Path:
+        """
+        Attempt to get the drive root for the given filepath. 
+
+        This will not always succeed, and will return the closest directory if it fails.
+
+        Currently, this method finds drives in the form of:
+        - /mnt/my-pictures/
+        - C:/
+
+        Args:
+            filepath: The path to the file or directory.
+
+        Returns:
+            The root directory of the drive, or the closest directory if the drive root cannot be determined.
+        """
+        # default to the directory if no filepath is given
+        filepath = filepath or self.directory
+
+        # If the filepath begins with something like "/mnt/pictures/", we'll use that
+        if (matches := re.match(r'/mnt/[\w-]+/', str(filepath))):
+            return Path(matches.group())
+
+        # If it begins with a windows drive letter, use that
+        if (matches := re.match(r'[A-Za-z]:[\\/]', str(filepath))):
+            return Path(matches.group())
+
+        # No known patterns matched, so return the closest directory
+        if filepath.is_dir():
+            return filepath
+        
+        return filepath.parent
+
     def get_trash_directory(self) -> Path:
         if not self.trash_directory:
-            self.trash_directory = self.directory / '.trash'
+            self.trash_directory = self.guess_drive_root() / '.trash'
         return self.trash_directory
 
     def get_stats(self) -> dict[str, int]:
@@ -337,24 +374,6 @@ class FileManager(Script):
         """
         return list(self.yield_directories(directory, recursive=recursive, allow_hidden=allow_hidden))
 
-    async def count_directories(self, directory: Path, *, recursive: bool = True) -> int:
-        """
-        Asynchronously count the number of directories.
-
-        Args:
-            directory (Path): The root directory to start counting from.
-            recursive (bool): Whether to count directories recursively.
-
-        Returns:
-            int: The total number of directories.
-        """
-        # Avoid using a list comprehension to avoid loading all directories into memory
-        count = 0
-        for _ in self.yield_directories(directory, recursive=recursive):
-            count += 1
-            await asyncio.sleep(0)  # Yield control to the event loop
-        return count
-
     def yield_files(self, directory : Path | None = None, *, recursive : bool = True) -> Iterator[Path]:
         """
         Yield files in a directory.
@@ -366,16 +385,25 @@ class FileManager(Script):
             The next file in the directory.
         """
         directory = directory or self.directory
-            
-        if recursive:
-            files = directory.rglob(self.glob_pattern)
-        else:
-            files = directory.glob(self.glob_pattern)
 
-        for f in files:
-            if self.should_include_file(f):
-                yield f
-        return
+        # default to just the glob pattern
+        globs = [self.glob_pattern]
+        # include all extensions if they exist (TODO this is hacky)
+        if self.extensions and '.' not in self.glob_pattern:
+            globs = [f'{self.glob_pattern}.{ext}' for ext in self.extensions]
+
+        if recursive:
+            fn = directory.rglob
+        else:
+            fn = directory.glob
+
+        count = 0
+        for glob in globs:
+            logger.debug('Searching %s for files matching %s', directory, glob)
+            for filepath in fn(glob, case_sensitive=False):
+                count += 1
+                if self.should_include_file(filepath):
+                    yield filepath
 
     def get_all_files(self, directory : Path | None = None, *, recursive : bool = True) -> list[Path]:
         """
@@ -399,33 +427,20 @@ class FileManager(Script):
         Returns:
             True if the file should be included, False otherwise.
         """
+        # Only files, not dirs
         if not item.is_file():
             return False
 
+        # Allow for pattern matching, based on init attributes
         if not self.filename_match(item.name):
             logger.debug('Skipping file due to its name: %s', item)
             return False
 
+        # If any parent dir of the file is .trash
+        if '.trash' in item.parts:
+            return False
+
         return True
-
-    async def count_files(self, directory: Path, recursive: bool = True) -> int:
-        """
-        Asynchronously count the number of files.
-
-        Args:
-            directory (Path): The root directory to start counting from.
-            recursive (bool): Whether to count files recursively.
-
-        Returns:
-            int: The total number of files.
-        """
-        # Avoid using a list comprehension to avoid loading all files into memory
-        count = 0
-        for _ in self.yield_files(directory, recursive=recursive):
-            count += 1
-            await asyncio.sleep(0)  # Yield control to the event loop
-        logger.critical('Finished counting files!!!')
-        return count
 
     def file_sizes_match(self, source_path: Path, destination_path: Path) -> bool:
         """
@@ -613,7 +628,7 @@ class FileManager(Script):
                 else:
                     skipped += 1
                 self._progress_bar()
-                self._progress_bar.text(f'Cleaning directories: {count} deleted, {skipped} skipped')
+                self._progress_bar.text(f'{GREEN}Cleaning directories:{RESET} {count} deleted, {skipped} skipped')
 
         logger.info('Cleaned up %d empty directories. %d remain.', count, skipped)
 

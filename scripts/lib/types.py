@@ -32,6 +32,8 @@ class Number(Protocol):
 
 # Define a Protocol for alive_bar()
 class ProgressBar(Protocol):
+    total : int
+    
     def __call__(self, *args, **kwargs) -> None:
         ...
 
@@ -79,3 +81,12 @@ BLUE = f'{RESET}{DIM}{ANSI_BLUE}'
 PURPLE = f'{RESET}{DIM}{ANSI_PURPLE}'
 CYAN = f'{RESET}{DIM}{ANSI_CYAN}'
 WHITE = f'{RESET}{DIM}{ANSI_WHITE}'
+
+BLACK2 = f'{RESET}{BOLD}{ANSI_BLACK}'
+RED2 = f'{RESET}{BOLD}{ANSI_RED}'
+GREEN2 = f'{RESET}{BOLD}{ANSI_GREEN}'
+YELLOW2 = f'{RESET}{BOLD}{ANSI_YELLOW}'
+BLUE2 = f'{RESET}{BOLD}{ANSI_BLUE}'
+PURPLE2 = f'{RESET}{BOLD}{ANSI_PURPLE}'
+CYAN2 = f'{RESET}{BOLD}{ANSI_CYAN}'
+WHITE2 = f'{RESET}{BOLD}{ANSI_WHITE}'

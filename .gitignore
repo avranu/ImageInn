@@ -21,10 +21,6 @@ package-lock.json
 ~*
 *.swp
 
-# Log files
-.aider*
-hugin
-
 # User configs
 .vscode/
 .favorites.json
@@ -40,6 +36,7 @@ hugin
 
 # Database files
 *.sqlite3-journal
+*.db-journal
 *db.sqlite3
 pgsql
 *.db

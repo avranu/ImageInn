@@ -71,7 +71,7 @@ from scripts.thumbnails.upload.meta import DEFAULT_DB_PATH
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
 from scripts import setup_logging
-from scripts.lib.types import ProgressBar, RED, GREEN, YELLOW, BLUE, PURPLE, RESET, BOLD, DIM
+from scripts.lib.types import ProgressBar, RED, CYAN, CYAN2, YELLOW, YELLOW2, BLUE, PURPLE, RESET
 from scripts.exceptions import AppException
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.interface import ImmichInterface
@@ -134,7 +134,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    timeout=60,
+                    timeout=120,
                     text=True
                 )
                 output = result.stdout + result.stderr
@@ -154,11 +154,11 @@ class ImmichProgressiveUploader(ImmichInterface):
                 logger.info('By default, issuing an error.', image_path)
                 return UploadStatus.ERROR
 
-            except subprocess.CalledProcessError as e:
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 output = e.stdout + e.stderr
 
                 reason = ''
-                if 'ETIMEDOUT' in output:
+                if 'ETIMEDOUT' in output or isinstance(e, subprocess.TimeoutExpired):
                     reason = 'Connection timed out'
                 elif 'ENETUNREACH' in output:
                     reason = 'Network unreachable'
@@ -246,20 +246,11 @@ class ImmichProgressiveUploader(ImmichInterface):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
         directories = self.yield_directories(directory, recursive=recursive)
 
-        '''
-        loop = asyncio.get_event_loop()
-        directory_count_future = loop.run_in_executor(None, asyncio.run, self.count_directories(directory, recursive=recursive))
-        '''
 
-        with alive_bar(title=f"{BOLD}{GREEN}Uploading{RESET} {str(directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(title=f"{CYAN2}Uploading{RESET} {str(directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(self.report('Searching...'))
             for subdir in directories:
-                '''
-                if progress_bar.total is None and directory_count_future.done():
-                    progress_bar.total = directory_count_future.result()
-                    progress_bar.refresh()
-                    logger.info('Updated the progress bar total!')
-                '''
+
                 with Status(directory=subdir) as status:
                     # Check if the directory has changed since the last processed time
                     if not status.directory_changed():
@@ -300,9 +291,9 @@ class ImmichProgressiveUploader(ImmichInterface):
         if not self.db:
             raise ConfigurationError("No database specified.")
 
-        total = self.db.count_records()
+        total = self.db.count_records(uploaded=False)
 
-        with alive_bar(total=total, title=f"{BOLD}{GREEN}Uploading from db{RESET}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(total=total, title=f"{CYAN2}Uploading from db{RESET}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(self.report())
             
             with ThreadPoolExecutor(max_workers=max_threads) as executor:
@@ -398,7 +389,7 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         buffer = []
         if message_prefix:
-            buffer.append(f'{BLUE}{message_prefix[-30:]:31s}{RESET}')
+            buffer.append(f'{CYAN}{message_prefix[-30:]:31s}{RESET}')
         if file_buffer:
             files_str = f"{PURPLE}Files [{', '.join(file_buffer)}]{RESET}"
             buffer.append(f"{files_str:50s}")

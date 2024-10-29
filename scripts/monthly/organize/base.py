@@ -60,7 +60,7 @@ import argparse
 from typing import Any, Literal, Optional, Protocol
 from alive_progress import alive_it, alive_bar
 from pydantic import Field, PrivateAttr, field_validator
-from scripts.lib.types import ProgressBar, RESET, RED, GREEN, YELLOW, BLUE, PURPLE, CYAN, WHITE, BLACK, BOLD, UNDERLINE, DIM
+from scripts.lib.types import ProgressBar, RESET, RED, GREEN, YELLOW, BLUE, BLUE2, PURPLE, CYAN
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
 from scripts.lib.file_manager import StrPattern
@@ -232,7 +232,7 @@ class FileOrganizer(FileManager):
             logger.error("Failed to fetch files from FTP: %s", e)
             raise ShouldTerminateException("FTP fetch failed.") from e
 
-    def organize_files(self) -> None:
+    def organize_files(self, *, max_threads : int = 0) -> None:
         """
         Organize files into subdirectories based on their date.
         """
@@ -241,61 +241,41 @@ class FileOrganizer(FileManager):
 
         print(f'{RESET}Organizing files in {BLUE}{self.directory.absolute()}{RESET} to {GREEN}{self.get_target_directory().absolute()}{RESET}')
 
-        # Gather subdirectories in the source directory
-        directories = self.yield_directories(self.directory)
-        # Start counting directories asynchronously
-        #total_count_task = asyncio.create_task(self.count_files(self.directory))
+        if not max_threads:
+            max_threads = os.cpu_count()
 
-        with alive_bar(title=f"{BOLD}{BLUE}Organize{RESET} {self._shortpath(self.directory.absolute())}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(title=f"{BLUE2}Organize{RESET} {self._shortpath(self.directory.absolute())}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(f'{self.report('Searching...')}')
             #total_was_set = False
             consecutive_ofe_errors : int = 0 
-            
-            for subdir in directories:
-                # Check if the total dir count is available
-                """
-                if not total_was_set and total_count_task.done():
-                    logger.critical('Total directories: %d', total_count_task.result())
-                    progress_bar.total = total_count_task.result()
-                    progress_bar.unknown = False
-                    total_was_set = True
-                """
-                    
-                try:
-                    # Gather all files to process
-                    files_to_process = self.yield_files(subdir, recursive=False)
 
-                    with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-                        futures = []
-                        for file in files_to_process:
-                            futures.append(executor.submit(self.process_file_threadsafe, file))
+            with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                futures = []
+                count = 0
+                for filepath in self.yield_files():
+                    count += 1
+                    self._progress_bar.total = count
+                    futures.append(executor.submit(self.process_file_threadsafe, filepath))
 
-                        if (count := len(futures)) < 1:
-                            # We will attempt to delete the dir in `finally` below
-                            continue
+                logger.info(f'{count} files found in {self.directory=}')
+                self.progress_bar.text(f'{count} files found...')
 
-                        logger.debug('%d files found in /%s/', count, subdir)
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                        consecutive_ofe_errors = 0
+                    except OneFileException as ofe:
+                        consecutive_ofe_errors += 1
+                        logger.error("Error organizing file: %s", ofe)
+                    except Exception as e:
+                        # log and re-raise
+                        logger.error("Error organizing file: %s", e)
+                        self.record_error()
+                        raise
 
-                        for future in as_completed(futures):
-                            try:
-                                future.result()
-                                consecutive_ofe_errors = 0
-                            except OneFileException as ofe:
-                                consecutive_ofe_errors += 1
-                                logger.error("Error organizing file: %s", ofe)
-                            except Exception as e:
-                                # log and re-raise
-                                logger.error("Error organizing file: %s", e)
-                                self.record_error()
-                                raise
-
-                            if consecutive_ofe_errors > 5:
-                                logger.error("Too many consecutive errors in %s. Skipping the rest of the files.", subdir)
-                                raise ShouldTerminateException(f'Too many consecutive errors in {subdir=}. Skipping the rest of the files.')
-                finally:
-                    # Remove the directory if it is now empty
-                    if not self.copy_mode:
-                        self.delete_directory_if_empty(subdir)
+                    if consecutive_ofe_errors > 5:
+                        logger.error("Too many consecutive errors in %s. Skipping the rest of the files.", self.directory)
+                        raise ShouldTerminateException(f'Too many consecutive errors in {self.directory=}. Skipping the rest of the files.')
 
         self.report('Moving files complete')
 

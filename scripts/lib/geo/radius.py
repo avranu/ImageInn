@@ -146,28 +146,6 @@ class ExifDataExtractor:
             logger.error(f"Error parsing GPSPosition '{gps_position}': {e}")
             return None, None
 
-class DistanceCalculator:
-    """Class to calculate the distance between two GPS coordinates."""
-
-    @staticmethod
-    def calculate_distance(lat1: Decimal, lon1: Decimal, lat2: Decimal, lon2: Decimal) -> float:
-        """Calculate the great-circle distance between two coordinates."""
-        # Convert Decimal to float for math module functions
-        lat1 = float(lat1)
-        lon1 = float(lon1)
-        lat2 = float(lat2)
-        lon2 = float(lon2)
-        R = 6371e3  # Earth's radius in meters
-        phi1 = math.radians(lat1)
-        phi2 = math.radians(lat2)
-        delta_phi = math.radians(lat2 - lat1)
-        delta_lambda = math.radians(lon2 - lon1)
-        a = math.sin(delta_phi / 2.0) ** 2 + \
-            math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        distance = R * c  # in meters
-        return distance
-
 class ImageSearcher(BaseModel):
     """Class to search for image files in a directory and its subdirectories."""
     directory : Path = Field(default='.', validate_default=True, description="Directory to search for image files")
@@ -196,6 +174,24 @@ class ImageSearcher(BaseModel):
                 yield file_path
                 logger.debug(f"Found image file: {file_path}")
 
+    def calculate_distance(self, lat1: Decimal, lon1: Decimal, lat2: Decimal, lon2: Decimal) -> float:
+        """Calculate the distance between two coordinates."""
+        # Convert Decimal to float for math module functions
+        lat1 = float(lat1)
+        lon1 = float(lon1)
+        lat2 = float(lat2)
+        lon2 = float(lon2)
+        R = 6371e3  # Earth's radius in meters
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+        a = math.sin(delta_phi / 2.0) ** 2 + \
+            math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        distance = R * c  # in meters
+        return distance
+
     def run(self):
         # Target coordinates and search radius
         target_lat = Decimal('41.7345966563581')
@@ -221,7 +217,7 @@ class ImageSearcher(BaseModel):
                 try:
                     lat, lon = exif_extractor.get_gps_data(file_path)
                     if lat is not None and lon is not None:
-                        distance = DistanceCalculator.calculate_distance(target_lat, target_lon, lat, lon)
+                        distance = self.calculate_distance(target_lat, target_lon, lat, lon)
                         if Decimal(distance) <= radius:
                             today = datetime.now().strftime('%Y-%m-%d')
                             db_manager.insert_record(file_path, today, lat, lon)
@@ -235,7 +231,7 @@ class ImageSearcher(BaseModel):
                     logger.error(f"Error processing file {file_path}: {e}")
                 finally:
                     progress_bar()
-                    progress_bar.text(f"Images found: {count}")
+                    progress_bar.text(f"{YELLOW}Images found{RESET}: {count}")
 
         record_count = db_manager.count_records()
         logger.info(f"Found {count} images near target coordinates. Total records: {record_count}")
