@@ -112,7 +112,7 @@ class FileOrganizer(FileManager):
     @classmethod
     def get_default_filename_pattern(cls) -> StrPattern:
         # A temporary hack to inject a class attribute into a pydantic model.
-        return r'.*[.](jpg|jpeg|webp|png|heic|dng|arw|nef|psd|tif|tiff|mp4)'
+        return r'.*[.](jpg|jpeg|webp|png|heic|dng|arw|nef|psd|tif|tiff|mp4|mov|mkv)'
 
     def record_duplicate_file(self, count : int = 1) -> None:
         self.record_stat('duplicate_file', count)

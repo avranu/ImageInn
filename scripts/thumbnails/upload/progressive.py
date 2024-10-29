@@ -272,6 +272,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                                 # Catch, report, and re-raise
                                 self.record_error()
                                 logger.error("Exception during upload: %s", e)
+                                logger.exception(e)
                                 raise
 
                     # At the conclusion of the upload, update the last processed time
@@ -451,6 +452,7 @@ class ArgNamespace(argparse.Namespace):
     db_path : str | Path
     import_path: str
     album : str
+    skip : bool
 
 def main():
     """
@@ -477,6 +479,7 @@ def main():
         parser.add_argument('--use_db', action='store_true', help='Use the SQLite database to retrieve upload targets')
         parser.add_argument('--db-path', help='Path to the SQLite database', default=DEFAULT_DB_PATH)
         parser.add_argument('--album', '-A', help='Immich album to upload files to')
+        parser.add_argument('--skip', help='Skip assets that were previously uploaded.', action='store_true')
         parser.add_argument("import_path", nargs='?', default=thumbnails_dir, help="Path to import files from")
         args = parser.parse_args(namespace=ArgNamespace())
 
@@ -508,6 +511,7 @@ def main():
             use_db=args.use_db,
             db_path=args.db_path,
             album=args.album,
+            skip=args.skip,
         )
 
         try:

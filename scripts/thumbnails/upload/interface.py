@@ -76,6 +76,7 @@ class ImmichInterface(FileManager, ABC):
     use_db : bool = False
     db_path : Path | None = DEFAULT_DB_PATH
     album : str | None = None
+    skip : bool = False
 
     _authenticated: bool = PrivateAttr(default=False)
     _db : ImagesDatabase | None = PrivateAttr(default=None)
@@ -226,7 +227,7 @@ class ImmichInterface(FileManager, ABC):
                 logger.debug(f"Ignoring file {image_path} due to template {template}")
                 return True
 
-        if status:
+        if self.skip and status:
             if status.was_successful(image_path):
                 logger.debug("Skipping already uploaded file %s", image_path)
                 return True
@@ -277,4 +278,3 @@ class ImmichInterface(FileManager, ABC):
             self.delete_file(file_path)
             logger.debug("Deleted original file %s", file_path)
         return results
-
