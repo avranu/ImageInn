@@ -27,11 +27,11 @@ from pathlib import Path
 
 ALLOWED_EXTENSIONS = [
     # Images
-    'jpg', 'jpeg', 'tiff', 'webp', #'tif', 'png', 'gif',
+    'jpg', 'jpeg', 'tiff', 'webp', 'tif', 'png', #'gif',
     # RAW
     'arw', 'dng', 'nef',
     # Videos
-    'mp4', #'mov', 'm4a', 'wmv', 'avi', 'mkv', 'flv', 'webm',
+    'mp4', 'mov', 'avi', #'m4a', 'wmv', 'mkv', 'flv', 'webm',
     # Audio
     #'mp3', 'ogg', 'wav',
     # Photo editing

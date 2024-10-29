@@ -1,3 +1,27 @@
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    direct.py                                                                                            *
+*        Project: imageinn                                                                                             *
+*        Version: 0.1.0                                                                                                *
+*        Created: 2024-09-25                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-10-29     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 #!/usr/bin/env python3
 """
 Upload files to Immich.
@@ -46,7 +70,7 @@ class ImmichDirectUploader(ImmichInterface):
 
         large_files = []
         for file in directory.rglob("**/*"):
-            if file.stat().st_size > size:
+            if self.file_size(file) > size:
                 large_files.append(file)
         return large_files
 

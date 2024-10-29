@@ -42,6 +42,8 @@
 from __future__ import annotations
 import os
 import sys
+import threading
+import time
 
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
@@ -80,6 +82,9 @@ class ImmichInterface(FileManager, ABC):
 
     _authenticated: bool = PrivateAttr(default=False)
     _db : ImagesDatabase | None = PrivateAttr(default=None)
+    _start_ns : int = PrivateAttr(default=0)
+    _bytes_lock : threading.Lock = PrivateAttr(default_factory=lambda: threading.Lock())
+    _bytes_uploaded : int = PrivateAttr(default=0)
 
     @field_validator('directory', mode="before")
     def validate_directory(cls, v):
@@ -160,6 +165,21 @@ class ImmichInterface(FileManager, ABC):
 
         return self._db
 
+    @property
+    def bytes_uploaded(self) -> int:
+        with self._bytes_lock:
+            return self._bytes_uploaded
+
+    def record_bytes_uploaded(self, bytes_uploaded: int):
+        """
+        Record the number of bytes uploaded.
+
+        Args:
+            bytes_uploaded (int): The number of bytes uploaded.
+        """
+        with self._bytes_lock:
+            self._bytes_uploaded += bytes_uploaded
+
     def authenticate(self):
         """
         Authenticate with Immich using the API key.
@@ -232,7 +252,7 @@ class ImmichInterface(FileManager, ABC):
                 logger.debug("Skipping already uploaded file %s", image_path)
                 return True
 
-        if image_path.stat().st_size > self.large_file_size:
+        if self.large_file_size and self.file_size(image_path) > self.large_file_size:
             logger.debug(f"File {image_path} is larger than {self.large_file_size} bytes and will be skipped.")
             return True
 
@@ -278,3 +298,20 @@ class ImmichInterface(FileManager, ABC):
             self.delete_file(file_path)
             logger.debug("Deleted original file %s", file_path)
         return results
+
+    def get_upload_speed(self, decimal_places : int | None = 2) -> float:
+        """
+        Calculate the upload speed in MB/s.
+
+        Returns:
+            float: The upload speed in MB/s
+        """
+        if not self._start_ns:
+            return 0
+        
+        time_now = time.time_ns()
+        elapsed = (time_now - self._start_ns) / 1e9
+        speed = self._bytes_uploaded / 1024 / 1024 / elapsed
+        if decimal_places is not None:
+            speed = round(speed, decimal_places)
+        return speed

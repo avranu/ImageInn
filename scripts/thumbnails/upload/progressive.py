@@ -72,6 +72,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 from scripts import setup_logging
 from scripts.lib.types import ProgressBar, RED, CYAN, CYAN2, YELLOW, YELLOW2, BLUE, PURPLE, RESET
+from scripts.lib.utils import seconds_to_human
 from scripts.exceptions import AppException
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.interface import ImmichInterface
@@ -125,6 +126,12 @@ class ImmichProgressiveUploader(ImmichInterface):
         command = ["immich", "upload", image_path.as_posix()]
         if self.album:
             command.extend(['-A', self.album])
+
+        # Timeout is a minimum of 60 seconds, plus 10 seconds per MB
+        filesize = self.file_size(image_path)
+        extra_timeout = filesize * 10 / (1024 * 1024)
+        timeout = 60 + extra_timeout
+        logger.debug("Setting upload timeout to %s", seconds_to_human(timeout))
         
         attempt = 0
         while attempt <= retries:
@@ -134,11 +141,12 @@ class ImmichProgressiveUploader(ImmichInterface):
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    timeout=120,
+                    timeout=timeout,
                     text=True
                 )
                 output = result.stdout + result.stderr
-
+                self.record_bytes_uploaded(filesize)
+                
                 # Analyze the output
                 if "All assets were already uploaded" in output:
                     logger.debug("%s already uploaded.", image_path)
@@ -155,7 +163,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                 return UploadStatus.ERROR
 
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                output = e.stdout + e.stderr
+                output = f'{e.stdout} + {e.stderr}'
 
                 reason = ''
                 if 'ETIMEDOUT' in output or isinstance(e, subprocess.TimeoutExpired):
@@ -244,12 +252,10 @@ class ImmichProgressiveUploader(ImmichInterface):
         directory = directory or self.directory
         if not self.exists(directory):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
-        directories = self.yield_directories(directory, recursive=recursive)
-
 
         with alive_bar(title=f"{CYAN2}Uploading{RESET} {str(directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_bar.text(self.report('Searching...'))
-            for subdir in directories:
+            for subdir in self.yield_directories(directory, recursive=recursive):
 
                 with Status(directory=subdir) as status:
                     # Check if the directory has changed since the last processed time
@@ -260,6 +266,9 @@ class ImmichProgressiveUploader(ImmichInterface):
                     files_to_upload = self.yield_files(subdir)
 
                     with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                        # initialize the start time for calculating upload speed
+                        self._start_ns = time.time_ns()
+                        
                         futures = []
                         for filepath in files_to_upload:
                             future = executor.submit(self.upload_file_threadsafe, filepath, status)
@@ -391,15 +400,24 @@ class ImmichProgressiveUploader(ImmichInterface):
         buffer = []
         if message_prefix:
             buffer.append(f'{CYAN}{message_prefix[-30:]:31s}{RESET}')
+
+        upload_speed = self.get_upload_speed()
+        if upload_speed:
+            speed_str = f"{BLUE}{upload_speed} MB/s{RESET}"
+            buffer.append(f"{speed_str:10s}")
+        
         if file_buffer:
             files_str = f"{PURPLE}Files [{', '.join(file_buffer)}]{RESET}"
             buffer.append(f"{files_str:50s}")
+
         if directory_buffer:
             directory_str = f"{YELLOW}Directories [{', '.join(directory_buffer)}]{RESET}"
             buffer.append(f"{directory_str:50s}")
+
         if self.errors > 0:
             error_str = f"{RED}Errors: {self.errors}{RESET}"
             buffer.append(f'{error_str:12s}')
+
             
         return f"{RESET}{' '.join(buffer) or '...'}{RESET}"
 
@@ -414,26 +432,6 @@ class ImmichProgressiveUploader(ImmichInterface):
             self.upload_from_db(max_threads=max_threads)
         else:
             self.upload(max_threads=max_threads)
-
-def validate_args(args: argparse.Namespace) -> bool:
-    """
-    Validate the arguments passed to the script.
-
-    Args:
-        args (argparse.Namespace): The arguments passed to the script.
-
-    Returns:
-        bool: True if the arguments are valid, False otherwise
-    """
-    if not args.url or not args.api_key:
-        logger.error("IMMICH_URL and IMMICH_API_KEY must be set.")
-        return False
-
-    if not args.sd and not args.import_path:
-        logger.error("CLOUD_THUMBNAILS_DIR must be set if not uploading from an SD card.")
-        return False
-
-    return True
 
 class ArgNamespace(argparse.Namespace):
     """
@@ -453,6 +451,27 @@ class ArgNamespace(argparse.Namespace):
     import_path: str
     album : str
     skip : bool
+    local : bool
+    
+def validate_args(args: ArgNamespace) -> bool:
+    """
+    Validate the arguments passed to the script.
+
+    Args:
+        args (argparse.Namespace): The arguments passed to the script.
+
+    Returns:
+        bool: True if the arguments are valid, False otherwise
+    """
+    if not args.url or not args.api_key:
+        logger.error("IMMICH_INSTANCE_URL and IMMICH_API_KEY must be set.")
+        return False
+
+    if not args.sd and not args.import_path:
+        logger.error("CLOUD_THUMBNAILS_DIR must be set if not uploading from an SD card.")
+        return False
+
+    return True
 
 def main():
     """
@@ -461,7 +480,7 @@ def main():
     try:
         load_dotenv()
 
-        url = os.getenv("IMMICH_URL")
+        url = os.getenv("IMMICH_INSTANCE_URL")
         api_key = os.getenv("IMMICH_API_KEY")
         thumbnails_dir = os.getenv("IMMICH_THUMBNAILS_DIR", '.')
         max_threads = os.getenv("IMMICH_MAX_THREADS", 4)
@@ -480,11 +499,14 @@ def main():
         parser.add_argument('--db-path', help='Path to the SQLite database', default=DEFAULT_DB_PATH)
         parser.add_argument('--album', '-A', help='Immich album to upload files to')
         parser.add_argument('--skip', help='Skip assets that were previously uploaded.', action='store_true')
+        parser.add_argument('--local', help='Use the local url for immich. This will be overridden by --url', action='store_true')
         parser.add_argument("import_path", nargs='?', default=thumbnails_dir, help="Path to import files from")
         args = parser.parse_args(namespace=ArgNamespace())
 
         if args.verbose:
             logger.setLevel(logging.DEBUG)
+        if args.local:
+            args.url = os.getenv("IMMICH_LOCAL_URL")
 
         if not validate_args(args):
             sys.exit(1)
@@ -512,6 +534,10 @@ def main():
             db_path=args.db_path,
             album=args.album,
             skip=args.skip,
+            # Cloudflare prevents uploads over 100MB. 
+            # ...On the local network, disable skipping large files.
+            # ...Everywhere else, use the default large file size of 100MB.
+            large_file_size = 0 if args.local else (1024 * 1024 * 100)
         )
 
         try:

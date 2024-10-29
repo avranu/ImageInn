@@ -298,7 +298,7 @@ class FileManager(Script):
 
         hasher = self.get_hasher(hashing_algorithm)
 
-        file_size = self.file_stat(filepath).st_size
+        file_size = self.file_size(filepath)
 
         # Define the size of the chunks to read
         chunk_size = 1024 * 1024  # 1MB
@@ -453,7 +453,7 @@ class FileManager(Script):
         Returns:
             True if the file sizes match, False otherwise.
         """
-        return self.file_stat(source_path).st_size == self.file_stat(destination_path).st_size
+        return self.file_size(source_path) == self.file_size(destination_path)
 
     def file_times_match(self, source_path: Path, destination_path: Path) -> bool:
         """
@@ -468,8 +468,8 @@ class FileManager(Script):
         """
         return self.file_stat(source_path).st_mtime == self.file_stat(destination_path).st_mtime
 
-    @lru_cache(maxsize=1024)
-    def file_stat(self, file_path: Path) -> os.stat_result:
+    @lru_cache(maxsize=128)
+    def file_stat(self, filepath: Path) -> os.stat_result:
         """
         Get the stat information for a file.
 
@@ -481,7 +481,20 @@ class FileManager(Script):
         Returns:
             The stat information for the file.
         """
-        return file_path.stat()
+        return filepath.stat()
+
+    @lru_cache(maxsize=128)
+    def file_size(self, filepath : Path) -> int:
+        """
+        Get the size of the file at the given path, and cache it.
+
+        Args:
+            filepath: The path to the file.
+
+        Returns:
+            The size of the file in bytes.
+        """
+        return self.file_stat(filepath).st_size
 
     def file_hashes_match(self, source_path: Path, destination_path: Path) -> bool:
         """
@@ -696,7 +709,7 @@ class FileManager(Script):
         """
         # We may check this a few times, so cache it here
         name = file_path.name
-        filesize = self.file_stat(file_path).st_size
+        filesize = self.file_size(file_path)
         is_hidden = name.startswith('.')
 
         # Check known junk filenames
