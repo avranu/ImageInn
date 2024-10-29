@@ -9,7 +9,7 @@
 *                                                                                                                      *
 *        File:    meta.py                                                                                              *
 *        Project: imageinn                                                                                             *
-*        Version: 1.0.0                                                                                                *
+*        Version: 0.1.0                                                                                                *
 *        Created: 2024-09-25                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -23,6 +23,7 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
+from pathlib import Path
 
 ALLOWED_EXTENSIONS = [
     # Images
@@ -42,3 +43,5 @@ STATUS_FILE_NAME = '.upload_status.txt'
 IGNORE_DIRS = [
     'Lightroom Catalog',
 ]
+
+DEFAULT_DB_PATH = Path(__file__).resolve().parents[3] / 'image_search.db'

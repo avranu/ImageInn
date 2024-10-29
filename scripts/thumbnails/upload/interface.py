@@ -53,7 +53,8 @@ from typing import Iterable
 from abc import ABC, abstractmethod
 from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
-from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS
+from scripts.lib.db import ImagesDatabase
+from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, DEFAULT_DB_PATH
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.status import Status
 from scripts.thumbnails.upload.template import FileTemplate
@@ -72,8 +73,12 @@ class ImmichInterface(FileManager, ABC):
     large_file_size: int = 1024 * 1024 * 100  # 100 MB
     backup_directories : list[Path] = Field(default_factory=list)
     templates : list[FileTemplate] = Field(default_factory=list)
+    use_db : bool = False
+    db_path : Path | None = DEFAULT_DB_PATH
+    album : str | None = None
 
     _authenticated: bool = PrivateAttr(default=False)
+    _db : ImagesDatabase | None = PrivateAttr(default=None)
 
     @field_validator('directory', mode="before")
     def validate_directory(cls, v):
@@ -133,6 +138,26 @@ class ImmichInterface(FileManager, ABC):
         if isinstance(v, list):
             return v
         raise ConfigurationError("Invalid allowed_extensions value.")
+
+    @field_validator('db_path', mode="before")
+    def validate_db_path(cls, v):
+        if not v:
+            return None
+        db_path = Path(v)
+        if not db_path.exists():
+            raise FileNotFoundError(f"Database file {db_path} does not exist.")
+        return db_path
+
+    @property
+    def db(self) -> ImagesDatabase | None:
+        # Cache it
+        if not self._db:
+            if not self.use_db or not self.db_path:
+                return None
+            
+            self._db = ImagesDatabase(self.db_path)
+
+        return self._db
 
     def authenticate(self):
         """

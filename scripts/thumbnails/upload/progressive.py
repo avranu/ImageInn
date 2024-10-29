@@ -64,6 +64,9 @@ from pydantic import PrivateAttr
 from tqdm import tqdm
 from alive_progress import alive_it, alive_bar
 
+from scripts.lib.db.images import ImagesDatabase
+from scripts.thumbnails.upload.meta import DEFAULT_DB_PATH
+
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
@@ -120,6 +123,9 @@ class ImmichProgressiveUploader(ImmichInterface):
             return UploadStatus.UPLOADED
 
         command = ["immich", "upload", image_path.as_posix()]
+        if self.album:
+            command.extend(['-A', self.album])
+        
         attempt = 0
         while attempt <= retries:
             try:
@@ -128,6 +134,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                     check=True,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
+                    timeout=60,
                     text=True
                 )
                 output = result.stdout + result.stderr
@@ -149,16 +156,28 @@ class ImmichProgressiveUploader(ImmichInterface):
 
             except subprocess.CalledProcessError as e:
                 output = e.stdout + e.stderr
-                logger.error(f"Failed to upload {image_path}: {output}")
 
-                if "fetch failed" in output or "ETIMEDOUT" in output or "ENETUNREACH" in output:
+                reason = ''
+                if 'ETIMEDOUT' in output:
+                    reason = 'Connection timed out'
+                elif 'ENETUNREACH' in output:
+                    reason = 'Network unreachable'
+                elif 'fetch failed' in output:
+                    reason = 'Fetch failed'
+
+                if reason:
+                    # A known reason, so don't log the output
+                    logger.error('%s - Failed to upload %s', reason, image_path.name)
                     attempt += 1
                     if attempt <= retries:
-                        logger.info(f"Retrying upload for {image_path} in 10 seconds... (Attempt {attempt}/{retries})")
+                        logger.debug(f"Retrying upload in 10 seconds... (Attempt {attempt}/{retries})")
                         time.sleep(10)
                         continue
 
                     logger.error("Max retries reached for %s.", image_path)
+
+                # Unknown reason, log the output
+                logger.error(f"Failed to upload {image_path} for unknown reason: {output}")
                 return UploadStatus.ERROR
 
         logger.error('Max retries reached for %s.', image_path)
@@ -183,8 +202,12 @@ class ImmichProgressiveUploader(ImmichInterface):
             match result:
                 case UploadStatus.UPLOADED:
                     self.record_upload_file()
+                    if self.db:
+                        self.db.mark_uploaded(image_path)
                 case UploadStatus.DUPLICATE:
                     self.record_duplicate_file()
+                    if self.db:
+                        self.db.mark_uploaded(image_path)
                 case UploadStatus.SKIPPED:
                     self.record_skip_file()
                 case UploadStatus.ERROR:
@@ -193,7 +216,8 @@ class ImmichProgressiveUploader(ImmichInterface):
                     logger.error('Unknown upload status: %s', result)
                     self.record_error()
 
-            status.update_status(filename, result)
+            if status:
+                status.update_status(filename, result)
                 
         finally:
             subdir = image_path.parent
@@ -246,11 +270,10 @@ class ImmichProgressiveUploader(ImmichInterface):
 
                     with ThreadPoolExecutor(max_workers=max_threads) as executor:
                         futures = []
-                        for file in files_to_upload:
-                            future = executor.submit(self.upload_file_threadsafe, file, status)
+                        for filepath in files_to_upload:
+                            future = executor.submit(self.upload_file_threadsafe, filepath, status)
                             futures.append(future)
 
-                        # Initialize the progress bar
                         for future in as_completed(futures):
                             try:
                                 future.result()
@@ -263,6 +286,44 @@ class ImmichProgressiveUploader(ImmichInterface):
                     # At the conclusion of the upload, update the last processed time
                     # -- if the upload is cancelled, the last processed time will not be updated
                     status.update_meta()
+
+    def upload_from_db(self, *, max_threads : int = 4):
+        """
+        Upload files from a database to Immich.
+
+        Args:
+            max_threads (int): The maximum number of threads for concurrent uploads.
+        """
+        if not self._authenticated:
+            self.authenticate()
+
+        if not self.db:
+            raise ConfigurationError("No database specified.")
+
+        total = self.db.count_records()
+
+        with alive_bar(total=total, title=f"{BOLD}{GREEN}Uploading from db{RESET}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+            self.progress_bar.text(self.report())
+            
+            with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                futures = []
+                for image_path in self.db.get_images(uploaded=False):
+                    # Ensure the image still exists
+                    if not self.exists(image_path):
+                        logger.warning("File %s no longer exists.", image_path)
+                        continue
+
+                    future = executor.submit(self.upload_file_threadsafe, image_path)
+                    futures.append(future)
+
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception as e:
+                        # Catch, report, and re-raise
+                        self.record_error()
+                        logger.error("Exception during upload: %s", e)
+                        raise
 
     def handle_sd_card(self, directory : Path | str = '', max_threads: int = 4) -> bool:
         """
@@ -350,6 +411,18 @@ class ImmichProgressiveUploader(ImmichInterface):
             
         return f"{RESET}{' '.join(buffer) or '...'}{RESET}"
 
+    def run(self, max_threads: int = 4):
+        """
+        Run the uploader.
+
+        Args:
+            max_threads (int): The maximum number of threads for concurrent uploads.
+        """
+        if self.db:
+            self.upload_from_db(max_threads=max_threads)
+        else:
+            self.upload(max_threads=max_threads)
+
 def validate_args(args: argparse.Namespace) -> bool:
     """
     Validate the arguments passed to the script.
@@ -370,6 +443,23 @@ def validate_args(args: argparse.Namespace) -> bool:
 
     return True
 
+class ArgNamespace(argparse.Namespace):
+    """
+    A custom namespace class for argparse.
+    """
+    url: str
+    api_key: str
+    allow_extension: list[str]
+    ignore_extension: list[str]
+    ignore_path: list[str]
+    max_threads: int
+    verbose: bool
+    templates: list[str]
+    sd: bool
+    use_db: bool
+    db_path : str | Path
+    import_path: str
+    album : str
 
 def main():
     """
@@ -393,8 +483,11 @@ def main():
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         parser.add_argument('--templates', '-T', help="File templates to match", nargs='+')
         parser.add_argument('--sd', help="Upload files from an SD card", action='store_true')
+        parser.add_argument('--use_db', action='store_true', help='Use the SQLite database to retrieve upload targets')
+        parser.add_argument('--db-path', help='Path to the SQLite database', default=DEFAULT_DB_PATH)
+        parser.add_argument('--album', '-A', help='Immich album to upload files to')
         parser.add_argument("import_path", nargs='?', default=thumbnails_dir, help="Path to import files from")
-        args = parser.parse_args()
+        args = parser.parse_args(namespace=ArgNamespace())
 
         if args.verbose:
             logger.setLevel(logging.DEBUG)
@@ -421,13 +514,16 @@ def main():
             ignore_paths=args.ignore_path,
             allowed_extensions=args.allow_extension,
             templates=templates,
+            use_db=args.use_db,
+            db_path=args.db_path,
+            album=args.album,
         )
 
         try:
             if args.sd:
                 immich.handle_sd_card(max_threads=args.max_threads)
             else:
-                immich.upload(max_threads=args.max_threads)
+                immich.run(max_threads=args.max_threads)
 
         except AuthenticationError:
             logger.error("Authentication failed. Check your API key and URL.")

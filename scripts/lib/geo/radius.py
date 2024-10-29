@@ -23,7 +23,6 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
-import os
 import sys
 import math
 import shutil
@@ -37,11 +36,15 @@ import colorlog
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from pathlib import Path
-from typing import Tuple, Optional, Iterator
+from typing import Any, Tuple, Optional, Iterator
 from datetime import datetime
-from decimal import Decimal, getcontext
+from decimal import Decimal
 from alive_progress import alive_bar
 
+from scripts.lib.types import ProgressBar, RESET, RED, GREEN, YELLOW, BLUE, PURPLE, CYAN, WHITE, BLACK, BOLD, UNDERLINE, DIM
+from scripts.lib.db import ImagesDatabase
+
+# Set up module-level logger
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -53,7 +56,7 @@ class ExifDataExtractor:
         if not shutil.which('exiftool'):
             logger.error("ExifTool is not installed. Please install ExifTool to proceed.")
             sys.exit(1)
-        logger.info("ExifTool is installed and ready to use.")
+        logger.debug("ExifTool is installed and ready to use.")
 
     def get_gps_data(self, file_path: Path) -> Tuple[Optional[Decimal], Optional[Decimal]]:
         """Extract GPS data from image file using ExifTool."""
@@ -63,25 +66,40 @@ class ExifDataExtractor:
                 stderr=subprocess.STDOUT
             )
             data = json.loads(output.decode('utf-8'))[0]
-            lat = data.get('GPSLatitude')
-            lon = data.get('GPSLongitude')
-
-            if lat is not None and lon is not None:
-                lat = self._convert_to_decimal(lat)
-                lon = self._convert_to_decimal(lon)
-                return lat, lon
-            else:
-                gps_position = data.get('GPSPosition')
-                if gps_position:
-                    lat, lon = self._parse_gps_position(gps_position)
-                    return lat, lon
-            return None, None
         except subprocess.CalledProcessError as e:
             logger.error(f"ExifTool error on file {file_path}: {e}")
             return None, None
         except Exception as e:
             logger.error(f"Error extracting GPS data from {file_path}: {e}")
+            logger.error(f"Output: {output.decode('utf-8')}")
             return None, None
+
+        if not isinstance(data, dict):
+            logger.error(f"Invalid JSON data from ExifTool: {data}")
+            return None, None
+
+        try:
+            lat = data.get('GPSLatitude', None)
+            lon = data.get('GPSLongitude', None)
+
+            if all([lat, lon]):
+                lat = self._convert_to_decimal(lat)
+                lon = self._convert_to_decimal(lon)
+                return lat, lon
+            gps_position = data.get('GPSPosition', None)
+            if gps_position:
+                lat, lon = self._parse_gps_position(gps_position)
+                return lat, lon
+            
+        except Exception as e:
+            logger.error(f"Error parsing GPS data from {file_path}: {e}")
+            raise
+
+        # If the only key in the data is SourceFile, don't log
+        if not (len(data) == 1 and 'SourceFile' in data):
+            logger.error(f"No GPS data found in {file_path}: {data}")
+            
+        return None, None
 
     def _convert_to_decimal(self, coord) -> Optional[Decimal]:
         """Convert coordinate to decimal degrees if necessary."""
@@ -120,6 +138,7 @@ class ExifDataExtractor:
             if len(positions) != 2:
                 logger.error(f"Invalid GPSPosition format: {gps_position}")
                 return None, None
+            
             lat = self._parse_dms(positions[0])
             lon = self._parse_dms(positions[1])
             return lat, lon
@@ -130,8 +149,8 @@ class ExifDataExtractor:
 class DistanceCalculator:
     """Class to calculate the distance between two GPS coordinates."""
 
-    @classmethod
-    def calculate_distance(cls, lat1: Decimal, lon1: Decimal, lat2: Decimal, lon2: Decimal) -> float:
+    @staticmethod
+    def calculate_distance(lat1: Decimal, lon1: Decimal, lat2: Decimal, lon2: Decimal) -> float:
         """Calculate the great-circle distance between two coordinates."""
         # Convert Decimal to float for math module functions
         lat1 = float(lat1)
@@ -149,60 +168,34 @@ class DistanceCalculator:
         distance = R * c  # in meters
         return distance
 
-class DatabaseManager:
-    """Class to handle SQLite database operations."""
-
-    def __init__(self, db_name: str = 'image_search.db'):
-        self.db_path = PROJECT_ROOT / db_name
-        self._create_table()
-
-    def _create_table(self):
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute('''CREATE TABLE IF NOT EXISTS images
-                         (path TEXT, date TEXT, latitude REAL, longitude REAL)''')
-            conn.commit()
-        logger.info("Database table 'images' is ready.")
-
-    def insert_record(self, path: Path, date: str, latitude: Decimal, longitude: Decimal):
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute('INSERT INTO images (path, date, latitude, longitude) VALUES (?, ?, ?, ?)',
-                      (str(path), date, float(latitude), float(longitude)))
-            conn.commit()
-        logger.debug(f"Inserted record into database: {path}, {date}, {latitude}, {longitude}")
-
-    def count_records(self) -> int:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute('SELECT COUNT(*) FROM images')
-            count = c.fetchone()[0]
-        return count
-
-    def get_records(self) -> Iterator[Tuple[str, str, Decimal, Decimal]]:
-        with sqlite3.connect(self.db_path) as conn:
-            c = conn.cursor()
-            c.execute('SELECT path, date, latitude, longitude FROM images')
-            for row in c.fetchall():
-                yield row
-
 class ImageSearcher(BaseModel):
     """Class to search for image files in a directory and its subdirectories."""
-    directory : Path = Field(default='/mnt/i/tmp_delete_without_checking/', description="Directory to search for image files")
+    directory : Path = Field(default='.', validate_default=True, description="Directory to search for image files")
     extensions : Tuple[str, ...] = Field(default=('.jpg', '.jpeg', '.arw', '.nef', '.dng'), description="File extensions to search for")
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+
+    @field_validator('directory', mode='before')
+    def validate_directory(cls, value: Any) -> Path | None:
+        if not value:
+            return Path('.')
+
+        dir_path = Path(value)
+        if not dir_path.exists():
+            raise ValueError(f"Directory {dir_path} does not exist.")
+            
+        return dir_path
+
     def get_image_files(self) -> Iterator[Path]:
         """Recursively yield all files with specified extensions."""
         logger.info(f"Searching for image files in {self.directory}...")
-        for root, _, files in os.walk(self.directory):
-            for filename in files:
-                if filename.lower().endswith(self.extensions):
-                    file_path = Path(root) / filename
-                    yield file_path
-                    logger.debug(f"Found image file: {file_path}")
-    
+        for extension in self.extensions:
+            pattern = f'**/*{extension}'
+            for file_path in self.directory.rglob(pattern):
+                yield file_path
+                logger.debug(f"Found image file: {file_path}")
+
     def run(self):
         # Target coordinates and search radius
         target_lat = Decimal('41.7345966563581')
@@ -213,17 +206,17 @@ class ImageSearcher(BaseModel):
 
         # Initialize components
         exif_extractor = ExifDataExtractor()
-        db_manager = DatabaseManager()
-        
-        record_count = db_manager.count_records()
-        logger.info(f"Database contains {record_count} records already.")
+        db_manager = ImagesDatabase()
+
+        if record_count := db_manager.count_records():
+            logger.info(f"Database contains {record_count} records already.")
 
         # Prepare to process files
         files = self.get_image_files()
-        count : int = 0
+        count: int = 0
 
         # Process each file
-        with alive_bar(title="Searching images...", unit='images', dual_line=True, unknown='waves') as progress_bar:
+        with alive_bar(title=f"{YELLOW}Searching images...{RESET}", unit='images', dual_line=True, unknown='waves') as progress_bar:
             for file_path in files:
                 try:
                     lat, lon = exif_extractor.get_gps_data(file_path)
@@ -244,10 +237,8 @@ class ImageSearcher(BaseModel):
                     progress_bar()
                     progress_bar.text(f"Images found: {count}")
 
-        logger.info(f"Found {count} images within {radius} meters of target coordinates.")
         record_count = db_manager.count_records()
-        logger.info(f"Database now contains {record_count} records.")
-
+        logger.info(f"Found {count} images near target coordinates. Total records: {record_count}")
 
 def setup_logging():
 
@@ -282,6 +273,7 @@ def setup_logging():
 
 class ArgsNamespace(argparse.Namespace):
     verbose: bool
+    directory : str
 
 def main():
     try:
@@ -290,19 +282,18 @@ def main():
 
         parser = argparse.ArgumentParser(description="")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
-
+        parser.add_argument('--directory', '-d', default=None, help="Directory to search for image files")
         args = parser.parse_args(namespace=ArgsNamespace())
 
         if args.verbose:
             logger.setLevel(logging.DEBUG)
 
-        searcher = ImageSearcher()
+        searcher = ImageSearcher(directory=args.directory)
         searcher.run()
-            
+
     except KeyboardInterrupt:
         logger.info("Script cancelled by user.")
-
-    sys.exit(0)
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()
