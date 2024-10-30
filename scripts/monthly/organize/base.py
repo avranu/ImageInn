@@ -46,6 +46,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import datetime
 from ftplib import FTP
+import re
 import subprocess
 import sys
 import os
@@ -68,6 +69,8 @@ from scripts.monthly.exceptions import OneFileException, DuplicationHandledExcep
 from scripts.lib.file_manager import FileManager
 
 logger = logging.getLogger(__name__)
+
+filename_date_pattern = re.compile(r'_(?P<year>20[012]\d)(?P<month>[01]\d)(?P<day>[0123]\d)_')
 
 class FileOrganizer(FileManager):
     """
@@ -437,23 +440,29 @@ class FileOrganizer(FileManager):
         Returns:
             The name of the proposed subdirectory.
         """
-        try:
-            # Get the created date from the filepath
-            file_stat = filepath.stat()
-            created_time = datetime.datetime.fromtimestamp(file_stat.st_ctime)
+        # Prefer a date in the filename, if one exists, over the file metadata
+        if (match := filename_date_pattern.search(filepath.name)):
+            year = match.group('year')
+            month = match.group('month')
+            day = match.group('day')
+        else:
+            try:
+                # Get the created date from the filepath
+                file_stat = filepath.stat()
+                created_time = datetime.datetime.fromtimestamp(file_stat.st_ctime)
 
-            # Extract the year and month
-            year = created_time.strftime('%Y')
-            month = created_time.strftime('%m')
-            day = created_time.strftime('%d')
+                # Extract the year and month
+                year = created_time.strftime('%Y')
+                month = created_time.strftime('%m')
+                day = created_time.strftime('%d')
 
-            # Generate the directory name in the format year/year-month
-            dir_name = f"{year}/{year}-{month}-{day}/"
+            except OSError as ose:
+                logger.error("Error occurred while finding subdirectory: %s", ose)
+                raise ValueError(f"Unable to determine a subdir from: {filepath.absolute()=} -> {ose=}") from ose
 
-        except OSError as ose:
-            logger.error("Error occurred while finding subdirectory: %s", ose)
-            raise ValueError(f"Unable to determine a subdir from: {filepath.absolute()=} -> {ose=}") from ose
-
+        # Generate the directory name in the format year/year-month
+        dir_name = f"{year}/{year}-{month}-{day}/"
+            
         return dir_name
 
     def create_subdir(self, filepath : Path, parent_directory : Path | None = None) -> Path:
