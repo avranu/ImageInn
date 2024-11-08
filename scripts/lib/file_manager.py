@@ -81,7 +81,7 @@ class FileManager(Script):
 
     dry_run: bool = False
     glob_pattern: str = '*'
-    extensions : list[str] = Field(default_factory=list)
+    extensions : list[str] = Field(default=None, validate_default=True)
     filename_pattern : re.Pattern = Field(default=None, validate_default=True)
     skip_mtime_compare : bool = False
 
@@ -89,6 +89,7 @@ class FileManager(Script):
     _stats_lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
     _hash_cache: LRUCache = PrivateAttr(default_factory=lambda: LRUCache(maxsize=10000))
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
+    _glob_patterns : list[str] = PrivateAttr(default_factory=list)
 
     _sony_clip_pattern : re.Pattern | None = None
 
@@ -112,6 +113,18 @@ class FileManager(Script):
 
         # Compile a string into a pattern, so it is cached for repeated use
         return re.compile(str(v), re.IGNORECASE)
+
+    @field_validator('extensions', mode='before')
+    def validate_extensions(cls, v):
+        if not v:
+            # Allow subclasses to define defaults
+            v = cls.get_default_extensions()
+            
+        if isinstance(v, str):
+            v = [v]
+            
+        # Strip '.' to the left and lowercase
+        return [ext.lstrip('.').lower() for ext in v]
 
     @property
     def stats_lock(self) -> threading.Lock:
@@ -155,6 +168,28 @@ class FileManager(Script):
     def get_default_glob_pattern(cls) -> str:
         # A temporary hack to inject a class attribute into a pydantic model.
         return '*'
+
+    @classmethod
+    def get_default_extensions(cls) -> list[str]:
+        # A temporary hack to inject a class attribute into a pydantic model.
+        return []
+
+    def get_glob_patterns(self) -> list[str]:
+        """
+        Get a list of glob patterns to search for files.
+
+        This includes the default glob pattern, and any extensions that are defined.
+        """
+        if not self._glob_patterns:
+            # default to just the glob pattern
+            self._glob_patterns = [self.glob_pattern]
+            # include all extensions if they exist (TODO this is hacky)
+            if self.extensions and '.' not in self.glob_pattern:
+                globs = [f'{self.glob_pattern}.{ext}' for ext in self.extensions]
+                self._glob_patterns.extend(globs)
+                logger.debug('Expanding glob pattern to include extensions: %s', self.extensions)
+
+        return self._glob_patterns
 
     def guess_drive_root(self, filepath: Path | None = None) -> Path:
         """
@@ -322,6 +357,50 @@ class FileManager(Script):
 
         return result
 
+    def should_ignore_directory(self, directory: Path | str, *, allow_hidden : bool = False) -> bool:
+        """
+        Check if a directory should be ignored based on the name.
+
+        Args:
+            directory (Path): The directory to check.
+            allow_hidden (bool): Whether to include hidden directories.
+
+        Returns:
+            bool: True if the directory should be ignored, False otherwise
+        """
+        directory = Path(directory)
+
+        # Whitelist special dirs
+        if directory.name in ['.']:
+            return False
+    
+        # Everything else works via a blacklist
+        if not allow_hidden and (directory.name.startswith('.') or directory.name.startswith('__')):
+            logger.debug("Ignoring hidden directory: %s", directory)
+            return True
+
+        return False
+
+    def should_ignore_file(self, file_path: Path, *, allow_hidden : bool = True, **kwargs) -> bool:
+        """
+        Check if a file should be ignored based on the name.
+
+        Implemented as a blacklist. 
+        Superclasses should implement custom logic and then return super().should_ignore_file().
+
+        Args:
+            file_path: The file to check.
+            allow_hidden: Whether to include hidden files.
+            **kwargs: Additional arguments that subclasses may use.
+
+        Returns:
+            True if the file should be ignored, False otherwise.
+        """
+        if not allow_hidden and file_path.name.startswith('.'):
+            return True
+
+        return False
+
     def yield_directories(self, directory: Path, *, recursive: bool = True, allow_hidden : bool = False) -> Iterator[Path]:
         """
         Yield directories
@@ -335,28 +414,21 @@ class FileManager(Script):
 
         """
         if not recursive:
-            if directory.name.startswith('.'):
-                if not allow_hidden or directory.name == '.trash':
-                    return
-                
-            yield directory
+            if not self.should_ignore_directory(directory, allow_hidden=allow_hidden):
+                yield directory
+            return
 
         logger.debug('Searching %s for directories.', directory.absolute())
 
         for dirpath, dirnames, _ in os.walk(directory):
             dirpath_obj = Path(dirpath)
-
-            if dirpath_obj.name == '.trash':
-                continue
-
+            
             # Skip hidden directories if not allowed
-            if not allow_hidden:
-                # Remove hidden directories from dirnames so os.walk doesn't traverse into them
-                dirnames[:] = [d for d in dirnames if not (d.startswith('.') and d != '.thumbnails')]
-
-                # Skip the current directory if it's hidden
-                if dirpath_obj.name.startswith('.') and dirpath_obj.name != '.thumbnails':
-                    continue
+            if self.should_ignore_directory(dirpath_obj, allow_hidden=allow_hidden):
+                continue
+            
+            # Skip ignored directories
+            dirnames[:] = [d for d in dirnames if not self.should_ignore_directory(d, allow_hidden=allow_hidden)]
 
             yield dirpath_obj
 
@@ -385,12 +457,7 @@ class FileManager(Script):
             The next file in the directory.
         """
         directory = directory or self.directory
-
-        # default to just the glob pattern
-        globs = [self.glob_pattern]
-        # include all extensions if they exist (TODO this is hacky)
-        if self.extensions and '.' not in self.glob_pattern:
-            globs = [f'{self.glob_pattern}.{ext}' for ext in self.extensions]
+        globs = self.get_glob_patterns()
 
         if recursive:
             fn = directory.rglob

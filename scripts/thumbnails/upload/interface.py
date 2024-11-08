@@ -56,7 +56,7 @@ from abc import ABC, abstractmethod
 from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
 from scripts.lib.db import ImagesDatabase
-from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, DEFAULT_DB_PATH
+from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, DEFAULT_DB_PATH, IGNORE_DIRS
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.status import Status
 from scripts.thumbnails.upload.template import FileTemplate
@@ -71,7 +71,6 @@ class ImmichInterface(FileManager, ABC):
     api_key: str
     ignore_extensions: list[str] = Field(default_factory=list)
     ignore_paths: list[str] = Field(default_factory=list)
-    allowed_extensions : list[str] = Field(default_factory=lambda: ALLOWED_EXTENSIONS.copy())
     large_file_size: int = 1024 * 1024 * 100  # 100 MB
     backup_directories : list[Path] = Field(default_factory=list)
     templates : list[FileTemplate] = Field(default_factory=list)
@@ -135,16 +134,6 @@ class ImmichInterface(FileManager, ABC):
             return [Path(path) for path in v]
         raise ConfigurationError("Invalid backup_directories value.")
 
-    @field_validator('allowed_extensions', mode="before")
-    def validate_allowed_extensions(cls, v):
-        if not v:
-            return ALLOWED_EXTENSIONS
-        if isinstance(v, str):
-            return [v]
-        if isinstance(v, list):
-            return v
-        raise ConfigurationError("Invalid allowed_extensions value.")
-
     @field_validator('db_path', mode="before")
     def validate_db_path(cls, v):
         if not v:
@@ -170,6 +159,11 @@ class ImmichInterface(FileManager, ABC):
         with self._bytes_lock:
             return self._bytes_uploaded
 
+    @classmethod
+    def get_default_extensions(cls) -> list[str]:
+        # A temporary hack to inject a class attribute into a pydantic model.
+        return ALLOWED_EXTENSIONS.copy()
+
     def record_bytes_uploaded(self, bytes_uploaded: int):
         """
         Record the number of bytes uploaded.
@@ -189,10 +183,13 @@ class ImmichInterface(FileManager, ABC):
         """
         if self._authenticated:
             return
+
+        logger.debug("Authenticating with Immich at %s", self.url)
+        
         try:
-            subprocess.run(["immich", "login-key", self.url, self.api_key], check=True)
+            self.subprocess(["immich", "login-key", self.url, self.api_key])
             self._authenticated = True
-            logger.info("Authenticated successfully.")
+            logger.debug("Authenticated successfully.")
         except subprocess.CalledProcessError as e:
             logger.error("Authentication failed: %s", e)
             raise AuthenticationError("Authentication failed.") from e
@@ -208,13 +205,15 @@ class ImmichInterface(FileManager, ABC):
         """
         raise NotImplementedError("upload method must be implemented in a subclass.")
 
-    def should_ignore_file(self, image_path: Path, status: Status | None = None) -> bool:
+    def should_ignore_file(self, image_path: Path, *, allow_hidden : bool = True, status: Status | None = None, **kwargs) -> bool:
         """
         Check if a file should be ignored based on the extension, size, and status.
 
         Args:
             file (Path): The file to check.
+            allow_hidden (bool): Whether to include hidden files.
             status (Status): The status of the file from the last run.
+            **kwargs: Additional arguments that subclasses may implement.
 
         Returns:
             bool: True if the file should be ignored, False otherwise
@@ -222,20 +221,19 @@ class ImmichInterface(FileManager, ABC):
         if not image_path.is_file():
             return True
 
+        # Run super() first for optimization
+        if super().should_ignore_file(image_path, allow_hidden=allow_hidden):
+            return True
+
         suffix = image_path.suffix.lstrip('.').lower()
 
         # Ignore non-image extensions
-        if suffix not in self.allowed_extensions:
+        if suffix not in self.extensions:
             logger.debug("Ignoring non-media file due to extension: %s", image_path)
             return True
 
         if suffix in self.ignore_extensions:
             logger.debug("Ignoring file due to extension per user request: %s", image_path)
-            return True
-
-        # Ignore hidden
-        if image_path.name.startswith('.'):
-            logger.debug("Ignoring hidden file: %s", image_path)
             return True
 
         if str(image_path) in self.ignore_paths:
@@ -256,7 +254,33 @@ class ImmichInterface(FileManager, ABC):
             logger.debug(f"File {image_path} is larger than {self.large_file_size} bytes and will be skipped.")
             return True
 
+        # No rules broken, so don't ignore
         return False
+
+    def should_ignore_directory(self, directory: Path | str, *, allow_hidden : bool = False) -> bool:
+        """
+        Check if a directory should be ignored based on the name.
+
+        Args:
+            directory (Path): The directory to check.
+            allow_hidden (bool): Whether to include hidden directories.
+
+        Returns:
+            bool: True if the directory should be ignored, False otherwise
+        """
+        directory = Path(directory)
+
+        # Whitelist special dirs that would be excluded by rules below
+        if directory.name in ['.thumbnails']:
+            return False
+
+        # Everything else works via a blacklist
+        if directory.name in IGNORE_DIRS:
+            logger.debug("Ignoring directory: %s", directory)
+            return True
+
+        # super handles hidden directories and double underscore prefixed
+        return super().should_ignore_directory(directory, allow_hidden=allow_hidden)
 
     def create_backup_subdirs(self, image_path: Path) -> list[Path]:
         """

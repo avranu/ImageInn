@@ -42,6 +42,11 @@ STATUS_FILE_NAME = '.upload_status.txt'
 
 IGNORE_DIRS = [
     'Lightroom Catalog',
+    'node_modules',
+    '.trash',
 ]
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[3] / 'image_search.db'
+
+MAX_RETRIES = 50
+SECONDS_PER_RETRY = 15

@@ -74,6 +74,7 @@ from scripts import setup_logging
 from scripts.lib.types import ProgressBar, RED, CYAN, CYAN2, YELLOW, YELLOW2, BLUE, PURPLE, RESET
 from scripts.lib.utils import seconds_to_human
 from scripts.exceptions import AppException
+from scripts.thumbnails.upload.meta import MAX_RETRIES, SECONDS_PER_RETRY
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.interface import ImmichInterface
 from scripts.thumbnails.upload.status import Status, UploadStatus
@@ -84,6 +85,7 @@ logger = setup_logging()
 class ImmichProgressiveUploader(ImmichInterface):
 
     _progress_bar : ProgressBar | None = PrivateAttr(default=None)
+    _progress_message : str | None = PrivateAttr(default=None)
     
     @property
     def progress_bar(self) -> ProgressBar:
@@ -116,9 +118,11 @@ class ImmichProgressiveUploader(ImmichInterface):
         Returns:
             UploadStatus: The status of the upload operation.
         """
-        if self.should_ignore_file(image_path, status):
+        if self.should_ignore_file(image_path, status=status):
             logger.debug('Ignoring %s', image_path)
             return UploadStatus.SKIPPED
+
+        self.progress_message(f'Uploading {image_path.name[-15:]}')
 
         if self.check_dry_run('running immich upload'):
             return UploadStatus.UPLOADED
@@ -204,35 +208,45 @@ class ImmichProgressiveUploader(ImmichInterface):
         """
         filename = image_path.name
 
-        try:
-            result = self._upload_file(image_path, status)
+        for i in range(MAX_RETRIES):
+            try:
+                result = self._upload_file(image_path, status)
 
-            match result:
-                case UploadStatus.UPLOADED:
-                    self.record_upload_file()
-                    if self.db:
-                        self.db.mark_uploaded(image_path)
-                case UploadStatus.DUPLICATE:
-                    self.record_duplicate_file()
-                    if self.db:
-                        self.db.mark_uploaded(image_path)
-                case UploadStatus.SKIPPED:
-                    self.record_skip_file()
-                case UploadStatus.ERROR:
-                    self.record_error()
-                case _:
-                    logger.error('Unknown upload status: %s', result)
-                    self.record_error()
+                match result:
+                    case UploadStatus.UPLOADED:
+                        self.record_upload_file()
+                        if self.db:
+                            self.db.mark_uploaded(image_path)
+                    case UploadStatus.DUPLICATE:
+                        self.record_duplicate_file()
+                        if self.db:
+                            self.db.mark_uploaded(image_path)
+                    case UploadStatus.SKIPPED:
+                        self.record_skip_file()
+                    case UploadStatus.ERROR:
+                        self.record_error()
+                    case _:
+                        logger.error('Unknown upload status: %s', result)
+                        self.record_error()
 
-            if status:
-                status.update_status(filename, result)
-                
-        finally:
-            subdir = image_path.parent
-            self.progress_bar.text(self.report(f'/{str(subdir)[-25:]}/'))
-            self.progress_bar()
+                if status:
+                    status.update_status(filename, result)
 
-        return result
+                return result
+
+            except OSError as ose:
+                # Catch error 112 (host is down) and retry
+                if ose.errno == 112:
+                    # first rety in 1 second, then ~15 more seconds per retry
+                    wait = 1 + SECONDS_PER_RETRY * i
+                    logger.error("Host is down. Retrying #%d in %d seconds...", i, wait)
+                    time.sleep(wait)
+                    continue
+                    
+            finally:
+                subdir = image_path.parent
+                self.progress_message(f'/{str(subdir)[-25:]}/', advance=1)
+
 
     def upload(self, directory: Path | None = None, recursive: bool = True, max_threads: int = 4):
         """
@@ -254,12 +268,12 @@ class ImmichProgressiveUploader(ImmichInterface):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
 
         with alive_bar(title=f"{CYAN2}Uploading{RESET} {str(directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
-            self.progress_bar.text(self.report('Searching...'))
+            self.progress_message('Searching...')
+            
             for subdir in self.yield_directories(directory, recursive=recursive):
-
                 with Status(directory=subdir) as status:
                     # Check if the directory has changed since the last processed time
-                    if not status.directory_changed():
+                    if self.skip and not status.directory_changed():
                         logger.debug("Skipping directory %s as it has not changed since last processed.", subdir)
                         continue
 
@@ -304,7 +318,7 @@ class ImmichProgressiveUploader(ImmichInterface):
         total = self.db.count_records(uploaded=False)
 
         with alive_bar(total=total, title=f"{CYAN2}Uploading from db{RESET}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
-            self.progress_bar.text(self.report())
+            self.progress_message('Searching DB...')
             
             with ThreadPoolExecutor(max_workers=max_threads) as executor:
                 futures = []
@@ -366,6 +380,28 @@ class ImmichProgressiveUploader(ImmichInterface):
         self.upload(sd_directory, max_threads)
         return True
 
+    def progress_message(self, message: str, *args, max_length : int = 30, advance : int = 0) -> None:
+        """
+        Update the progress bar with a message.
+
+        Args:
+            message (str): The message to display.
+            *args: Additional arguments to format the message.
+            max_length (int): The maximum length of the message to display. Default 30.
+        """
+        # Combine message and args into a single string, ensuring message isn't truncated, but args are
+        message_length = len(message)
+        arg_text = ' '.join([str(arg).strip() for arg in args])
+        arg_start_index = -1 * (max_length - message_length - 1)
+        if len(arg_text) > max_length - message_length - 1:
+            arg_text = f'...{arg_text[arg_start_index:]}'
+        text = f'{message} {arg_text}'
+        self._progress_message = text.strip()
+            
+        self.progress_bar.text(self.report())
+        
+        if advance:
+            self.progress_bar(advance)
     
     def report(self, message_prefix : str | None = None) -> str:
         """
@@ -377,6 +413,9 @@ class ImmichProgressiveUploader(ImmichInterface):
         Returns:
             The report string.
         """
+        if message_prefix is None:
+            message_prefix = self._progress_message
+            
         # Files
         file_buffer = []
         if self.files_uploaded > 0:
@@ -451,7 +490,6 @@ class ArgNamespace(argparse.Namespace):
     import_path: str
     album : str
     skip : bool
-    local : bool
     
 def validate_args(args: ArgNamespace) -> bool:
     """
@@ -480,18 +518,21 @@ def main():
     try:
         load_dotenv()
 
-        url = os.getenv("IMMICH_INSTANCE_URL")
         api_key = os.getenv("IMMICH_API_KEY")
         thumbnails_dir = os.getenv("IMMICH_THUMBNAILS_DIR", '.')
         max_threads = os.getenv("IMMICH_MAX_THREADS", 4)
+        
+        url = os.getenv("IMMICH_INSTANCE_URL")
+        if home_network := ImmichProgressiveUploader.is_home_network():
+            url = os.getenv("IMMICH_LOCAL_URL")
 
         parser = argparse.ArgumentParser(description="Upload files to Immich.")
         parser.add_argument("--url", help="Immich URL", default=url)
         parser.add_argument("--api-key", help="Immich API key", default=api_key)
         parser.add_argument('--allow-extension', '-e', help="Allow only files with these extensions", nargs='+')
-        parser.add_argument("--ignore-extension", "-E", help="Ignore files with these extensions", nargs='+')
-        parser.add_argument('--ignore-path', '-P', help="Ignore files with these paths", nargs='+')
-        parser.add_argument('--max-threads', '-t', type=int, default=max_threads, help="Maximum number of threads for concurrent uploads")
+        parser.add_argument("--ignore-extension", help="Ignore files with these extensions", nargs='+')
+        parser.add_argument('--ignore-path', help="Ignore files with these paths", nargs='+')
+        parser.add_argument('--max-threads', type=int, default=max_threads, help="Maximum number of threads for concurrent uploads")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         parser.add_argument('--templates', '-T', help="File templates to match", nargs='+')
         parser.add_argument('--sd', help="Upload files from an SD card", action='store_true')
@@ -499,14 +540,11 @@ def main():
         parser.add_argument('--db-path', help='Path to the SQLite database', default=DEFAULT_DB_PATH)
         parser.add_argument('--album', '-A', help='Immich album to upload files to')
         parser.add_argument('--skip', help='Skip assets that were previously uploaded.', action='store_true')
-        parser.add_argument('--local', help='Use the local url for immich. This will be overridden by --url', action='store_true')
         parser.add_argument("import_path", nargs='?', default=thumbnails_dir, help="Path to import files from")
         args = parser.parse_args(namespace=ArgNamespace())
 
         if args.verbose:
             logger.setLevel(logging.DEBUG)
-        if args.local:
-            args.url = os.getenv("IMMICH_LOCAL_URL")
 
         if not validate_args(args):
             sys.exit(1)
@@ -528,7 +566,7 @@ def main():
             directory=args.import_path,
             ignore_extensions=args.ignore_extension,
             ignore_paths=args.ignore_path,
-            allowed_extensions=args.allow_extension,
+            extensions=args.allow_extension,
             templates=templates,
             use_db=args.use_db,
             db_path=args.db_path,
@@ -537,7 +575,7 @@ def main():
             # Cloudflare prevents uploads over 100MB. 
             # ...On the local network, disable skipping large files.
             # ...Everywhere else, use the default large file size of 100MB.
-            large_file_size = 0 if args.local else (1024 * 1024 * 100)
+            large_file_size = 0 if home_network else (1024 * 1024 * 100)
         )
 
         try:
