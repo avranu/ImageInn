@@ -708,7 +708,7 @@ class FileManager(Script):
             logger.warning('delete_empty_directories on directory that does not exist: %s', directory)
             return
 
-        with alive_bar(title=f"Organizing {str(directory)[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        with alive_bar(title=f"Organizing {str(directory)[-25:]}/", unit='dirs', dual_line=True, unknown='waves') as self._progress_bar:
             count = 0
             skipped = 0
             for dirpath in self.yield_directories(directory, recursive=True):
