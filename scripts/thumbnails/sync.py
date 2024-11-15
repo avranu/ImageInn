@@ -23,7 +23,7 @@ Usage:
         --dry-run             Perform a dry run without making any changes.
 
 Examples:
-    echo CLOUD_THUMBNAILS_DIR="/mnt/c/Users/username/Pictures/Thumbnails" > .env
+    echo IMAGEINN_THUMBNAILS_DIR="/mnt/c/Users/username/Pictures/Thumbnails" > .env
     python -m scripts.thumbnails.sync /mnt/i/Photos /mnt/j/Photos
 *                                                                                                                      *
 *                                                                                                                      *
@@ -279,8 +279,8 @@ class JPGSyncer:
         return False
 
 def main():
-    # Load default target from environment variable CLOUD_THUMBNAILS_DIR
-    target_dir = os.getenv("CLOUD_THUMBNAILS_DIR")
+    # Load default target from environment variable IMAGEINN_THUMBNAILS_DIR
+    target_dir = os.getenv("IMAGEINN_THUMBNAILS_DIR")
 
     try:
         parser = argparse.ArgumentParser(description="Sync JPG files with defined structure.")
@@ -295,7 +295,7 @@ def main():
 
         # Target is required
         if not args.target:
-            parser.error("Target directory is required. Set it using the CLOUD_THUMBNAILS_DIR environment variable, or pass it as an argument using the --target option.")
+            parser.error("Target directory is required. Set it using the IMAGEINN_THUMBNAILS_DIR environment variable, or pass it as an argument using the --target option.")
 
         syncer = JPGSyncer(args.target, args.dry_run, args.threads)
         syncer.sync(args.sources)

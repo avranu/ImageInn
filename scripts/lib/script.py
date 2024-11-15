@@ -29,12 +29,35 @@ import subprocess
 import shutil
 import logging
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+from alive_progress import alive_it, alive_bar
+from scripts.lib.types import ProgressBar
 
 logger = logging.getLogger(__name__)
 
 class Script(BaseModel, ABC):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+    max_threads : int = 0
+    _progress_bar : ProgressBar | None = PrivateAttr(default=None)
+    _progress_message : str | None = PrivateAttr(default=None)
+
+    @property
+    def progress_bar(self) -> ProgressBar:
+        if not self._progress_bar:
+            self._progress_bar = alive_bar(title="Running", unknown='waves')
+        return self._progress_bar
+
+    @field_validator("max_threads", mode="before")
+    def validate_max_threads(cls, value):
+        # Sensible default
+        if not value:
+            # default is between 1-4 threads. More than 4 presumptively stresses the HDD non-optimally.
+            return max(1, min(4, round(os.cpu_count() / 2)))
+            
+        if value < 1:
+            raise ValueError("max_threads must be a positive integer.")
+
+        return value
 
     @classmethod
     def subprocess(cls, command : list[str] | str, **kwargs) -> subprocess.CompletedProcess:
@@ -112,3 +135,51 @@ class Script(BaseModel, ABC):
             return False
         
         return cls.get_network_ssid().lower() == home_network_name.lower()
+
+    def progress_message(self, message: str | None = None, *args, max_length : int = 30, advance : int = 0) -> None:
+        """
+        Update the progress bar with a message.
+
+        Args:
+            message (str): The message to display.
+            *args: Additional arguments to format the message.
+            max_length (int): The maximum length of the message to display. Default 30.
+            advance (int): The number of steps to advance the progress bar.
+        """
+        if message:
+            # Combine message and args into a single string, ensuring message isn't truncated, but args are
+            message_length = len(message)
+            arg_text = ' '.join([str(arg).strip() for arg in args])
+            arg_start_index = -1 * (max_length - message_length - 1)
+            if len(arg_text) > max_length - message_length - 1:
+                arg_text = f'...{arg_text[arg_start_index:]}'
+            text = f'{message} {arg_text}'
+            self._progress_message = text.strip()
+            logger.debug('New progress bar message: %s', self._progress_message)
+            
+        self.progress_bar.text(self.report(self._progress_message))
+        
+        if advance:
+            self.progress_bar(advance)
+
+    def progress_report(self, message_prefix : str | None = None, advance : int = 1):
+        """
+        Report progress to the progress bar.
+
+        Args:
+            message_prefix: An optional message to prefix the report with.
+        """
+        self.progress_bar.text(self.report(message_prefix or self._progress_message))
+        self.progress_bar(advance)
+
+    def report(self, message_prefix : str | None = None) -> str:
+        """
+        Create a report of the process so far.
+
+        Args:
+            message_prefix: An optional message to prefix the report with.
+
+        Returns:
+            The report string.
+        """
+        raise NotImplementedError(f"Subclass {self.__class__.__name__} does not implement 'report' method.")

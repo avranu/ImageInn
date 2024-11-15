@@ -129,7 +129,7 @@ def main():
 
         url = os.getenv("IMMICH_URL")
         api_key = os.getenv("IMMICH_API_KEY")
-        thumbnails_dir = os.getenv("CLOUD_THUMBNAILS_DIR", '.')
+        thumbnails_dir = os.getenv("IMAGEINN_THUMBNAILS_DIR", '.')
 
         parser = argparse.ArgumentParser(description="Upload files to Immich.")
         parser.add_argument("--url", help="Immich URL", default=url)
@@ -144,7 +144,7 @@ def main():
             logger.setLevel(logging.DEBUG)
 
         if not args.url or not args.api_key or not args.thumbnails_dir:
-            logger.error("IMMICH_URL, IMMICH_API_KEY, and CLOUD_THUMBNAILS_DIR must be set.")
+            logger.error("IMMICH_URL, IMMICH_API_KEY, and IMAGEINN_THUMBNAILS_DIR must be set.")
             sys.exit(1)
 
         immich = ImmichDirectUploader(

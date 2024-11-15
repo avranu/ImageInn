@@ -75,6 +75,11 @@ SONY_JUNK_FILENAMES = [
     'SONYCARD.IND',
 ]
 
+PATTERNS = {
+    'mnt': re.compile(r'/mnt/[\w-]+/'),
+    'windows_drive': re.compile(r'[A-Za-z]:[\\/]')
+}
+
 class FileManager(Script):
     directory: Path = Field(default=Path('.'))
     trash_directory : Path | None = None
@@ -180,14 +185,14 @@ class FileManager(Script):
 
         This includes the default glob pattern, and any extensions that are defined.
         """
-        if not self._glob_patterns:
-            # default to just the glob pattern
-            self._glob_patterns = [self.glob_pattern]
+        if not self._glob_patterns:                
             # include all extensions if they exist (TODO this is hacky)
             if self.extensions and '.' not in self.glob_pattern:
-                globs = [f'{self.glob_pattern}.{ext}' for ext in self.extensions]
-                self._glob_patterns.extend(globs)
-                logger.debug('Expanding glob pattern to include extensions: %s', self.extensions)
+                self._glob_patterns = [f'{self.glob_pattern}.{ext}' for ext in self.extensions]
+            else:
+                self._glob_patterns = [self.glob_pattern or '*']
+
+            logger.debug('Using glob pattern: %s', self._glob_patterns)
 
         return self._glob_patterns
 
@@ -211,13 +216,16 @@ class FileManager(Script):
         filepath = filepath or self.directory
 
         # If the filepath begins with something like "/mnt/pictures/", we'll use that
-        if (matches := re.match(r'/mnt/[\w-]+/', str(filepath))):
+        if (matches := PATTERNS['mnt'].match(str(filepath))):
+            logger.debug('Drive root determined by /mnt/ pattern: %s', matches.group())
             return Path(matches.group())
 
         # If it begins with a windows drive letter, use that
-        if (matches := re.match(r'[A-Za-z]:[\\/]', str(filepath))):
+        if (matches := PATTERNS['windows_drive'].match(str(filepath))):
+            logger.debug('Drive root determined by windows drive pattern: %s', matches.group())
             return Path(matches.group())
 
+        logger.warning('Unable to determine drive root for directory: %s', filepath)
         # No known patterns matched, so return the closest directory
         if filepath.is_dir():
             return filepath
@@ -227,6 +235,8 @@ class FileManager(Script):
     def get_trash_directory(self) -> Path:
         if not self.trash_directory:
             self.trash_directory = self.guess_drive_root() / '.trash'
+            self.trash_directory.mkdir(exist_ok=True)
+            logger.debug('Trash directory will be %s', self.trash_directory.absolute())
         return self.trash_directory
 
     def get_stats(self) -> dict[str, int]:
@@ -908,14 +918,15 @@ class FileManager(Script):
             The path to the file in the trash directory.
         """
         trash_dir = self.get_trash_directory()
-        trash_dir.mkdir(exist_ok=True)
 
         trash_file_path = trash_dir / file_path.name
-        number = 1
-        while trash_file_path.exists():
-            trash_file_path = trash_dir / f"{file_path.stem}_{number}{file_path.suffix}"
+        for i in range(9000):
+            if not trash_file_path.exists():
+                return trash_file_path
 
-        return trash_file_path
+            trash_file_path = trash_dir / f"{file_path.stem}_{i}{file_path.suffix}"
+
+        raise FileExistsError(f"Unable to find unique trash name for file: {file_path}")
 
     def move_file(self, source_path: Path, destination_path: Path) -> Path:
         """
@@ -1005,8 +1016,10 @@ class FileManager(Script):
         # We know hashes match, so delete the source file
         if result:
             # It was really a move, not a copy and delete, so don't record the deletion as a deletion.
+            logger.debug('Deleting source file after successful move: %s', source_path)
             self.delete_file(source_path, dont_record=True)
 
+        logger.debug('File move %s: %s -> %s', 'succeeded' if result else 'failed', source_path, destination_path)
         return result
 
     def copy_file(self, source_path : Path, destination_path : Path) -> Path:

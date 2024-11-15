@@ -83,16 +83,6 @@ from scripts.thumbnails.upload.template import PixelFiles
 logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
-
-    _progress_bar : ProgressBar | None = PrivateAttr(default=None)
-    _progress_message : str | None = PrivateAttr(default=None)
-    
-    @property
-    def progress_bar(self) -> ProgressBar:
-        if not self._progress_bar:
-            self._progress_bar = alive_bar(title="Organizing Files", unit='files', unknown='waves')
-        return self._progress_bar
-    
     @property
     def files_uploaded(self) -> int:
         return self.get_stat('uploaded_file')
@@ -206,6 +196,9 @@ class ImmichProgressiveUploader(ImmichInterface):
         Returns:
             UploadStatus: The status of the upload operation.
         """
+        # default is failure
+        result = False
+
         filename = image_path.name
 
         for i in range(MAX_RETRIES):
@@ -232,7 +225,8 @@ class ImmichProgressiveUploader(ImmichInterface):
                 if status:
                     status.update_status(filename, result)
 
-                return result
+                # Finished without an exception, so don't retry
+                break
 
             except OSError as ose:
                 # Catch error 112 (host is down) and retry
@@ -247,15 +241,18 @@ class ImmichProgressiveUploader(ImmichInterface):
                 subdir = image_path.parent
                 self.progress_message(f'/{str(subdir)[-25:]}/', advance=1)
 
+        # Sleep for 10ms after processing each file to reduce disk I/O pressure
+        time.sleep(0.01)
+        
+        return result
 
-    def upload(self, directory: Path | None = None, recursive: bool = True, max_threads: int = 4):
+    def upload(self, directory: Path | None = None, *, recursive: bool = True):
         """
         Upload files to Immich.
 
         Args:
             directory (Path): The directory to upload.
             recursive (bool): Whether to upload recursively.
-            max_threads (int): The maximum number of threads for concurrent uploads.
 
         Raises:
             AuthenticationError: If authentication fails with Immich
@@ -279,7 +276,7 @@ class ImmichProgressiveUploader(ImmichInterface):
 
                     files_to_upload = self.yield_files(subdir)
 
-                    with ThreadPoolExecutor(max_workers=max_threads) as executor:
+                    with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
                         # initialize the start time for calculating upload speed
                         self._start_ns = time.time_ns()
                         
@@ -302,12 +299,9 @@ class ImmichProgressiveUploader(ImmichInterface):
                     # -- if the upload is cancelled, the last processed time will not be updated
                     status.update_meta()
 
-    def upload_from_db(self, *, max_threads : int = 4):
+    def upload_from_db(self):
         """
         Upload files from a database to Immich.
-
-        Args:
-            max_threads (int): The maximum number of threads for concurrent uploads.
         """
         if not self._authenticated:
             self.authenticate()
@@ -320,7 +314,7 @@ class ImmichProgressiveUploader(ImmichInterface):
         with alive_bar(total=total, title=f"{CYAN2}Uploading from db{RESET}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
             self.progress_message('Searching DB...')
             
-            with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
                 futures = []
                 for image_path in self.db.get_images(uploaded=False):
                     # Ensure the image still exists
@@ -340,7 +334,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                         logger.error("Exception during upload: %s", e)
                         raise
 
-    def handle_sd_card(self, directory : Path | str = '', max_threads: int = 4) -> bool:
+    def handle_sd_card(self, directory : Path | str = '') -> bool:
         """
         Triggered when an SD card is inserted. Uploads files from the SD card to Immich.
 
@@ -373,35 +367,12 @@ class ImmichProgressiveUploader(ImmichInterface):
         # If a DCIM directory exists, upload files from there
         dcim_directory = sd_directory / 'DCIM'
         if self.exists(dcim_directory):
-            self.upload(dcim_directory, max_threads)
+            self.upload(dcim_directory)
             return True
 
         # Otherwise, upload files from the root directory
-        self.upload(sd_directory, max_threads)
+        self.upload(sd_directory)
         return True
-
-    def progress_message(self, message: str, *args, max_length : int = 30, advance : int = 0) -> None:
-        """
-        Update the progress bar with a message.
-
-        Args:
-            message (str): The message to display.
-            *args: Additional arguments to format the message.
-            max_length (int): The maximum length of the message to display. Default 30.
-        """
-        # Combine message and args into a single string, ensuring message isn't truncated, but args are
-        message_length = len(message)
-        arg_text = ' '.join([str(arg).strip() for arg in args])
-        arg_start_index = -1 * (max_length - message_length - 1)
-        if len(arg_text) > max_length - message_length - 1:
-            arg_text = f'...{arg_text[arg_start_index:]}'
-        text = f'{message} {arg_text}'
-        self._progress_message = text.strip()
-            
-        self.progress_bar.text(self.report())
-        
-        if advance:
-            self.progress_bar(advance)
     
     def report(self, message_prefix : str | None = None) -> str:
         """
@@ -460,17 +431,14 @@ class ImmichProgressiveUploader(ImmichInterface):
             
         return f"{RESET}{' '.join(buffer) or '...'}{RESET}"
 
-    def run(self, max_threads: int = 4):
+    def run(self):
         """
         Run the uploader.
-
-        Args:
-            max_threads (int): The maximum number of threads for concurrent uploads.
         """
         if self.db:
-            self.upload_from_db(max_threads=max_threads)
+            self.upload_from_db()
         else:
-            self.upload(max_threads=max_threads)
+            self.upload()
 
 class ArgNamespace(argparse.Namespace):
     """
@@ -506,7 +474,7 @@ def validate_args(args: ArgNamespace) -> bool:
         return False
 
     if not args.sd and not args.import_path:
-        logger.error("CLOUD_THUMBNAILS_DIR must be set if not uploading from an SD card.")
+        logger.error("IMAGEINN_THUMBNAILS_DIR must be set if not uploading from an SD card.")
         return False
 
     return True
@@ -520,7 +488,6 @@ def main():
 
         api_key = os.getenv("IMMICH_API_KEY")
         thumbnails_dir = os.getenv("IMMICH_THUMBNAILS_DIR", '.')
-        max_threads = os.getenv("IMMICH_MAX_THREADS", 4)
         
         url = os.getenv("IMMICH_INSTANCE_URL")
         if home_network := ImmichProgressiveUploader.is_home_network():
@@ -532,7 +499,7 @@ def main():
         parser.add_argument('--allow-extension', '-e', help="Allow only files with these extensions", nargs='+')
         parser.add_argument("--ignore-extension", help="Ignore files with these extensions", nargs='+')
         parser.add_argument('--ignore-path', help="Ignore files with these paths", nargs='+')
-        parser.add_argument('--max-threads', type=int, default=max_threads, help="Maximum number of threads for concurrent uploads")
+        parser.add_argument('--max-threads', type=int, default=0, help="Maximum number of threads for concurrent uploads")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         parser.add_argument('--templates', '-T', help="File templates to match", nargs='+')
         parser.add_argument('--sd', help="Upload files from an SD card", action='store_true')
@@ -572,6 +539,7 @@ def main():
             db_path=args.db_path,
             album=args.album,
             skip=args.skip,
+            max_threads=args.max_threads,
             # Cloudflare prevents uploads over 100MB. 
             # ...On the local network, disable skipping large files.
             # ...Everywhere else, use the default large file size of 100MB.
@@ -580,9 +548,9 @@ def main():
 
         try:
             if args.sd:
-                immich.handle_sd_card(max_threads=args.max_threads)
+                immich.handle_sd_card()
             else:
-                immich.run(max_threads=args.max_threads)
+                immich.run()
 
         except AuthenticationError:
             logger.error("Authentication failed. Check your API key and URL.")

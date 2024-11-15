@@ -21,6 +21,22 @@
     TODO:
         Check for symlinks
         Cron
+        'auto' mode (jpg to /mnt/i/Photos/, arw to /mnt/p/, etc) 
+            - this may be better solved by changing our drive partitions...
+
+        GPT suggestions:
+            Process Pool Executor: For CPU-bound tasks, using ProcessPoolExecutor might be more efficient, but be cautious with the overhead and potential resource contention.
+            Asynchronous I/O: If available, use asynchronous I/O operations to prevent blocking.
+            Prioritize I/O Operations: On Unix systems, use ionice to set the I/O scheduling class and priority when running the script.
+                ionice -c3 python your_script.py
+            Lower the CPU priority of your script.
+                Nice Command: Lower the CPU priority of your script.
+                Cgroups (Linux): Use control groups to limit CPU and memory usage.
+            Limit Bandwidth Usage: Use tools or libraries that support bandwidth limiting.
+                For example, use pyftpdlib or other libraries that allow setting bandwidth limits.
+            Concurrent Downloads: Limit the number of concurrent downloads.
+                semaphore = threading.Semaphore(max_concurrent_downloads)
+            Monitoring: Implement monitoring to track resource usage and adjust as needed.
 *                                                                                                                      *
 *                                                                                                                      *
 * -------------------------------------------------------------------------------------------------------------------- *
@@ -43,7 +59,7 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 import datetime
 from ftplib import FTP
 import re
@@ -61,6 +77,7 @@ import argparse
 from typing import Any, Literal, Optional, Protocol
 from alive_progress import alive_it, alive_bar
 from pydantic import Field, PrivateAttr, field_validator
+from dotenv import load_dotenv
 from scripts.lib.types import ProgressBar, RESET, RED, GREEN, YELLOW, BLUE, BLUE2, PURPLE, CYAN
 from scripts import setup_logging
 from scripts.exceptions import ShouldTerminateException
@@ -115,7 +132,12 @@ class FileOrganizer(FileManager):
     @classmethod
     def get_default_filename_pattern(cls) -> StrPattern:
         # A temporary hack to inject a class attribute into a pydantic model.
-        return r'.*[.](jpg|jpeg|webp|png|heic|dng|arw|nef|psd|tif|tiff|mp4|mov|mkv)'
+        return r'.*[.](jpe?g|webp|png|heic|dng|arw|nef|psd|tiff?|mp4|mov|mkv)'
+
+    @classmethod
+    def get_default_extensions(cls) -> list[str]:
+        # A temporary hack to inject a class attribute into a pydantic model.
+        return ['jpg', 'jpeg', 'webp', 'png', 'heic', 'dng', 'arw', 'nef', 'psd', 'tif', 'tiff', 'mp4', 'mov', 'mkv']
 
     def record_duplicate_file(self, count : int = 1) -> None:
         self.record_stat('duplicate_file', count)
@@ -235,87 +257,90 @@ class FileOrganizer(FileManager):
             logger.error("Failed to fetch files from FTP: %s", e)
             raise ShouldTerminateException("FTP fetch failed.") from e
 
-    def organize_files(self, *, max_threads : int = 0) -> None:
+    def organize_files(self) -> None:
         """
         Organize files into subdirectories based on their date.
         """
         if self.check_dry_run(f'organizing files with {self.glob_pattern=} in {self.directory.absolute()}'):
             return
 
-        print(f'{RESET}Organizing files in {BLUE}{self.directory.absolute()}{RESET} to {GREEN}{self.get_target_directory().absolute()}{RESET}')
-
-        if not max_threads:
-            max_threads = os.cpu_count()
+        print(f'{RESET}Organizing files in {BLUE}{self.directory.absolute()}{RESET} to {GREEN}{self.get_target_directory().absolute()}{RESET} with {self.max_threads} threads.')
 
         with alive_bar(title=f"{BLUE2}Organize{RESET} {self._shortpath(self.directory.absolute())}", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
-            self.progress_bar.text(f'{self.report('Searching...')}')
-            #total_was_set = False
-            consecutive_ofe_errors : int = 0 
+            self.progress_message('Searching...')
 
-            with ThreadPoolExecutor(max_workers=max_threads) as executor:
+            with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
                 futures = []
-                count = 0
                 for filepath in self.yield_files():
-                    count += 1
-                    self._progress_bar.total = count
-                    futures.append(executor.submit(self.process_file_threadsafe, filepath))
+                    submit_result = executor.submit(self.process_file_threadsafe, filepath)
+                    futures.append(submit_result)
+                    
+                    if len(futures) >= self.max_threads * 2:
+                        # Wait for the first batch to complete
+                        self.handle_futures(futures[:self.max_threads])
+                        futures = futures[self.max_threads:]
 
-                logger.info(f'{count} files found in {self.directory=}')
-                self.progress_bar.text(f'{count} files found...')
-
-                for future in as_completed(futures):
-                    try:
-                        future.result()
-                        consecutive_ofe_errors = 0
-                    except OneFileException as ofe:
-                        consecutive_ofe_errors += 1
-                        logger.error("Error organizing file: %s", ofe)
-                    except Exception as e:
-                        # log and re-raise
-                        logger.error("Error organizing file: %s", e)
-                        self.record_error()
-                        raise
-
-                    if consecutive_ofe_errors > 5:
-                        logger.error("Too many consecutive errors in %s. Skipping the rest of the files.", self.directory)
-                        raise ShouldTerminateException(f'Too many consecutive errors in {self.directory=}. Skipping the rest of the files.')
+                if futures:
+                    self.handle_futures(futures)
 
         self.report('Moving files complete')
 
         # After organization, cleanup empty directories
         if not self.copy_mode:
-            result = self.delete_empty_directories()
-            if result and self.directory.samefile('.'):
+            delete_result = self.delete_empty_directories()
+            if delete_result and self.directory.samefile('.'):
                 # The dir no longer exists. run "cd .."
                 os.chdir('..')
 
-        # Ensure the counting task is complete
-        """
-        if not total_count_task.done():
-            # Discard the task
-            total_count_task.cancel()
-        """
-
         logger.info(self.report('Finished organizing.'))
-        return
+
+    def handle_futures(self, futures : list[Future]) -> tuple[int, int]:
+        """
+        Handle the results of a list of futures.
+
+        Args:
+            futures: A list of futures to handle.
+
+        Returns:
+            tuple[int, int]: A tuple of success and failure counts.
+        """
+        results : list[bool] = []
+        
+        for future in futures:
+            try:
+                result = future.result()
+                results.append(result)
+            except OneFileException as ofe:
+                logger.error("Error organizing file: %s", ofe)
+                results.append(False)
+            except Exception as e:
+                # log and re-raise
+                logger.error("Error organizing file: %s", e)
+                self.record_error()
+                raise
+
+        return (results.count(True), results.count(False))
 
     def process_file_threadsafe(self, file: Path) -> bool:
         """
         Process a single file and handle exceptions safely.
         """
+        # default is failure
+        result = False
+
         try:
-            if self.process_file(file):
-                return True
+            result = self.process_file(file)
         except DuplicationHandledException:
-            logger.debug(f"Duplicate file {file.absolute()=} handled")
-            return True
+            logger.debug("Duplicate file handled: %s", file.absolute())
+            result = True
         except OneFileException as e:
             logger.error("Error processing file (process_file_threadsafe) %s: %s", file.absolute(), e)
         finally:
-            subdir = file.parent
-            self.progress_report(self._shortpath(subdir))
+            self.progress_report(self._shortpath(file.parent))
 
-        return False
+        # Sleep for 10ms after processing each file to reduce disk I/O pressure
+        time.sleep(0.01)
+        return result
 
     def process_file(self, file_path: Path) -> Path | None:
         """
@@ -358,7 +383,7 @@ class FileOrganizer(FileManager):
                 logger.warning("Timeout error moving file. Attempt(%d/3). destination_path='%s' -> %s", destination_file, te)
 
             # Wait a bit before trying again
-            time.sleep(1)
+            time.sleep(i)
 
         logger.error("File could not be moved after 3 attempts. destination_path='%s'", destination_file)
         raise OneFileException(f"File could not be moved after 3 attempts. {destination_file.absolute()=}")
@@ -587,6 +612,9 @@ class FileOrganizer(FileManager):
         Returns:
             The report string.
         """
+        if message_prefix is None:
+            message_prefix = self._progress_message
+            
         buffer = []
 
         if message_prefix:
@@ -625,16 +653,6 @@ class FileOrganizer(FileManager):
             
         return f"{RESET}{' '.join(buffer) or 'No files changed'}{RESET}"
 
-    def progress_report(self, message_prefix : str | None = None):
-        """
-        Report progress to the progress bar.
-
-        Args:
-            message_prefix: An optional message to prefix the report with.
-        """
-        self.progress_bar.text(self.report(message_prefix))
-        self.progress_bar()
-
 class ArgsNamespace(argparse.Namespace):
     directory: str
     target: str
@@ -648,6 +666,7 @@ class ArgsNamespace(argparse.Namespace):
     skip_collision: bool
     skip_hash: bool
     dry_run: bool
+    max_threads : int
     ftp_host: str
     ftp_user: str
     ftp_pass: str
@@ -656,6 +675,8 @@ class ArgsNamespace(argparse.Namespace):
 def main() -> int:
     logger = setup_logging()
 
+    load_dotenv()
+    
     DEFAULT_TARGET = os.getenv('IMAGEINN_ORGANIZE_TARGET', '.')
     DEFAULT_TRASH = os.getenv('IMAGEINN_ORGANIZE_TRASH', None)
 
@@ -672,6 +693,7 @@ def main() -> int:
     parser.add_argument('--trash', default=DEFAULT_TRASH, help='Directory to move deleted files to. Defaults to env variable ORGANIZE_IMAGE_TRASH, which is "{DEFAULT_TRASH}", or ./.trash/')
     parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
     parser.add_argument('--skip-hash', action='store_true', help='Skip verifying file hashes')
+    parser.add_argument('--max-threads', type=int, default=0, help='Maximum number of threads to use')
     parser.add_argument('--dry-run', action='store_true', help='Simulate the file organization without moving files')
     parser.add_argument('--ftp-host', help='FTP host to connect to')
     parser.add_argument('--ftp-user', help='FTP username')
@@ -681,38 +703,27 @@ def main() -> int:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
-    if args.ftp_host:
-        organizer = FileOrganizer(
-            directory       = args.directory,
-            target_directory= args.target,
-            glob_pattern    = args.glob_pattern,
-            batch_size      = args.limit,
-            dry_run         = args.dry_run,
-            skip_collision  = args.skip_collision,
-            skip_hash       = args.skip_hash,
-            copy_mode       = args.copy,
-            keep_duplicates = args.keep_duplicates,
-            trash_directory = args.trash,
-        )
-        organizer.fetch_files_from_ftp(args.ftp_host, args.ftp_user, args.ftp_pass)
-    else:
-        organizer = FileOrganizer(
-            directory       = args.directory,
-            target_directory= args.target,
-            glob_pattern    = args.glob_pattern,
-            batch_size      = args.limit,
-            dry_run         = args.dry_run,
-            skip_collision  = args.skip_collision,
-            skip_hash       = args.skip_hash,
-            copy_mode       = args.copy,
-            keep_duplicates = args.keep_duplicates,
-            trash_directory = args.trash,
-        )
+    organizer = FileOrganizer(
+        directory       = args.directory,
+        target_directory= args.target,
+        glob_pattern    = args.glob_pattern,
+        batch_size      = args.limit,
+        dry_run         = args.dry_run,
+        skip_collision  = args.skip_collision,
+        skip_hash       = args.skip_hash,
+        copy_mode       = args.copy,
+        keep_duplicates = args.keep_duplicates,
+        trash_directory = args.trash,
+        max_threads     = args.max_threads,
+    )
 
     try:
         match str(args.action).lower():
             case 'organize':
-                organizer.organize_files()
+                if args.ftp_host:
+                    organizer.fetch_files_from_ftp(args.ftp_host, args.ftp_user, args.ftp_pass)
+                else:
+                    organizer.organize_files()
             case 'cleanup':
                 organizer.delete_empty_directories()
             case _:
