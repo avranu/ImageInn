@@ -257,7 +257,7 @@ class FileOrganizer(FileManager):
             logger.error("Failed to fetch files from FTP: %s", e)
             raise ShouldTerminateException("FTP fetch failed.") from e
 
-    def organize_files(self) -> None:
+    def organize_files(self, *, cleanup : bool = True) -> None:
         """
         Organize files into subdirectories based on their date.
         """
@@ -286,11 +286,8 @@ class FileOrganizer(FileManager):
         self.report('Moving files complete')
 
         # After organization, cleanup empty directories
-        if not self.copy_mode:
-            delete_result = self.delete_empty_directories()
-            if delete_result and self.directory.samefile('.'):
-                # The dir no longer exists. run "cd .."
-                os.chdir('..')
+        if cleanup and not self.copy_mode:
+            self.delete_empty_directories()
 
         logger.info(self.report('Finished organizing.'))
 
@@ -364,7 +361,8 @@ class FileOrganizer(FileManager):
             return None
 
         # Loop in case another process hijacks our destination path
-        for i in range(3):
+        MAX_ATTEMPTS = 3
+        for i in range(MAX_ATTEMPTS):
             # Handle potential filename collisions. This will throw an exception if the collision cannot be handled.
             destination_file = self.handle_collision(file_path, destination_path)
 
@@ -373,14 +371,16 @@ class FileOrganizer(FileManager):
                     return self.copy_file(file_path, destination_file)
                 return self.move_file(file_path, destination_file)
             except FileExistsError as fee:
-                logger.warning("File was created by another process. Attempt(%d/3). destination_path='%s' -> %s", i, destination_file, fee)
+                logger.warning("File was created by another process. Attempt(%d/%d). destination_path='%s' -> %s", i, MAX_ATTEMPTS, destination_file, fee)
                 raise ShouldTerminateException(f"File was created by another process. {destination_file.absolute()=} -> {fee=}")
             except FileNotFoundError as fnf:
-                logger.warning("File not found while moving file. Attempt(%d/3). source_path='%s' -> %s", i, file_path, fnf)
+                logger.warning("File not found while moving file. Attempt(%d/%d). source_path='%s' -> %s", i, MAX_ATTEMPTS, file_path, fnf)
             except PermissionError as pe:
-                logger.warning("Permission error moving file. Attempt(%d/3). destination_path='%s' -> %s", destination_file, pe)
+                logger.warning("Permission error moving file. Attempt(%d/%d). destination_path='%s' -> %s", i, MAX_ATTEMPTS, destination_file, pe)
+            except BrokenPipeError as bpe:
+                logger.warning("Broken pipe error moving file. Attempt(%d/%d). destination_path='%s' -> %s", i, MAX_ATTEMPTS, destination_file, bpe)
             except subprocess.TimeoutExpired as te:
-                logger.warning("Timeout error moving file. Attempt(%d/3). destination_path='%s' -> %s", destination_file, te)
+                logger.warning("Timeout error moving file. Attempt(%d/%d). destination_path='%s' -> %s", i, MAX_ATTEMPTS, destination_file, te)
 
             # Wait a bit before trying again
             time.sleep(i)
@@ -653,6 +653,97 @@ class FileOrganizer(FileManager):
             
         return f"{RESET}{' '.join(buffer) or 'No files changed'}{RESET}"
 
+def autopilot(organizer : FileOrganizer) -> None:
+    """
+    Automatically organize files based on their extension.
+    """
+    # Compile glob patterns
+    raw_globs = [
+        'JAM_*',
+        '_JAM*',
+        'PXL_*',
+        'IMG_*',
+        'DSC_*',
+    ]
+    raw_jpgs = [
+        'JAM_*',
+        '_JAM*',
+        'DSC_*',
+    ]
+    raw_extensions = [
+        'arw',
+        'nef',
+        'dng',
+        'tif',
+        'tiff',
+        'xmp',
+    ]
+    photo_globs = [
+        'PXL_*',
+        'IMG_*',
+    ]
+    photo_extensions = [
+        'jpg',
+        'jpeg',
+        'mp4',
+        'mov',
+        'mkv',
+    ]
+    video_globs = [
+        'VID_*',
+    ]
+    video_extensions = [
+        'mp4',
+        'mov',
+        'mkv',
+    ]
+    globs = {
+        '*-a7r4-*': '/mnt/p/',
+        '*.psd': '/mnt/p/',
+        '*-Edit.tif': '/mnt/p/',
+    }
+
+    for glob in raw_globs:
+        # Photography goes to separate drive due to bracketing
+        for ext in raw_extensions:
+            globs[f'{glob}.{ext}'] = '/mnt/p/'
+        # Videos go to the main media/photos drive
+        for ext in video_extensions:
+            globs[f'{glob}.{ext}'] = '/mnt/i/Photos/'
+
+    # Bracketed photography jpgs goes to the photography drive, even though they're jpgs
+    for glob in raw_jpgs:
+        globs[f'{glob}.jpg'] = '/mnt/p/'
+        globs[f'{glob}.jpeg'] = '/mnt/p/'
+
+    # Photos go to the main media/photos drive
+    for glob in photo_globs:
+        for ext in photo_extensions:
+            globs[f'{glob}.{ext}'] = '/mnt/i/Photos/'
+    for glob in video_globs:
+        for ext in video_extensions:
+            globs[f'{glob}.{ext}'] = '/mnt/i/Photos/'
+    
+    # Copy organizer and change the target directory
+    for glob, target in globs.items():
+        logger.info('Organizing %s to %s', glob, target)
+        glob_organizer = FileOrganizer(
+            directory       = organizer.directory,
+            target_directory= target,
+            glob_pattern    = glob,
+            batch_size      = organizer.batch_size,
+            dry_run         = organizer.dry_run,
+            skip_collision  = organizer.skip_collision,
+            skip_hash       = organizer.skip_hash,
+            copy_mode       = organizer.copy_mode,
+            keep_duplicates = organizer.keep_duplicates,
+            trash_directory = organizer.trash_directory,
+            max_threads     = organizer.max_threads,
+        )
+        glob_organizer.organize_files(cleanup=False)
+
+    organizer.delete_empty_directories()
+
 class ArgsNamespace(argparse.Namespace):
     directory: str
     target: str
@@ -689,7 +780,7 @@ def main() -> int:
     parser.add_argument('-k', '--keep-duplicates', action='store_true', help="Keep duplicate files in the source directory (don't delete)")
     parser.add_argument('-l', '--limit', type=int, default=-1, help='Limit the number of files to process')
     parser.add_argument('-v', '--verbose', action='store_true', help='Increase verbosity')
-    parser.add_argument('--action', default='organize', choices=['organize', 'cleanup'], help='Action to perform')
+    parser.add_argument('--action', default='organize', choices=['organize', 'cleanup', 'auto'], help='Action to perform')
     parser.add_argument('--trash', default=DEFAULT_TRASH, help='Directory to move deleted files to. Defaults to env variable ORGANIZE_IMAGE_TRASH, which is "{DEFAULT_TRASH}", or ./.trash/')
     parser.add_argument('--skip-collision', action='store_true', help='Skip moving files on collision')
     parser.add_argument('--skip-hash', action='store_true', help='Skip verifying file hashes')
@@ -726,6 +817,8 @@ def main() -> int:
                     organizer.organize_files()
             case 'cleanup':
                 organizer.delete_empty_directories()
+            case 'auto':
+                autopilot(organizer)
             case _:
                 logger.error("Invalid action: %s", args.action)
                 return 1

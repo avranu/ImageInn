@@ -185,12 +185,12 @@ class FileManager(Script):
 
         This includes the default glob pattern, and any extensions that are defined.
         """
-        if not self._glob_patterns:                
+        if not self._glob_patterns:
             # include all extensions if they exist (TODO this is hacky)
-            if self.extensions and '.' not in self.glob_pattern:
-                self._glob_patterns = [f'{self.glob_pattern}.{ext}' for ext in self.extensions]
-            else:
+            if self.glob_pattern and self.glob_pattern != '*':
                 self._glob_patterns = [self.glob_pattern or '*']
+            else:
+                self._glob_patterns = [f'*.{ext}' for ext in self.extensions]
 
             logger.debug('Using glob pattern: %s', self._glob_patterns)
 
@@ -213,7 +213,7 @@ class FileManager(Script):
             The root directory of the drive, or the closest directory if the drive root cannot be determined.
         """
         # default to the directory if no filepath is given
-        filepath = filepath or self.directory
+        filepath = (filepath or self.directory).absolute()
 
         # If the filepath begins with something like "/mnt/pictures/", we'll use that
         if (matches := PATTERNS['mnt'].match(str(filepath))):
@@ -719,6 +719,14 @@ class FileManager(Script):
                 self._progress_bar()
                 self._progress_bar.text(f'{GREEN}Cleaning directories:{RESET} {count} deleted, {skipped} skipped')
 
+
+        try:
+            if directory.samefile('.') and not directory.exists():
+                # The dir no longer exists. run "cd .."
+                os.chdir('..')
+        except FileNotFoundError:
+            os.chdir('..')
+            
         logger.info('Cleaned up %d empty directories. %d remain.', count, skipped)
 
     def delete_directory_if_empty(self, directory: Path, recursive : bool = True, cleanup : bool = True) -> bool:
