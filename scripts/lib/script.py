@@ -162,15 +162,14 @@ class Script(BaseModel, ABC):
         if advance:
             self.progress_bar(advance)
 
-    def progress_report(self, message_prefix : str | None = None, advance : int = 1):
+    def progress_advance(self, message_prefix : str | None = None, advance : int = 1):
         """
         Report progress to the progress bar.
 
         Args:
             message_prefix: An optional message to prefix the report with.
         """
-        self.progress_bar.text(self.report(message_prefix or self._progress_message))
-        self.progress_bar(advance)
+        self.progress_message(message_prefix, advance=advance)
 
     def report(self, message_prefix : str | None = None) -> str:
         """

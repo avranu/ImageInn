@@ -477,6 +477,7 @@ class FileManager(Script):
         count = 0
         for glob in globs:
             logger.debug('Searching %s for files matching %s', directory, glob)
+            self.progress_message(f'Searching for {glob}...')
             for filepath in fn(glob, case_sensitive=False):
                 count += 1
                 if self.should_include_file(filepath):

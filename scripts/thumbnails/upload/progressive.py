@@ -239,7 +239,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                     
             finally:
                 subdir = image_path.parent
-                self.progress_message(f'/{str(subdir)[-25:]}/', advance=1)
+                self.progress_advance(f'/{str(subdir)[-25:]}/')
 
         # Sleep for 10ms after processing each file to reduce disk I/O pressure
         time.sleep(0.01)

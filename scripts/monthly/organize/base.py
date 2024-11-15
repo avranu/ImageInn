@@ -336,7 +336,7 @@ class FileOrganizer(FileManager):
         except OneFileException as e:
             logger.error("Error processing file (process_file_threadsafe) %s: %s", file.absolute(), e)
         finally:
-            self.progress_report(self._shortpath(file.parent))
+            self.progress_advance(self._shortpath(file.parent))
 
         # Sleep for 10ms after processing each file to reduce disk I/O pressure
         time.sleep(0.01)
