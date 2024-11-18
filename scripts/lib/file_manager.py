@@ -1107,15 +1107,14 @@ class FileManager(Script):
 
         return True
 
-    def _copy_with_rsync(self, source_path : Path, destination_path : Path) -> bool:
+    def _copy_with_rsync(self, source_path : Path, destination_path : Path, *, timeout : int = 0) -> bool:
         """
         Copy a file to a new location using rsync.
 
         Args:
-            source: 
-                The source file to copy.
-            destination: 
-                The destination path.
+            source: The source file to copy.
+            destination: The destination path.
+            timeout: The timeout for the rsync command. If 0, the timeout will be calculated based on the file size.
 
         Returns:
             The destination path.
@@ -1123,12 +1122,18 @@ class FileManager(Script):
         Raises:
             subprocess.CalledProcessError: If an error occurs while copying the file.
             FileNotFoundError: If the file is not found after copying.
-            ValueError: If the checksums do not match after copying.
+            ValueError: If the checksums do not match after copying, or if the timeout is invalid.
         """
+        if not timeout:
+            file_size = self.file_size(source_path)
+            timeout = file_size / 1024 / 10  # 1 second per 10 kb
+        if timeout < 0:
+            raise ValueError(f"Invalid timeout: {timeout}")
+            
         source_hash = self.hash_file(source_path)
         
         try:
-            self.subprocess(['rsync', '-a', '--times', str(source_path.absolute()), str(destination_path.absolute())])
+            self.subprocess(['rsync', '-a', '--times', str(source_path.absolute()), str(destination_path.absolute())], timeout=timeout)
         except subprocess.CalledProcessError as e:
             logger.error('Error copying file with rsync: %s', e)
             raise
