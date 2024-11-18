@@ -132,12 +132,12 @@ class FileOrganizer(FileManager):
     @classmethod
     def get_default_filename_pattern(cls) -> StrPattern:
         # A temporary hack to inject a class attribute into a pydantic model.
-        return r'.*[.](jpe?g|webp|png|heic|dng|arw|nef|psd|tiff?|mp4|mov|mkv)'
+        return r'.*[.](jpe?g|webp|png|heic|dng|arw|nef|psd|tiff?|mp4|mov|avi|mkv|3gp)'
 
     @classmethod
     def get_default_extensions(cls) -> list[str]:
         # A temporary hack to inject a class attribute into a pydantic model.
-        return ['jpg', 'jpeg', 'webp', 'png', 'heic', 'dng', 'arw', 'nef', 'psd', 'tif', 'tiff', 'mp4', 'mov', 'mkv']
+        return ['jpg', 'jpeg', 'webp', 'png', 'heic', 'dng', 'arw', 'nef', 'psd', 'tif', 'tiff', 'mp4', 'avi', 'mov', 'mkv', '3gp']
 
     def record_duplicate_file(self, count : int = 1) -> None:
         self.record_stat('duplicate_file', count)
@@ -688,6 +688,7 @@ def autopilot(organizer : FileOrganizer) -> None:
         'mp4',
         'mov',
         'mkv',
+        'avi',
     ]
     video_globs = [
         'VID_*',
@@ -696,6 +697,8 @@ def autopilot(organizer : FileOrganizer) -> None:
         'mp4',
         'mov',
         'mkv',
+        'avi',
+        '3gp',
     ]
     globs = {
         '*-a7r4-*': '/mnt/p/',
