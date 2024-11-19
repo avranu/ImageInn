@@ -56,8 +56,11 @@ logger = logging.getLogger(__name__)
 type StrPattern = str | re.Pattern | None
 
 JUNK_FILENAMES = [
-    '.picasa.ini', 
-    'Thumbs.db', 
+    '.picasa.ini',
+    'desktop.ini',
+    'Thumbs.db',
+    '.DS_Store',
+    '._.DS_Store',
     '.upload_status.txt', 
     'upload_status.txt',
     'index.php',
@@ -798,6 +801,10 @@ class FileManager(Script):
 
         # Check known junk filenames
         if name in JUNK_FILENAMES:
+            return True
+
+        # Toss prproj files
+        if name.endswith('.prproj') or name.endswith('.AAE'):
             return True
 
         # Less than 10k

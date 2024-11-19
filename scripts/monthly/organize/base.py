@@ -87,7 +87,10 @@ from scripts.lib.file_manager import FileManager
 
 logger = logging.getLogger(__name__)
 
-filename_date_pattern = re.compile(r'_(?P<year>20[012]\d)(?P<month>[01]\d)(?P<day>[0123]\d)_')
+filename_date_patterns = [
+    re.compile(r'[_\s-](?P<year>20[012]\d)(?P<month>[01]\d)(?P<day>[0123]\d)[_\s-]'),
+    re.compile(r'[_\s](?P<year>20[012]\d)-(?P<month>[01]\d)-(?P<day>[0123]\d)[_\s]'),
+]
 
 class FileOrganizer(FileManager):
     """
@@ -454,6 +457,29 @@ class FileOrganizer(FileManager):
             raise OneFileException(f'Error deleting file: {ose=}') from ose
 
         return result
+
+    def match_date_in_filename(self, filename: str) -> tuple[str, str, str] | None:
+        """
+        Match a date in the filename.
+
+        Args:
+            filename: The filename to match.
+
+        Returns:
+            The match object if a date was found, None otherwise.
+        """
+        matches = None
+        for pattern in filename_date_patterns:
+            if matches := pattern.search(filename):
+                continue
+
+        if matches:
+            year = matches.group('year')
+            month = matches.group('month')
+            day = matches.group('day')
+            return (year, month, day)
+        
+        return None
     
     def find_subdir(self, filepath : Path) -> str:
         """
@@ -466,10 +492,8 @@ class FileOrganizer(FileManager):
             The name of the proposed subdirectory.
         """
         # Prefer a date in the filename, if one exists, over the file metadata
-        if (match := filename_date_pattern.search(filepath.name)):
-            year = match.group('year')
-            month = match.group('month')
-            day = match.group('day')
+        if (match := self.match_date_in_filename(filepath.name)):
+            year, month, day = match
         else:
             try:
                 # Get the created date from the filepath
