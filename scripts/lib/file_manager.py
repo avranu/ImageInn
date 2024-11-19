@@ -1132,8 +1132,10 @@ class FileManager(Script):
             ValueError: If the checksums do not match after copying, or if the timeout is invalid.
         """
         if not timeout:
+            # Timeout is a minimum of 60 seconds, plus 10 seconds per MB
             file_size = self.file_size(source_path)
-            timeout = file_size / 1024 / 10  # 1 second per 10 kb
+            extra_timeout = file_size * 10 / (1024 * 1024)
+            timeout = 60 + extra_timeout
         if timeout < 0:
             raise ValueError(f"Invalid timeout: {timeout}")
             
