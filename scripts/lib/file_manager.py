@@ -1179,7 +1179,8 @@ class FileManager(Script):
         # Ensure it's a str
         fullpath = f'{str(fullpath)}/'
 
-        if len(fullpath) <= max_size:
+        full_length = len(fullpath)
+        if full_length <= max_size:
             return fullpath
 
         # Ensure drive is prefixed
@@ -1189,10 +1190,10 @@ class FileManager(Script):
                 drive = matches.group()
                 break
 
-        reduction = 5 + len(drive)
-        index_start = -1 * (max_size - reduction)
-        index_end = len(fullpath) - len(drive)
-        return f'{drive}...{fullpath[index_start:index_end]}'
+        drive_length = len(drive)
+        istart = -1 * (max_size - 5 - drive_length)
+        iend = full_length - drive_length
+        return f'{drive} ... {fullpath[istart:iend]}'
 
     def __hash__(self) -> int:
         return hash(self.directory)
