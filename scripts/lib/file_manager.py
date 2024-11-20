@@ -1181,9 +1181,18 @@ class FileManager(Script):
 
         if len(fullpath) <= max_size:
             return fullpath
-        
-        index_start = -1 * (max_size - 5)
-        return f'... {fullpath[index_start:]}'
+
+        # Ensure drive is prefixed
+        drive : str = ''
+        for pattern in PATTERNS.values():
+            if (matches := pattern.match(fullpath)):
+                drive = matches.group()
+                break
+
+        reduction = 5 + len(drive)
+        index_start = -1 * (max_size - reduction)
+        index_end = len(fullpath) - len(drive)
+        return f'{drive}...{fullpath[index_start:index_end]}'
 
     def __hash__(self) -> int:
         return hash(self.directory)
