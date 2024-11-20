@@ -385,8 +385,10 @@ class FileOrganizer(FileManager):
             except subprocess.TimeoutExpired as te:
                 logger.warning("Timeout error moving file. Attempt(%d/%d). destination_path='%s' -> %s", i, MAX_ATTEMPTS, destination_file, te)
 
-            # Wait a bit before trying again
-            time.sleep(i)
+            # Wait a bit before trying again.
+            # -- 1 second, 10 seconds, 20 seconds
+            wait_time = max(1, (i - 1) * 10)
+            time.sleep(wait_time)
 
         logger.error("File could not be moved after 3 attempts. destination_path='%s'", destination_file)
         raise OneFileException(f"File could not be moved after 3 attempts. {destination_file.absolute()=}")
@@ -567,16 +569,20 @@ class FileOrganizer(FileManager):
         xmp_source_path = source_path.with_suffix('.xmp')
         xmp_destination_path = destination_path.with_suffix('.xmp')
         
-        if not destination_path.exists() and not xmp_destination_path.exists():
-            # No conflict; return the destination file
-            return destination_path
+        if not destination_path.exists():
+            if not xmp_destination_path.exists():
+                # No conflict; return the destination file
+                return destination_path
+
+            # Destination has no conflict, but potential xmp file conflict. Don't handle it.
+            return False
         
         if self.skip_collision:
             # Skip moving files on collision
             self.record_skip_file()
             logger.debug(f"Skipping file {source_path.absolute()=} due to collision with {destination_path.absolute()=}")
             raise DuplicationHandledException(f"Duplicate file {source_path.absolute()=} skipped")
-
+        
         if self.files_match(source_path, destination_path, skip_hash=self.skip_hash):
             logger.debug('Duplicate file found: %s', source_path)
             self.record_duplicate_file()
@@ -608,9 +614,8 @@ class FileOrganizer(FileManager):
         Raises:
             OneFileException: If a unique filename could not be found.
         """
-        if (result := self.handle_single_conflict(source_file, target_file)):
-            # A viable path was found
-            return result
+        if (viable_path := self.handle_single_conflict(source_file, target_file)):
+            return viable_path
 
         # Files differ; find a new filename
         base = source_file.stem  # Filename without extension
@@ -620,9 +625,8 @@ class FileOrganizer(FileManager):
         for i in range(max_attempts):
             new_target_file = target_file.parent / f"{base}_{i}{ext}"
 
-            if (result := self.handle_single_conflict(source_file, new_target_file)):
-                # A viable path was found
-                return result
+            if (viable_path := self.handle_single_conflict(source_file, new_target_file)):
+                return viable_path
 
         raise OneFileException(f"Could not find a unique filename for {source_file.absolute()=}... last name tried: {new_target_file=}")
 
