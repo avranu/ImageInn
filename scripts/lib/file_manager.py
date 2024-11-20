@@ -1191,9 +1191,8 @@ class FileManager(Script):
                 break
 
         drive_length = len(drive)
-        istart = -1 * (max_size - 5 - drive_length)
-        iend = full_length - drive_length
-        return f'{drive} ... {fullpath[istart:iend]}'
+        i = -1 * (max_size - 5 - drive_length)
+        return f'{drive} ... {fullpath[i:]}'
 
     def __hash__(self) -> int:
         return hash(self.directory)
