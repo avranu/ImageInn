@@ -23,7 +23,7 @@ from typing import List
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 from tqdm import tqdm
 from scripts import setup_logging
-from scripts.exceptions import ShouldTerminateException
+from scripts.exceptions import ShouldTerminateError
 import instaloader
 import instaloader.exceptions
 
@@ -62,7 +62,7 @@ class InstaloaderRunner(BaseModel):
 		if not self._password:
 			self._password = os.getenv('INSTALOADER_PASSWORD')
 			if not self._password:
-				raise ShouldTerminateException("Password not found in environment variable 'INSTALOADER_PASSWORD'.")
+				raise ShouldTerminateError("Password not found in environment variable 'INSTALOADER_PASSWORD'.")
 		return self._password
 
 	@property
@@ -70,7 +70,7 @@ class InstaloaderRunner(BaseModel):
 		if not self._username:
 			self._username = os.getenv('INSTALOADER_USERNAME')
 			if not self._username:
-				raise ShouldTerminateException("Username not found in environment variable 'INSTALOADER_USERNAME'.")
+				raise ShouldTerminateError("Username not found in environment variable 'INSTALOADER_USERNAME'.")
 		return self._username
 
 	@field_validator('profiles', mode="before")
@@ -83,7 +83,7 @@ class InstaloaderRunner(BaseModel):
 				with open(values['profiles_file'], 'r') as f:
 					return [line.strip() for line in f if line.strip()]
 			except Exception as e:
-				raise ShouldTerminateException(f"Error reading profiles from file: {e}") from e
+				raise ShouldTerminateError(f"Error reading profiles from file: {e}") from e
 
 		raise ValueError("No profiles provided.")
 
@@ -102,13 +102,13 @@ class InstaloaderRunner(BaseModel):
 			self._instaloader.login(self.username, self.password)
 			logger.info("Logged in as '%s'.", self.username)
 		except instaloader.exceptions.BadCredentialsException:
-			raise ShouldTerminateException("Invalid username or password.")
+			raise ShouldTerminateError("Invalid username or password.")
 		except instaloader.exceptions.ConnectionException as e:
-			raise ShouldTerminateException(f"Connection error: {e}")
+			raise ShouldTerminateError(f"Connection error: {e}")
 		except instaloader.exceptions.TwoFactorAuthRequiredException:
-			raise ShouldTerminateException("Two-factor authentication is required but not supported in this script.")
+			raise ShouldTerminateError("Two-factor authentication is required but not supported in this script.")
 		except Exception as e:
-			raise ShouldTerminateException(f"An unexpected error occurred during login: {e}")
+			raise ShouldTerminateError(f"An unexpected error occurred during login: {e}")
 
 	def run(self):
 		logger.info("Starting Instaloader for %d profiles.", len(self.profiles))
@@ -207,7 +207,7 @@ def main():
 		)
 
 		runner.run()
-	except ShouldTerminateException as e:
+	except ShouldTerminateError as e:
 		logger.critical("Critical error: %s", e)
 		sys.exit(1)
 	except KeyboardInterrupt:

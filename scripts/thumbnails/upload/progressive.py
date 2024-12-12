@@ -73,7 +73,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from scripts import setup_logging
 from scripts.lib.types import ProgressBar, RED, CYAN, CYAN2, YELLOW, YELLOW2, BLUE, PURPLE, RESET
 from scripts.lib.utils import seconds_to_human
-from scripts.exceptions import AppException
+from scripts.exceptions import AppError
 from scripts.thumbnails.upload.meta import MAX_RETRIES, SECONDS_PER_RETRY
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.interface import ImmichInterface
@@ -555,7 +555,7 @@ def main():
         except AuthenticationError:
             logger.error("Authentication failed. Check your API key and URL.")
             sys.exit(1)
-        except (FileNotFoundError, FileExistsError, AppException) as e:
+        except (FileNotFoundError, FileExistsError, AppError) as e:
             logger.error('Exiting. %s', e)
             raise
             sys.exit(1)

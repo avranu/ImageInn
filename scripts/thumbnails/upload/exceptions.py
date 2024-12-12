@@ -1,10 +1,10 @@
 """
 """
 from __future__ import annotations
-from scripts.exceptions import AppException
+from scripts.exceptions import AppError
 
-class AuthenticationError(AppException):
+class AuthenticationError(AppError):
     pass
 
-class ConfigurationError(AppException):
+class ConfigurationError(AppError):
     pass

@@ -80,7 +80,7 @@ from pydantic import Field, PrivateAttr, field_validator
 from dotenv import load_dotenv
 from scripts.lib.types import ProgressBar, RESET, RED, GREEN, YELLOW, BLUE, BLUE2, PURPLE, CYAN
 from scripts import setup_logging
-from scripts.exceptions import ShouldTerminateException
+from scripts.exceptions import ShouldTerminateError
 from scripts.lib.file_manager import StrPattern
 from scripts.monthly.exceptions import OneFileException, DuplicationHandledException
 from scripts.lib.file_manager import FileManager
@@ -258,7 +258,7 @@ class FileOrganizer(FileManager):
 
         except Exception as e:
             logger.error("Failed to fetch files from FTP: %s", e)
-            raise ShouldTerminateException("FTP fetch failed.") from e
+            raise ShouldTerminateError("FTP fetch failed.") from e
 
     def organize_files(self, *, cleanup : bool = True) -> None:
         """
@@ -329,12 +329,26 @@ class FileOrganizer(FileManager):
         result = False
 
         try:
-            result = self.process_file(file)
-        except DuplicationHandledException:
-            logger.debug("Duplicate file handled: %s", file.absolute())
-            result = True
-        except OneFileException as e:
-            logger.error("Error processing file (process_file_threadsafe) %s: %s", file.absolute(), e)
+            # Allow for retries in case of network issues
+            for i in range(10000):
+                try:
+                    result = self.process_file(file)
+                except DuplicationHandledException:
+                    logger.debug("Duplicate file handled: %s", file.absolute())
+                    result = True
+                except OneFileException as e:
+                    logger.error("Error processing file (process_file_threadsafe) %s: %s", file.absolute(), e)
+                except OSError as ose: 
+                    # Check for errno 107, and if so, wait and retry
+                    if ose.errno == 107:
+                        wait_time = min(60, 5 * i)
+                        logger.warning("There may be a network issue. Waiting %ss to retry: %s", wait_time, ose)
+                        time.sleep(wait_time)
+                        continue
+                    raise
+
+                # No retry was requested, so we're finished
+                break
         finally:
             self.progress_advance(self._shortpath(file.parent))
 
@@ -375,7 +389,7 @@ class FileOrganizer(FileManager):
                 return self.move_file(file_path, destination_file)
             except FileExistsError as fee:
                 logger.warning("File was created by another process. Attempt(%d/%d). destination_path='%s' -> %s", i, MAX_ATTEMPTS, destination_file, fee)
-                raise ShouldTerminateException(f"File was created by another process. {destination_file.absolute()=} -> {fee=}")
+                raise ShouldTerminateError(f"File was created by another process. {destination_file.absolute()=} -> {fee=}")
             except FileNotFoundError as fnf:
                 logger.warning("File not found while moving file. Attempt(%d/%d). source_path='%s' -> %s", i, MAX_ATTEMPTS, file_path, fnf)
             except PermissionError as pe:
@@ -407,7 +421,7 @@ class FileOrganizer(FileManager):
             The directory path.
 
         Raises:
-            ShouldTerminateException: If an error occurs while creating the directory.
+            ShouldTerminateError: If an error occurs while creating the directory.
         """
         if not isinstance(directory, Path):
             directory = Path(directory)
@@ -423,7 +437,7 @@ class FileOrganizer(FileManager):
             if success_message:
                 logger.debug(f"{success_message}: {directory=}")
         except OSError as ose:
-            raise ShouldTerminateException(f'Error creating directory: {directory=} -> {ose=}') from ose
+            raise ShouldTerminateError(f'Error creating directory: {directory=} -> {ose=}') from ose
 
         return result
 
@@ -444,12 +458,12 @@ class FileOrganizer(FileManager):
         # This should never happen, but safety check
         if self.skip_hash:
             logger.critical('Cannot delete files without verifying checksums')
-            raise ShouldTerminateException('Cannot delete files without verifying checksums')
+            raise ShouldTerminateError('Cannot delete files without verifying checksums')
 
         # This should never happen, but safety check
         if self.copy_mode:
             logger.critical('Cannot delete files in copy mode')
-            raise ShouldTerminateException('Cannot delete files in copy mode')
+            raise ShouldTerminateError('Cannot delete files in copy mode')
 
         try:
             result = super().delete_file(file_path, use_trash=use_trash, dont_record=dont_record)
@@ -853,7 +867,7 @@ def main() -> int:
             case _:
                 logger.error("Invalid action: %s", args.action)
                 return 1
-    except ShouldTerminateException as e:
+    except ShouldTerminateError as e:
         logger.critical("Critical error: %s", e)
         logger.info('Before error: %s', organizer.report())
         return 1

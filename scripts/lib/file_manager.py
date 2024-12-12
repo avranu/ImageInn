@@ -29,6 +29,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 from typing import Iterator, Literal
 
 from alive_progress import alive_bar
@@ -47,7 +48,7 @@ from cachetools import LRUCache
 from threading import Lock
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from scripts import setup_logging
-from scripts.exceptions import ShouldTerminateException
+from scripts.exceptions import ShouldTerminateError, ChecksumMismatchError, UnexpectedStateError
 from scripts.lib.script import Script
 from scripts.lib.types import YELLOW, RESET, GREEN
 
@@ -1073,7 +1074,7 @@ class FileManager(Script):
             except PermissionError as pe:
                 if 'Operation not permitted' in str(pe) and destination_path.exists():
                     logger.warning('WARNING: Permission error (likely due to copying metadata). source_path="%s", destination_path="%s" -> %s', source_path.absolute(), destination_path.absolute(), pe)
-                    raise ShouldTerminateException(f'Permission error copying file: {source_path} -> {destination_path}') from pe
+                    raise ShouldTerminateError(f'Permission error copying file: {source_path} -> {destination_path}') from pe
                 else:
                     raise
             except subprocess.TimeoutExpired as te:
@@ -1114,7 +1115,7 @@ class FileManager(Script):
 
         return True
 
-    def _copy_with_rsync(self, source_path : Path, destination_path : Path, *, timeout : int = 0) -> bool:
+    def _copy_with_rsync(self, source_path : Path, destination_path : Path, *, timeout : int = 0, retries : int = 3) -> bool:
         """
         Copy a file to a new location using rsync.
 
@@ -1122,6 +1123,7 @@ class FileManager(Script):
             source: The source file to copy.
             destination: The destination path.
             timeout: The timeout for the rsync command. If 0, the timeout will be calculated based on the file size.
+            retries: The number of times to retry the rsync command if it fails for any reason. Default 3.
 
         Returns:
             The destination path.
@@ -1131,31 +1133,62 @@ class FileManager(Script):
             FileNotFoundError: If the file is not found after copying.
             ValueError: If the checksums do not match after copying, or if the timeout is invalid.
         """
+        timeout = self._calculate_timeout(source_path, timeout)    
+        source_hash = self.hash_file(source_path)
+
+        attempts = max(1, retries + 1)
+        for i in range(attempts):
+            try:
+                self.subprocess(['rsync', '-a', '--times', str(source_path.absolute()), str(destination_path.absolute())], timeout=timeout)
+
+                if not destination_path.exists():
+                    raise FileNotFoundError(f"Unable to find file after copy with rsync: {destination_path}")
+
+                destination_hash = self.hash_file(destination_path)
+                if source_hash != destination_hash:
+                    # rename destination file by appending -corrupt
+                    corrupt_path = destination_path.absolute().with_name(f'{destination_path.stem}-corrupt{destination_path.suffix}')
+                    destination_path.rename(corrupt_path)
+                    raise ChecksumMismatchError(f"Checksum mismatch after copying with rsync {source_path} to {destination_path}")
+
+                # Transferred without error
+                return True
+            except (subprocess.CalledProcessError, FileNotFoundError, ChecksumMismatchError) as e:
+                logger.error('%d/%d Error copying file with rsync: %s -> %s', i, attempts, source_path.name, e)
+                # On the final attempt, raise any errors
+                if i == attempts - 1:
+                    raise
+
+                # Wait 5 seconds between retries
+                time.sleep(5)
+
+        # If we somehow get here (which should not happen if final_attempt logic is correct), raise an error
+        raise UnexpectedStateError("Unexpected flow in _copy_with_rsync. This should never happen.")
+
+    def _calculate_timeout(self, source_path: Path, requested_timeout : int = 0) -> float:
+        """
+        Calculate the subprocess timeout based on file size.
+
+        As of 2024 - calculates a minimum of 60 seconds, plus 10 seconds per MB. This may change in future versions.
+
+        Args:
+            source_path (Path): Path to the source file.
+            requested_timeout (int): If provided, overrides the timeout calculation.
+
+        Returns:
+            The calculated timeout.
+        """
+        timeout = requested_timeout
         if not timeout:
             # Timeout is a minimum of 60 seconds, plus 10 seconds per MB
             file_size = self.file_size(source_path)
-            extra_timeout = file_size * 10 / (1024 * 1024)
+            extra_timeout = (file_size / (1024 * 1024)) * 10
             timeout = 60 + extra_timeout
+
         if timeout < 0:
             raise ValueError(f"Invalid timeout: {timeout}")
-            
-        source_hash = self.hash_file(source_path)
-        
-        try:
-            self.subprocess(['rsync', '-a', '--times', str(source_path.absolute()), str(destination_path.absolute())], timeout=timeout)
-        except subprocess.CalledProcessError as e:
-            logger.error('Error copying file with rsync: %s', e)
-            raise
 
-        if not destination_path.exists():
-            raise FileNotFoundError(f"Unable to find file after copy with rsync: {destination_path}")
-
-        destination_hash = self.hash_file(destination_path)
-        if source_hash != destination_hash:
-            logger.critical(f"Checksum mismatch after copying with rsync {source_path} to {destination_path}")
-            raise ValueError(f"Checksum mismatch after copying with rsync {source_path} to {destination_path}")
-
-        return True
+        return timeout
 
     def check_dry_run(self, message : str | None = None) -> bool:
         """

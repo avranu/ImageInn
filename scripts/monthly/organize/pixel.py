@@ -42,7 +42,7 @@ import argparse
 from tqdm import tqdm
 from pydantic import PrivateAttr, field_validator
 from scripts import setup_logging
-from scripts.exceptions import ShouldTerminateException
+from scripts.exceptions import ShouldTerminateError
 from scripts.lib.file_manager import StrPattern
 from scripts.monthly.organize.base import FileOrganizer
 
@@ -118,7 +118,7 @@ def main():
 
     try:
         organizer.organize_files()
-    except ShouldTerminateException as e:
+    except ShouldTerminateError as e:
         logger.critical("Critical error: %s", e)
         logger.info('Before error: %s', organizer.report())
         sys.exit(1)

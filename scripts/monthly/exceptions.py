@@ -1,7 +1,7 @@
-from scripts.exceptions import AppException
+from scripts.exceptions import AppError
 
-class OneFileException(AppException):
+class OneFileException(AppError):
     pass
 
-class DuplicationHandledException(AppException):
+class DuplicationHandledException(AppError):
     pass

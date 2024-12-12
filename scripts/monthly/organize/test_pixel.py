@@ -9,7 +9,7 @@
 *                                                                                                                      *
 *        File:    test_pixel.py                                                                                        *
 *        Project: imageinn                                                                                             *
-*        Version: 1.0.0                                                                                                *
+*        Version: 0.1.0                                                                                                *
 *        Created: 2024-09-16                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
@@ -28,7 +28,7 @@ import shutil
 from pathlib import Path
 import hashlib
 from unittest.mock import patch
-from scripts.exceptions import ShouldTerminateException
+from scripts.exceptions import ShouldTerminateError
 from scripts.monthly.exceptions import (
     OneFileException,
     DuplicationHandledException
@@ -226,8 +226,8 @@ class TestPixelFileOrganizer(unittest.TestCase):
                 return "destinationhash"
 
         mock_hash_file.side_effect = fake_hash
-        # Run process_file and expect ShouldTerminateException
-        with self.assertRaises(ShouldTerminateException):
+        # Run process_file and expect ShouldTerminateError
+        with self.assertRaises(ShouldTerminateError):
             self.organizer.process_file(source_file)
 
     def test_invalid_filename(self):
