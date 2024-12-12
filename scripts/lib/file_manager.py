@@ -943,7 +943,7 @@ class FileManager(Script):
 
         raise FileExistsError(f"Unable to find unique trash name for file: {file_path}")
 
-    def move_file(self, source_path: Path, destination_path: Path) -> Path:
+    def move_file(self, source_path: Path, destination_path: Path, *, rename_on_collision : bool = False) -> Path:
         """
         Move a file to a new location.
 
@@ -973,12 +973,19 @@ class FileManager(Script):
         if destination_path.is_dir():
             destination_path = destination_path / source_path.name
 
+        collision_count = 0
+        while destination_path.exists():
+            if not rename_on_collision:
+                raise FileExistsError(f"Move Destination file already exists: {destination_path}")
+
+            # Find a new name by suffixing a number to the destination path
+            collision_count += 1
+            destination_path = destination_path.with_name(f"{destination_path.stem}_{collision_count}{destination_path.suffix}")
+            logger.debug('Collision detected, using new destination path: Source %s -> Destination %s', source_path, destination_path)
+
         # Move XMP files alongside photos
         source_xmp_path : Path | None = source_path.with_suffix('.xmp')
         destination_xmp_path : Path | None = destination_path.with_suffix('.xmp')
-
-        if destination_path.exists():
-            raise FileExistsError(f"Move Destination file already exists: {destination_path}")
 
         destination_dir = destination_path.parent
         if not self.check_dry_run(f'moving {source_path} to {destination_dir}'):
@@ -1148,7 +1155,7 @@ class FileManager(Script):
                 if source_hash != destination_hash:
                     # rename destination file by appending -corrupt
                     corrupt_path = destination_path.absolute().with_name(f'{destination_path.stem}-corrupt{destination_path.suffix}')
-                    destination_path.rename(corrupt_path)
+                    self.move_file(destination_path, corrupt_path, rename_on_collision=True)
                     raise ChecksumMismatchError(f"Checksum mismatch after copying with rsync {source_path} to {destination_path}")
 
                 # Transferred without error
