@@ -152,8 +152,13 @@ class TopazProcessor:
                 finally:
                     pbar.update(1)
 
-        # Cleanup the topaz temporary directory
-        self.topaz_temporary_dir.rmdir()
+
+    def run(self):
+        try:
+            self.process_images()
+        finally:
+            # Cleanup the topaz temporary directory
+            self.topaz_temporary_dir.rmdir()
 
 class TopazArgNamespace(argparse.Namespace):
 	"""
@@ -165,7 +170,7 @@ class TopazArgNamespace(argparse.Namespace):
 	output_suffix: str
 	timeout: int
     
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description="Batch process images with Topaz.")
     parser.add_argument("directory",        type=Path,                                help="Directory containing images to process.")
     parser.add_argument("--topaz-exe",      type=Path, default=DEFAULT_TOPAZ_PATH,    help=f"Path to the Topaz executable. On this machine, defaults to {DEFAULT_TOPAZ_PATH}")
@@ -180,4 +185,7 @@ if __name__ == "__main__":
         output_suffix=args.output_suffix,
         timeout=args.timeout,
     )
-    processor.process_images()
+    processor.run()
+
+if __name__ == "__main__":
+    main()
