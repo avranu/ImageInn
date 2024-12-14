@@ -80,7 +80,7 @@ class TopazProcessor:
             Optional[Path]: Path to the processed image or None if processing fails.
         """
         # The final expected path to the file, after we're all done.
-        destination_filepath = image_path.with_name(f"{image_path.stem}{self.output_suffix}{image_path.suffix}")
+        destination_filepath = image_path.absolute().with_name(f"{image_path.stem}{self.output_suffix}{image_path.suffix}")
         # The filepath after topaz exports a file
         output_filepath = self.topaz_temporary_dir / image_path.name
         # Convert the paths to windows for the topaz exe
