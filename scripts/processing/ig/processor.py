@@ -1,4 +1,6 @@
-"""
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
 Process images for Instagram posts.
 
 This script processes JPG images in a directory, scaling them to fit within a square canvas,
@@ -35,7 +37,28 @@ Examples:
 
     # For more complex customization:
     python ig.py images/ -m 50 -s 1080 -b 10 -br 1.5 -c 0.7 -sat 0.8 -border 2 -suffix _processed
-"""
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    processor.py                                                                                         *
+*        Project: imageinn                                                                                             *
+*        Version: 0.1.0                                                                                                *
+*        Created: 2024-07-19                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-12-13     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
+
 from __future__ import annotations
 import logging
 from pathlib import Path
@@ -48,7 +71,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 import numpy as np
 from scripts.lib.types import Number
-from scripts.processing.ig.meta import (
+from scripts.processing.meta import (
     DEFAULT_CANVAS_SIZE,
     DEFAULT_MARGIN,
     DEFAULT_BLUR,

@@ -1,10 +1,34 @@
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    image.py                                                                                             *
+*        Project: imageinn                                                                                             *
+*        Version: 0.1.0                                                                                                *
+*        Created: 2024-07-20                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2024 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2024-12-13     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 from __future__ import annotations
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 from PIL import Image, ImageOps
 from dataclasses import dataclass, field
-from scripts.processing.ig.meta import (
+from scripts.processing.meta import (
     AdjustmentTypes
 )
 

@@ -210,6 +210,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                         self.record_upload_file()
                         if self.db:
                             self.db.mark_uploaded(image_path)
+                        self.handle_move_after_upload(image_path)
                     case UploadStatus.DUPLICATE:
                         self.record_duplicate_file()
                         if self.db:
@@ -245,6 +246,27 @@ class ImmichProgressiveUploader(ImmichInterface):
         time.sleep(0.01)
         
         return result
+
+    def handle_move_after_upload(self, image_path : Path) -> None:
+        """
+        Move a file after it has been uploaded to Immich.
+
+        Args:
+            image_path (Path): The file to move.
+        """
+        if not self.move_after_upload:
+            return
+
+        target_directory = self.move_after_upload
+        if not target_directory.absolute():
+            target_directory = image_path.parent.absolute() / target_directory
+        if not target_directory.exists():
+            self.mkdir(target_directory)
+
+        destination = target_directory / image_path.name
+
+        self.move_file(image_path, destination, rename_on_collision=True)
+        logger.info("Moved %s to %s", image_path, destination)
 
     def upload(self, directory: Path | None = None, *, recursive: bool = True):
         """
@@ -458,6 +480,7 @@ class ArgNamespace(argparse.Namespace):
     import_path: str
     album : str
     skip : bool
+    move_after_upload : str | None = None
     
 def validate_args(args: ArgNamespace) -> bool:
     """
@@ -507,6 +530,7 @@ def main():
         parser.add_argument('--db-path', help='Path to the SQLite database', default=DEFAULT_DB_PATH)
         parser.add_argument('--album', '-A', help='Immich album to upload files to')
         parser.add_argument('--skip', help='Skip assets that were previously uploaded.', action='store_true')
+        parser.add_argument('--move-after-upload', help='Move files to this directory after uploading', default=None)
         parser.add_argument("import_path", nargs='?', default=thumbnails_dir, help="Path to import files from")
         args = parser.parse_args(namespace=ArgNamespace())
 
@@ -543,7 +567,8 @@ def main():
             # Cloudflare prevents uploads over 100MB. 
             # ...On the local network, disable skipping large files.
             # ...Everywhere else, use the default large file size of 100MB.
-            large_file_size = 0 if home_network else (1024 * 1024 * 100)
+            large_file_size = 0 if home_network else (1024 * 1024 * 100),
+            move_after_upload=args.move_after_upload
         )
 
         try:

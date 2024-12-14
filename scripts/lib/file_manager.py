@@ -99,6 +99,7 @@ class FileManager(Script):
     _hash_cache: LRUCache = PrivateAttr(default_factory=lambda: LRUCache(maxsize=10000))
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
     _glob_patterns : list[str] = PrivateAttr(default_factory=list)
+    _trash_subdir : Path | None = None
 
     _sony_clip_pattern : re.Pattern | None = None
 
@@ -236,12 +237,45 @@ class FileManager(Script):
         
         return filepath.parent
 
-    def get_trash_directory(self) -> Path:
+    def get_trash_root(self) -> Path:
+        """
+        Get the root trash directory. This is where all trash subdirectories will be created.
+
+        NOTE: You should typically call self.get_trash_directory() instead of this method in most situations.
+
+        Returns:
+            Path: The root trash directory.
+        """
         if not self.trash_directory:
+            # Create the root trash directory
             self.trash_directory = self.guess_drive_root() / '.trash'
             self.trash_directory.mkdir(exist_ok=True)
             logger.debug('Trash directory will be %s', self.trash_directory.absolute())
+
         return self.trash_directory
+
+    def get_trash_directory(self) -> Path:
+        """
+        Get the trash directory, including an appropriate subdir within the root trash directory, based on the number of
+        files that have been deleted so far.
+
+        Returns:
+            Path: The full path to the trash directory.
+        """
+        # Create a new subdir every thousand files
+        # -- this relieves disk I/O pressure to iterate over a large number of files to check for naming conflicts
+        i = self.get_stat('files_deleted') // 1000
+        subdir_name = f'{i:04d}'
+        if self._trash_subdir and self._trash_subdir.name == subdir_name:
+            # Already cached
+            return self._trash_subdir
+        
+        # Create the subdir directory for (presumably) first-use
+        subdir = self.get_trash_root() / subdir_name
+        self.mkdir(subdir)
+        
+        # Return the newly created dir
+        return subdir
 
     def get_stats(self) -> dict[str, int]:
         return self._stats.copy()

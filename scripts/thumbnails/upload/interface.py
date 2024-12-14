@@ -78,6 +78,7 @@ class ImmichInterface(FileManager, ABC):
     db_path : Path | None = DEFAULT_DB_PATH
     album : str | None = None
     skip : bool = False
+    move_after_upload : Path | None = None
 
     _authenticated: bool = PrivateAttr(default=False)
     _db : ImagesDatabase | None = PrivateAttr(default=None)
@@ -142,6 +143,14 @@ class ImmichInterface(FileManager, ABC):
         if not db_path.exists():
             raise FileNotFoundError(f"Database file {db_path} does not exist.")
         return db_path
+
+
+    @field_validator('move_after_upload', mode="before")
+    def validate_move_after_upload(cls, v):
+        if not v:
+            return None
+        move_after_upload = Path(v)
+        return move_after_upload
 
     @property
     def db(self) -> ImagesDatabase | None:
