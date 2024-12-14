@@ -24,7 +24,6 @@
 *********************************************************************************************************************"""
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional
 import subprocess
 import logging
 from tqdm import tqdm
@@ -61,7 +60,7 @@ class TopazProcessor:
         self.output_suffix = output_suffix
         self.timeout = timeout
 
-    def apply_topaz(self, image_path: Path) -> Optional[Path]:
+    def apply_topaz(self, image_path: Path) -> Path | None:
         """
         Apply Topaz DeNoise AI to an image.
 
@@ -98,7 +97,7 @@ class TopazProcessor:
         if not self.topaz_exe.exists():
             raise FileNotFoundError(f"Topaz executable not found at {self.topaz_exe}")
 
-        images = []
+        images : list[Path] = []
         for ext in DEFAULT_IMAGE_EXTENSIONS:
             images.extend(self.directory.glob(ext))
 
@@ -110,6 +109,11 @@ class TopazProcessor:
 
         with tqdm(total=len(images), desc="Processing images") as pbar:
             for image in images:
+                # If the image has the output suffix, skip it
+                if self.output_suffix in image.stem:
+                    pbar.update(1)
+                    continue
+                
                 try:
                     self.apply_topaz(image)
                 except Exception as e:
