@@ -28,6 +28,7 @@ import subprocess
 import logging
 from tqdm import tqdm
 import argparse
+from PIL import Image
 from scripts.processing.meta import DEFAULT_TOPAZ_PATH
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,6 +36,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_OUTPUT_SUFFIX = "-topaz"
 DEFAULT_TIMEOUT = 300
+MAX_IMAGE_DIMENSION = 1500
 DEFAULT_IMAGE_EXTENSIONS = ["*.jpg", "*.jpeg", "*.png"]
 
 class TopazProcessor:
@@ -109,16 +111,28 @@ class TopazProcessor:
 
         with tqdm(total=len(images), desc="Processing images") as pbar:
             for image in images:
-                # If the image has the output suffix, skip it
-                if self.output_suffix in image.stem:
-                    pbar.update(1)
-                    continue
-                
                 try:
-                    self.apply_topaz(image)
-                except Exception as e:
-                    logger.error(f"Failed to process {image}: {e}")
-                pbar.update(1)
+                    # If the image has the output suffix, it was already processed -> skip it
+                    if self.output_suffix in image.stem:
+                        continue
+
+                    # If the image dimensions are over the maximum on either side, topaz isn't needed -> skip it
+                    try:
+                        img = Image.open(image)
+                        if img.width > MAX_IMAGE_DIMENSION or img.height > MAX_IMAGE_DIMENSION:
+                            logger.debug(f"Skipping {image}: Image dimensions are too large.")
+                            continue
+                    except Exception as e:
+                        logger.error(f"Failed to check image dimensions for {image}: {e}")
+                        continue
+                    
+                    try:
+                        self.apply_topaz(image)
+                    except Exception as e:
+                        logger.error(f"Failed to process {image}: {e}")
+                        
+                finally:
+                    pbar.update(1)
 
 class TopazArgNamespace(argparse.Namespace):
 	"""
