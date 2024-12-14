@@ -29,7 +29,7 @@ import logging
 from tqdm import tqdm
 import argparse
 from PIL import Image
-from scripts.processing.meta import DEFAULT_TOPAZ_PATH
+from scripts.processing.meta import DEFAULT_TOPAZ_PATH, to_windows_path
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -49,6 +49,11 @@ class TopazProcessor:
         output_suffix (str): Suffix to add to the output files.
         timeout (int): Timeout for the Topaz subprocess.
     """
+    directory : Path
+    topaz_exe : Path
+    output_suffix : str
+    timeout : int
+    topaz_temporary_dir : Path
 
     def __init__(
         self,
@@ -61,6 +66,8 @@ class TopazProcessor:
         self.topaz_exe = topaz_exe
         self.output_suffix = output_suffix
         self.timeout = timeout
+        self.topaz_temporary_dir = self.directory / 'topaz_output'
+        self.topaz_temporary_dir.mkdir(exist_ok=True)
 
     def apply_topaz(self, image_path: Path) -> Path | None:
         """
@@ -72,25 +79,31 @@ class TopazProcessor:
         Returns:
             Optional[Path]: Path to the processed image or None if processing fails.
         """
-        output_path = image_path.with_name(f"{image_path.stem}{self.output_suffix}{image_path.suffix}")
+        # The final expected path to the file, after we're all done.
+        destination_filepath = image_path.with_name(f"{image_path.stem}{self.output_suffix}{image_path.suffix}")
+        # The filepath after topaz exports a file
+        output_filepath = self.topaz_temporary_dir / image_path.name
+        # Convert the paths to windows for the topaz exe
+        windows_output_path = to_windows_path(image_path.parent / 'topaz_output')
+        windows_image_path = to_windows_path(image_path)
 
-        if output_path.exists():
-            logger.warning(f"Output file already exists, skipping: {output_path}")
-            return output_path
-
-        cmd = [str(self.topaz_exe), str(image_path), "--output", str(output_path.parent)]
-        logger.info(f"Running Topaz on {image_path}")
+        cmd = [str(self.topaz_exe), windows_image_path, "--output", windows_output_path]
+        logger.info(f"Running Topaz on {windows_image_path}")
         try:
             subprocess.run(cmd, check=True, capture_output=True, timeout=self.timeout)
         except subprocess.CalledProcessError as e:
-            logger.error(f"Topaz failed for {image_path}: {e.stderr.decode()}")
+            logger.error(f"Topaz failed for {windows_image_path}: {e.stderr.decode()}")
             return None
 
-        if not output_path.exists():
-            logger.error(f"Topaz output file not created: {output_path}")
+        # Check for output. Original filename in the output_path dir
+        if not output_filepath.exists():
+            logger.error("Topaz output not found: %s", output_filepath)
             return None
 
-        return output_path
+        # Move topaz output to the input dir, renamed
+        output_filepath.rename(destination_filepath)
+
+        return destination_filepath
 
     def process_images(self):
         """
@@ -116,6 +129,11 @@ class TopazProcessor:
                     if self.output_suffix in image.stem:
                         continue
 
+                    # Skip yvonne's photos (per request)
+                    if 'yvonne' in image.stem.lower():
+                        logger.debug(f"Skipping {image}: Yvonne's photos are not processed.")
+                        continue
+
                     # If the image dimensions are over the maximum on either side, topaz isn't needed -> skip it
                     try:
                         img = Image.open(image)
@@ -133,6 +151,9 @@ class TopazProcessor:
                         
                 finally:
                     pbar.update(1)
+
+        # Cleanup the topaz temporary directory
+        self.topaz_temporary_dir.rmdir()
 
 class TopazArgNamespace(argparse.Namespace):
 	"""
