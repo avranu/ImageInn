@@ -164,7 +164,6 @@ class TopazArgNamespace(argparse.Namespace):
 	"""
 	A custom namespace class for the TopazProcessor argument parser.
 	"""
-
 	directory: Path
 	topaz_exe: Path
 	output_suffix: str
