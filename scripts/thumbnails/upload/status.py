@@ -35,8 +35,13 @@ from enum import Enum
 from pathlib import Path
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 import threading
+from sqlalchemy import create_engine, Column, String, Float, Integer, Enum as SQLEnum
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, scoped_session
+import sqlalchemy.exc
 from scripts import setup_logging
 from scripts.thumbnails.upload.meta import STATUS_FILE_NAME
+
 
 logger = setup_logging()
 
@@ -53,18 +58,40 @@ class UploadStatus(Enum):
 # 10 minutes
 MAX_WAIT_TIME = 10 * 60
 
+Base = declarative_base()
+
+class StatusRecord(Base):
+    __tablename__ = 'status'
+    
+    id = Column(Integer, primary_key=True)
+    directory = Column(String, nullable=False)
+    filename = Column(String, nullable=False) 
+    status = Column(SQLEnum(UploadStatus), nullable=False)
+    last_processed_time = Column(Float, nullable=False, default=0.0)
+    version = Column(Integer, nullable=False, default=-1)
+
 class Status(BaseModel):
     """
-    Class to manage the status file data, handle locking, and provide iteration over statuses.
+    Class to manage the status in SQLite, handle locking, and provide iteration over statuses.
     """
-    statuses: dict[str, UploadStatus] = Field(default_factory=dict)
-    last_processed_time: float = 0.0
     directory: Path
-    version : int = -1
+    version: int = -1
+    last_processed_time: float = 0.0
     _lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
+    _session = PrivateAttr(default=None)
+    _engine = PrivateAttr(default=None)
 
     class Config:
         arbitrary_types_allowed = True
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        project_root = Path(__file__).parent.parent.parent.parent
+        db_path = project_root / 'upload_status.db'
+        self._engine = create_engine(f'sqlite:///{db_path}')
+        Base.metadata.create_all(self._engine)
+        session_factory = sessionmaker(bind=self._engine)
+        self._session = scoped_session(session_factory)
 
     @field_validator('directory', mode="before")
     def validate_directory(cls, v: Path) -> Path:
@@ -80,97 +107,39 @@ class Status(BaseModel):
         return v
 
     @property
-    def status_file(self) -> Path:
-        return self.directory / STATUS_FILE_NAME
-
-    @property
     def lock(self) -> threading.Lock:
         return self._lock
 
     def load(self):
-        """
-        Load the status data from the status file.
-        """
-        if self.status_file.exists():
-            with self.status_file.open('r') as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith('#'):
-                        # Parse header lines
-                        if line.startswith('# last_processed_time:'):
-                            self.last_processed_time = float(line.split(':', 1)[1].strip())
-                        if line.startswith('# version:'):
-                            self.version = int(line.split(':', 1)[1].strip())
-
-                        continue
-                    if line:
-                        parts = line.split('\t')
-                        if len(parts) == 2:
-                            filename, file_status = parts
-                            # Handle aliases. We can remove these eventually. TODO
-                            if file_status == 'failed':
-                                file_status = 'error'
-                            elif file_status == 'success':
-                                file_status = 'uploaded'
-                            elif file_status.startswith('UploadStatus.'):
-                                file_status = file_status.split('.')[1]
-                            self.statuses[filename] = UploadStatus(file_status.lower())
-
-            success = sum(1 for status in self.statuses.values() if self.was_successful(status))
-            skipped = sum(1 for status in self.statuses.values() if self.was_skipped(status))
-            failure = sum(1 for status in self.statuses.values() if self.was_failed(status))
-            logger.debug(f"Loaded status file in {self.directory.name}. Success: {success}, Skipped: {skipped}, Failure: {failure}")
+        """Load is a no-op with SQLite as data is loaded on demand"""
+        pass
 
     def save(self) -> bool:
         """
-        Save the status data to the status file.
+        Commit any pending changes to SQLite
         """
-        # Wait time between attempts in seconds
-        wait_time = 2
-
-        # Retry if failure
-        # -- this occurs if the network is down
-        for attempt in range(100):
-            try:
-                return self._write_status_file()
-            except OSError as e:
-                logger.error("%d: Error saving status file, waiting %d seconds for retry: %s", attempt, wait_time, e)
-
-            time.sleep(wait_time)
-            # Increase the wait time up to a maximum
-            wait_time = min(wait_time * 2, MAX_WAIT_TIME)
-
-        logger.error("Failed to save status file after %d attempts", attempt)
-        return False
-
-    def _write_status_file(self) -> bool:
-        """
-        Write the status data to the status file.
-        """
-        with self.lock:
-            if not self.statuses:
-                logger.debug('Skipping saving empty status file')
-                return False
-
-            with self.status_file.open('w') as f:
-                if self.last_processed_time:
-                    f.write(f'# last_processed_time: {self.last_processed_time}\n')
-                if self.version > 0:
-                    f.write(f'# version: {self.version}\n')
-                for filename, file_status in self.statuses.items():
-                    # Do not save "skipped" statuses
-                    if file_status == UploadStatus.SKIPPED:
-                        continue
-                    f.write(f'{filename}\t{file_status.value}\n')
-
-        return True
+        try:
+            self._session.commit()
+            return True
+        except sqlalchemy.exc.SQLAlchemyError as e:
+            logger.error("Error saving to database: %s", e)
+            self._session.rollback()
+            return False
 
     def update_meta(self):
         """
-        Update the last processed time to the current time, and update the version.
+        Update the last processed time and version for all records in this directory
         """
         self.last_processed_time = self.directory.stat().st_mtime
         self.version = VERSION
+        with self.lock:
+            self._session.query(StatusRecord).filter_by(
+                directory=str(self.directory)
+            ).update({
+                'last_processed_time': self.last_processed_time,
+                'version': self.version
+            })
+            self.save()
 
     def update_status(self, filename: str | Path, status: UploadStatus):
         """
@@ -180,11 +149,30 @@ class Status(BaseModel):
             filename = filename.name
 
         with self.lock:
-            if status == UploadStatus.SKIPPED and filename in self.statuses:
-                # Do not overwrite a status with "skipped"
+            record = self._session.query(StatusRecord).filter_by(
+                directory=str(self.directory),
+                filename=filename
+            ).first()
+
+            if status == UploadStatus.SKIPPED and record is not None:
+                # Do not overwrite existing status with "skipped"
                 return
-            
-            self.statuses[filename] = status
+
+            if record is None:
+                record = StatusRecord(
+                    directory=str(self.directory),
+                    filename=filename,
+                    status=status,
+                    last_processed_time=self.last_processed_time,
+                    version=self.version
+                )
+                self._session.add(record)
+            else:
+                record.status = status
+                record.last_processed_time = self.last_processed_time
+                record.version = self.version
+
+            self.save()
 
     def get_status(self, filename: str | Path) -> UploadStatus | None:
         """
@@ -194,7 +182,11 @@ class Status(BaseModel):
             filename = filename.name
 
         with self.lock:
-            return self.statuses.get(filename)
+            record = self._session.query(StatusRecord).filter_by(
+                directory=str(self.directory),
+                filename=filename
+            ).first()
+            return record.status if record else None
 
     def was_successful(self, filename: str | Path) -> bool:
         """
@@ -210,7 +202,7 @@ class Status(BaseModel):
         status = self.get_status(filename)
         return status in [UploadStatus.ERROR]
 
-    def was_skipped(self, filename : str | Path) -> bool:
+    def was_skipped(self, filename: str | Path) -> bool:
         """
         Check if the file was skipped.
         """
@@ -232,17 +224,21 @@ class Status(BaseModel):
         Get the number of statuses.
         """
         with self.lock:
-            return len(self.statuses)
+            return self._session.query(StatusRecord).filter_by(
+                directory=str(self.directory)
+            ).count()
 
-    def __iter__(self) -> Iterator[tuple[str, bool]]:
+    def __iter__(self) -> Iterator[tuple[str, UploadStatus]]:
         """
         Iterate over the statuses.
         """
         with self.lock:
-            # Return a copy to prevent issues during iteration
-            return iter(self.statuses.copy().items())
+            records = self._session.query(StatusRecord).filter_by(
+                directory=str(self.directory)
+            ).all()
+            return iter([(r.filename, r.status) for r in records])
 
-    def __getitem__(self, key: str) -> bool:
+    def __getitem__(self, key: str) -> UploadStatus:
         """
         Get the status of a file.
         """
@@ -250,7 +246,7 @@ class Status(BaseModel):
             raise KeyError(f"No status found for file: {key}")
         return status
 
-    def __setitem__(self, key: str, value: bool):
+    def __setitem__(self, key: str, value: UploadStatus):
         """
         Set the status of a file.
         """
@@ -261,20 +257,27 @@ class Status(BaseModel):
         Delete the status of a file.
         """
         with self.lock:
-            del self.statuses[key]
+            self._session.query(StatusRecord).filter_by(
+                directory=str(self.directory),
+                filename=key
+            ).delete()
+            self.save()
 
     def __contains__(self, key: str) -> bool:
         """
         Check if the status of a file is present.
         """
         with self.lock:
-            return key in self.statuses
+            return self._session.query(StatusRecord).filter_by(
+                directory=str(self.directory),
+                filename=key
+            ).first() is not None
 
     def __repr__(self) -> str:
         """
         Get the string representation of the status object.
         """
-        return f"Status(directory={self.directory}, statuses={self.statuses})"
+        return f"Status(directory={self.directory})"
 
     def __str__(self) -> str:
         """
@@ -286,14 +289,14 @@ class Status(BaseModel):
         """
         Enter the runtime context related to this object.
         """
-        self.load()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """
-        Exit the runtime context and save the status data.
+        Exit the runtime context and ensure changes are saved.
         """
         self.save()
+        self._session.remove()
 
     def __hash__(self) -> int:
         """
