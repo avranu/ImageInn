@@ -504,20 +504,68 @@ class FileManager(Script):
         Yields:
             The next file in the directory.
         """
+        if recursive or len(self.get_glob_patterns()) <= 2:
+            # Recursive always requires rglob
+            # OR Small number of patterns, so use glob to avoid manual pruning
+            yield from self.glob(directory, recursive=recursive)
+        else:
+            # Hopefully get better performance from manually iterating over files
+            yield from self.iterfiles(directory)
+            
+    def glob(self, directory : Path | None = None, recursive : bool = True) -> Iterator[Path]:
+        """
+        Yield files in a directory using rglob for each glob pattern.
+
+        In theory, this should be faster than using iterdir or os.walk if:
+        - We have a small number of glob patterns
+        - We have a large number of files
+        - We are recursing into subdirs that are deeply nested
+
+        Therefore, this is used within methods like yield_files() when recursive is True.
+
+        Args:
+            directory: The directory to search. Defaults to self.directory.
+
+        Yields:
+            The next file in the directory.
+        """
         directory = directory or self.directory
-        globs = self.get_glob_patterns()
 
         if recursive:
             fn = directory.rglob
         else:
             fn = directory.glob
 
+        globs = self.get_glob_patterns()
         for glob in globs:
             logger.debug('Searching %s for files matching %s', directory, glob)
             self.progress_message(f'Searching for {glob}...')
             for filepath in fn(glob, case_sensitive=False):
                 if self.should_include_file(filepath):
                     yield filepath
+
+    def iterfiles(self, directory : Path | None = None) -> Iterator[Path]:
+        """
+        Yield files in a directory, manually matching our glob criteria.
+
+        In theory, this should be faster than using Path.glob() for every glob pattern if:
+        - We have a large number of glob patterns
+        - We have a small number of files
+        - We are not recursing into subdirs
+
+        Therefore, this is used within methods like yield_files() when recursive is False.
+
+        Args:
+            directory: The directory to search. Defaults to self.directory.
+
+        Yields:
+            The next file in the directory.
+        """
+        directory = directory or self.directory
+        
+        for filepath in directory.iterdir():
+            if self.file_matches_globs(filepath) and self.should_include_file(filepath):
+                yield filepath
 
     def get_all_files(self, directory : Path | None = None, *, recursive : bool = True) -> list[Path]:
         """
@@ -530,6 +578,21 @@ class FileManager(Script):
             A list of files in the directory which match the glob pattern.
         """
         return list(self.yield_files(directory, recursive=recursive))
+
+    def file_matches_globs(self, file_path : Path) -> bool:
+        """
+        Check if a file matches any one of the glob patterns.
+
+        Args:
+            file_path: The file to check.
+
+        Returns:
+            True if the file matches at least 1 glob pattern, False otherwise.
+        """
+        for glob in self.get_glob_patterns():
+            if file_path.match(glob):
+                return True
+        return False
 
     def should_include_file(self, item: Path) -> bool:
         """
@@ -569,6 +632,20 @@ class FileManager(Script):
         """
         return self.file_size(source_path) == self.file_size(destination_path)
 
+    def get_last_modified_time(self, file_path: Path) -> float:
+        """
+        Get the last modified time of a file or directory.
+
+        This makes use of our internal cache to avoid repeated stat calls for the same file.
+
+        Args:
+            file_path: The file to get the last modified time for.
+
+        Returns:
+            The last modified time of the file or directory.
+        """
+        return self.file_stat(file_path).st_mtime
+
     def file_times_match(self, source_path: Path, destination_path: Path) -> bool:
         """
         Check if the modification times of two files match.
@@ -580,7 +657,7 @@ class FileManager(Script):
         Returns:
             True if the file modification times match, False otherwise.
         """
-        return self.file_stat(source_path).st_mtime == self.file_stat(destination_path).st_mtime
+        return self.get_last_modified_time(source_path) == self.get_last_modified_time(destination_path)
 
     @lru_cache(maxsize=128)
     def file_stat(self, filepath: Path) -> os.stat_result:

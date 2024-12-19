@@ -61,8 +61,7 @@ from typing import Protocol
 from dotenv import load_dotenv
 import argparse
 from pydantic import PrivateAttr
-from tqdm import tqdm
-from alive_progress import alive_it, alive_bar
+from alive_progress import alive_bar
 
 from scripts.lib.db.images import ImagesDatabase
 from scripts.thumbnails.upload.meta import DEFAULT_DB_PATH
@@ -77,12 +76,13 @@ from scripts.exceptions import AppError
 from scripts.thumbnails.upload.meta import MAX_RETRIES, SECONDS_PER_RETRY
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
 from scripts.thumbnails.upload.interface import ImmichInterface
-from scripts.thumbnails.upload.status import Status, UploadStatus
+from scripts.thumbnails.upload.status import FileStatus, DirectoryStatus, StatusOptions
 from scripts.thumbnails.upload.template import PixelFiles
 
 logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
+    
     @property
     def files_uploaded(self) -> int:
         return self.get_stat('uploaded_file')
@@ -97,25 +97,24 @@ class ImmichProgressiveUploader(ImmichInterface):
     def record_duplicate_file(self, count : int = 1) -> None:
         self.record_stat('duplicate_file', count)
 
-    def _upload_file(self, image_path: Path, status: Status | None = None, retries: int = 3) -> UploadStatus:
+    def _upload_file(self, image_path: Path, retries: int = 3) -> StatusOptions:
         """
         Upload a file to Immich.
 
         Args:
             image_path (Path): The file to upload.
-            status (Status): An instance of the Status class.
 
         Returns:
             UploadStatus: The status of the upload operation.
         """
-        if self.should_ignore_file(image_path, status=status):
+        if self.should_ignore_file(image_path):
             logger.debug('Ignoring %s', image_path)
-            return UploadStatus.SKIPPED
+            return StatusOptions.SKIPPED
 
         self.progress_message(f'Uploading {image_path.name[-15:]}')
 
         if self.check_dry_run('running immich upload'):
-            return UploadStatus.UPLOADED
+            return StatusOptions.UPLOADED
 
         command = ["immich", "upload", image_path.as_posix()]
         if self.album:
@@ -144,17 +143,17 @@ class ImmichProgressiveUploader(ImmichInterface):
                 # Analyze the output
                 if "All assets were already uploaded" in output:
                     logger.debug("%s already uploaded.", image_path)
-                    return UploadStatus.DUPLICATE
+                    return StatusOptions.DUPLICATE
                 if "Unsupported file type" in output:
                     logger.debug("Unsupported file type: %s", image_path)
-                    return UploadStatus.ERROR
+                    return StatusOptions.ERROR
                 if "Successfully uploaded" in output:
                     logger.debug("Uploaded %s successfully.", image_path)
-                    return UploadStatus.UPLOADED
+                    return StatusOptions.UPLOADED
 
                 logger.info('Unknown output: %s', output)
                 logger.info('By default, issuing an error.', image_path)
-                return UploadStatus.ERROR
+                return StatusOptions.ERROR
 
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                 output = f'{e.stdout} + {e.stderr}'
@@ -180,18 +179,17 @@ class ImmichProgressiveUploader(ImmichInterface):
 
                 # Unknown reason, log the output
                 logger.error(f"Failed to upload {image_path} for unknown reason: {output}")
-                return UploadStatus.ERROR
+                return StatusOptions.ERROR
 
         logger.error('Max retries reached for %s.', image_path)
-        return UploadStatus.ERROR
+        return StatusOptions.ERROR
 
-    def upload_file_threadsafe(self, image_path: Path, status: Status | None = None) -> UploadStatus:
+    def upload_file_threadsafe(self, image_path: Path) -> StatusOptions:
         """
         Upload a file to Immich in a thread-safe manner.
 
         Args:
             image_path (Path): The file to upload.
-            status (Status): An instance of the Status class.
 
         Returns:
             UploadStatus: The status of the upload operation.
@@ -203,28 +201,27 @@ class ImmichProgressiveUploader(ImmichInterface):
 
         for i in range(MAX_RETRIES):
             try:
-                result = self._upload_file(image_path, status)
+                result = self._upload_file(image_path)
 
                 match result:
-                    case UploadStatus.UPLOADED:
+                    case StatusOptions.UPLOADED:
                         self.record_upload_file()
                         if self.db:
                             self.db.mark_uploaded(image_path)
                         self.handle_move_after_upload(image_path)
-                    case UploadStatus.DUPLICATE:
+                    case StatusOptions.DUPLICATE:
                         self.record_duplicate_file()
                         if self.db:
                             self.db.mark_uploaded(image_path)
-                    case UploadStatus.SKIPPED:
+                    case StatusOptions.SKIPPED:
                         self.record_skip_file()
-                    case UploadStatus.ERROR:
+                    case StatusOptions.ERROR:
                         self.record_error()
                     case _:
                         logger.error('Unknown upload status: %s', result)
                         self.record_error()
 
-                if status:
-                    status.update_status(filename, result)
+                FileStatus.update_status(image_path, result)
 
                 # Finished without an exception, so don't retry
                 break
@@ -232,10 +229,7 @@ class ImmichProgressiveUploader(ImmichInterface):
             except OSError as ose:
                 # Catch error 112 (host is down) and retry
                 if ose.errno == 112:
-                    # first rety in 1 second, then ~15 more seconds per retry
-                    wait = 1 + SECONDS_PER_RETRY * i
-                    logger.error("Host is down. Retrying #%d in %d seconds...", i, wait)
-                    time.sleep(wait)
+                    self._wait_retry(i, "Host is down")
                     continue
                     
             finally:
@@ -268,6 +262,23 @@ class ImmichProgressiveUploader(ImmichInterface):
         self.move_file(image_path, destination, rename_on_collision=True)
         logger.info("Moved %s to %s", image_path, destination)
 
+    def _wait_retry(self, loop : int = 1, message : str = 'Attempt failed') -> None:
+        """
+        Wait for a retry, and logs a message about it.
+
+        Args:
+            loop (int): The current loop iteration.
+            message (str): The message to display.
+        """
+        if loop >= MAX_RETRIES:
+            logger.error("%s. Max retries reached.", message)
+            return
+        
+        wait = 1 + SECONDS_PER_RETRY * loop
+        logger.error("%s. Retrying in %d seconds...", message, wait)
+
+        time.sleep(wait)
+
     def upload(self, directory: Path | None = None, *, recursive: bool = True):
         """
         Upload files to Immich.
@@ -290,36 +301,57 @@ class ImmichProgressiveUploader(ImmichInterface):
             self.progress_message('Searching...')
             
             for subdir in self.yield_directories(directory, recursive=recursive):
-                with Status(directory=subdir) as status:
-                    # Check if the directory has changed since the last processed time
-                    if self.skip and not status.directory_changed():
-                        logger.debug("Skipping directory %s as it has not changed since last processed.", subdir)
-                        continue
+                self.progress_message(f'Counting files in {subdir.name}')
+                last_modified_time = self.get_last_modified_time(subdir)
+                files_to_upload = self.get_all_files(subdir, recursive=False)
+                file_count = len(files_to_upload)
 
-                    files_to_upload = self.yield_files(subdir)
+                if DirectoryStatus.has_directory_changed(subdir, file_count, last_modified_time, self.get_glob_patterns()):
+                    logger.info('Skipping subdir because it has not changed since last upload: %s', subdir)
+                    continue
+                
+                self.progress_message(f'{file_count} files queued')
 
-                    with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
-                        # initialize the start time for calculating upload speed
-                        self._start_ns = time.time_ns()
-                        
-                        futures = []
-                        for filepath in files_to_upload:
-                            future = executor.submit(self.upload_file_threadsafe, filepath, status)
-                            futures.append(future)
+                # Remove previous uploads from the list
+                successful_uploads = FileStatus.get_all_status(subdir, StatusOptions.UPLOADED)
+                files_to_upload = [f for f in files_to_upload if f not in successful_uploads]
+                if (files_to_upload_count := len(files_to_upload)) < 1:
+                    logger.debug('Pruned all files from %s', subdir)
+                    continue
+                if (pruned_count := file_count - files_to_upload_count) > 0:
+                    logger.info('Pruned %d files from %s', pruned_count, subdir)
 
-                        for future in as_completed(futures):
+                with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
+                    # initialize the start time for calculating upload speed
+                    self._start_ns = time.time_ns()
+                    
+                    futures = []
+                    for filepath in files_to_upload:
+                        future = executor.submit(self.upload_file_threadsafe, filepath)
+                        futures.append(future)
+
+                    for future in as_completed(futures):
+                        for i in range(MAX_RETRIES):
                             try:
-                                future.result()
+                                future.result()    
+                            except OSError as ose:
+                                # Catch error 112 (host is down) and retry
+                                if ose.errno == 112:
+                                    self._wait_retry(i, "Host is down")
+                                    continue
+                                raise
                             except Exception as e:
                                 # Catch, report, and re-raise
                                 self.record_error()
                                 logger.error("Exception during upload: %s", e)
                                 logger.exception(e)
                                 raise
+                                                    
+                            # Finished without an exception, so don't retry
+                            break
 
-                    # At the conclusion of the upload, update the last processed time
-                    # -- if the upload is cancelled, the last processed time will not be updated
-                    status.update_meta()
+                # IFF we finish looping without error, update the DirectoryStatus
+                DirectoryStatus.update(subdir, file_count, last_modified_time, self.get_glob_patterns())
 
     def upload_from_db(self):
         """

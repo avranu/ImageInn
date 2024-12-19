@@ -58,7 +58,7 @@ from scripts.lib.file_manager import FileManager
 from scripts.lib.db import ImagesDatabase
 from scripts.thumbnails.upload.meta import ALLOWED_EXTENSIONS, DEFAULT_DB_PATH, IGNORE_DIRS
 from scripts.thumbnails.upload.exceptions import AuthenticationError, ConfigurationError
-from scripts.thumbnails.upload.status import Status
+from scripts.thumbnails.upload.status import FileStatus
 from scripts.thumbnails.upload.template import FileTemplate
 
 logger = setup_logging()
@@ -214,14 +214,13 @@ class ImmichInterface(FileManager, ABC):
         """
         raise NotImplementedError("upload method must be implemented in a subclass.")
 
-    def should_ignore_file(self, image_path: Path, *, allow_hidden : bool = True, status: Status | None = None, **kwargs) -> bool:
+    def should_ignore_file(self, image_path: Path, *, allow_hidden : bool = True, **kwargs) -> bool:
         """
         Check if a file should be ignored based on the extension, size, and status.
 
         Args:
             file (Path): The file to check.
             allow_hidden (bool): Whether to include hidden files.
-            status (Status): The status of the file from the last run.
             **kwargs: Additional arguments that subclasses may implement.
 
         Returns:
@@ -254,8 +253,8 @@ class ImmichInterface(FileManager, ABC):
                 logger.debug(f"Ignoring file {image_path} due to template {template}")
                 return True
 
-        if self.skip and status:
-            if status.was_successful(image_path):
+        if self.skip:
+            if FileStatus.was_successful(image_path):
                 logger.debug("Skipping already uploaded file %s", image_path)
                 return True
 

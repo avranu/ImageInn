@@ -29,15 +29,15 @@ import sys
 # Add the root directory of the project to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
-import threading
-import sqlalchemy.exc
-from typing import Iterator
 from enum import Enum
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator
+from typing import Iterator, Self
+
+import sqlalchemy.exc
 from sqlalchemy import create_engine, Column, String, Float, Integer, Enum as SQLEnum
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session, Query
+
 from scripts import setup_logging
 
 logger = setup_logging()
@@ -45,7 +45,7 @@ logger = setup_logging()
 # When version increases, directories will be reprocessed even if their last modified time hasn't changed.
 VERSION = 3
 
-class UploadStatus(Enum):
+class StatusOptions(Enum):
     UPLOADED = 'uploaded'
     SKIPPED = 'skipped'
     DUPLICATE = 'duplicate'
@@ -53,218 +53,336 @@ class UploadStatus(Enum):
 
 Base = declarative_base()
 
-class StatusRecord(Base):
-    __tablename__ = 'status'
+class DbManager:
+    """
+    A class to manage the database connection and session.
+    """
+    _sessionmaker: sessionmaker | None = None
+
+    @classmethod
+    def initialize_db(cls):
+        """
+        Initialize the database and create the tables.
+        """
+        project_root = Path(__file__).parent.parent.parent.parent
+        db_path = project_root / 'file_status.db'
+        engine = create_engine(f'sqlite:///{db_path}', pool_size=10, max_overflow=20)
+        Base.metadata.create_all(engine)
+        cls._sessionmaker = sessionmaker(bind=engine)
+
+        file_records = FileStatus.count_records()
+        directory_records = DirectoryStatus.count_records()
+        logger.info(f"Database initialized with {file_records} file records and {directory_records} directory records.")
+
+    @classmethod
+    def get_session(cls) -> Session:
+        if cls._sessionmaker is None:
+            raise ValueError("Database not initialized.")
+        return cls._sessionmaker()
+
+class FileStatus(Base):
+    __tablename__ = 'upload_status'
     
     id = Column(Integer, primary_key=True)
     directory = Column(String, nullable=False)
     filename = Column(String, nullable=False)
-    status = Column(SQLEnum(UploadStatus), nullable=False)
+    status = Column(SQLEnum(StatusOptions), nullable=False, default=StatusOptions.SKIPPED)
+    file_hash = Column(String, nullable=True)
     last_processed_time = Column(Float, nullable=False, default=0.0)
     version = Column(Integer, nullable=False, default=-1)
-
-# Setup DB once
-project_root = Path(__file__).parent.parent.parent.parent
-db_path = project_root / 'file_status.db'
-engine = create_engine(f'sqlite:///{db_path}')
-Base.metadata.create_all(engine)
-SessionLocal = sessionmaker(bind=engine)
-
-class Status(BaseModel):
-    """
-    Class to manage the status in SQLite, handle locking, and provide iteration over statuses.
-    """
-    directory: Path
-    version: int = -1
-    last_processed_time: float = 0.0
-    _lock: threading.Lock = Field(default_factory=threading.Lock, repr=False)
-    _session = Field(default=None, repr=False)
-
-    class Config:
-        arbitrary_types_allowed = True
-
-    def __init__(self, **data):
-        super().__init__(**data)
-        if not self.directory.exists():
-            raise FileNotFoundError(f"Directory {self.directory} does not exist.")
-        self._session = SessionLocal()
-
-
-    @field_validator('directory', mode="before")
-    def validate_directory(cls, v: Path) -> Path:
-        if not v:
-            raise ValueError("directory must be set.")
-
-        v = Path(v)
-
-        if not v.exists():
-            logger.error("Directory %s does not exist.", v)
-            raise FileNotFoundError(f"Directory {v} does not exist.")
-
-        return v
-
-    @property
-    def lock(self) -> threading.Lock:
-        return self._lock
-
-    def save(self) -> bool:
-        """
-        Commit any pending changes to SQLite
-        """
+        
+    @classmethod
+    def get_status(cls, file_path : Path) -> StatusOptions | None:
+        directory = file_path.parent
+        filename = file_path.name
+        
+        session = DbManager.get_session()
         try:
-            self._session.commit()
-            return True
-        except sqlalchemy.exc.SQLAlchemyError as e:
-            logger.error("Error saving to database: %s", e)
-            self._session.rollback()
-            return False
+            record = (session.query(FileStatus)
+                             .filter_by(directory=str(directory), filename=filename)
+                             .first())
+            return record.status if record else None
+        finally:
+            session.close()
 
-    def update_meta(self):
-        """
-        Update the last processed time and version for all records in this directory
-        """
-        self.last_processed_time = self.directory.stat().st_mtime
-        self.version = VERSION
-        with self.lock:
-            self._session.query(StatusRecord).filter_by(
-                directory=str(self.directory)
-            ).update({
-                'last_processed_time': self.last_processed_time,
-                'version': self.version
-            })
-            self.save()
+    @classmethod
+    def update_status(cls, file_path : Path, status: StatusOptions):
+        directory = file_path.parent.absolute()
+        filename = file_path.name
 
-    def update_status(self, filename: str | Path, status: UploadStatus):
-        """
-        Update the status of a file in a thread-safe manner.
-        """
-        if isinstance(filename, Path):
-            filename = filename.name
-        with self.lock:
-            record = self._session.query(StatusRecord).filter_by(
-                directory=str(self.directory),
-                filename=filename
-            ).first()
+        # We need directory to exist and be a directory
+        if not directory.exists():
+            raise FileNotFoundError(f"Directory {directory} does not exist.")
 
-            if status == UploadStatus.SKIPPED and record is not None:
-                # Do not overwrite existing status with "skipped"
-                return
+        session = DbManager.get_session()
+        try:
+            record = (session.query(FileStatus)
+                             .filter_by(directory=str(directory), filename=filename)
+                             .first())
 
+            last_processed_time = directory.stat().st_mtime
             if record is None:
-                record = StatusRecord(
-                    directory=str(self.directory),
+                record = FileStatus(
+                    directory=str(directory),
                     filename=filename,
                     status=status,
-                    last_processed_time=self.last_processed_time,
-                    version=self.version
+                    last_processed_time=last_processed_time,
+                    version=VERSION
                 )
-                self._session.add(record)
+                session.add(record)
             else:
+                # If updating to SKIPPED, do not overwrite an existing status
+                if status in [StatusOptions.SKIPPED, StatusOptions.DUPLICATE]:
+                    return
+                
                 record.status = status
-                record.last_processed_time = self.last_processed_time
-                record.version = self.version
-            self.save()
+                record.last_processed_time = last_processed_time
+                record.version = VERSION
+            session.commit()
+        except sqlalchemy.exc.SQLAlchemyError as e:
+            logger.error("Error updating status: %s", e)
+            session.rollback()
+        finally:
+            session.close()
 
-    def get_status(self, filename: str | Path) -> UploadStatus | None:
-        """
-        Get the status of a file in a thread-safe manner.
-        """
-        if isinstance(filename, Path):
-            filename = filename.name
-        with self.lock:
-            record = self._session.query(StatusRecord).filter_by(
-                directory=str(self.directory),
-                filename=filename
-            ).first()
-            return record.status if record else None
+    @classmethod
+    def upload_success(cls, file_path : Path):
+        cls.update_status(file_path, StatusOptions.UPLOADED)
 
-    def was_successful(self, filename: str | Path) -> bool:
-        """
-        Check if the file was uploaded successfully.
-        """
-        status = self.get_status(filename)
-        return status in [UploadStatus.DUPLICATE, UploadStatus.UPLOADED]
+    @classmethod
+    def upload_error(cls, file_path : Path):
+        cls.update_status(file_path, StatusOptions.ERROR)
 
-    def was_failed(self, filename: str | Path) -> bool:
-        """
-        Check if the file upload failed.
-        """
-        return self.get_status(filename) == UploadStatus.ERROR
+    @classmethod
+    def upload_skipped(cls, file_path : Path):
+        cls.update_status(file_path, StatusOptions.SKIPPED)
 
-    def was_skipped(self, filename: str | Path) -> bool:
-        """
-        Check if the file was skipped.
-        """
-        return self.get_status(filename) == UploadStatus.SKIPPED
+    @classmethod
+    def was_successful(cls, file_path : Path) -> bool:
+        s = cls.get_status(file_path)
+        return s in [StatusOptions.DUPLICATE, StatusOptions.UPLOADED]
 
-    def directory_changed(self) -> bool:
-        """
-        Check if the directory has changed since the last time it was processed.
-        """
-        # If our version has changed, we can't trust that our directory iterator will be the same.
-        if self.version < VERSION:
-            return True
-        return self.last_processed_time <= self.directory.stat().st_mtime
+    @classmethod
+    def was_failed(cls, file_path : Path) -> bool:
+        return cls.get_status(file_path) == StatusOptions.ERROR
 
-    def __len__(self) -> int:
-        """
-        Get the number of statuses.
-        """
-        with self.lock:
-            return self._session.query(StatusRecord).filter_by(
-                directory=str(self.directory)
-            ).count()
+    @classmethod
+    def was_skipped(cls, file_path : Path) -> bool:
+        return cls.get_status(file_path) == StatusOptions.SKIPPED
 
-    def __iter__(self) -> Iterator[tuple[str, UploadStatus]]:
+    @classmethod
+    def get_all(cls, directory: Path) -> Iterator[tuple[str, StatusOptions]]:
         """
-        Iterate over the statuses.
+        Iterate over all files and their status for a given directory.
         """
-        with self.lock:
-            records = self._session.query(StatusRecord).filter_by(
-                directory=str(self.directory)
-            ).all()
-        return iter((r.filename, r.status) for r in records)
+        session = DbManager.get_session()
+        try:
+            records = (session.query(FileStatus)
+                              .filter_by(directory=str(directory))
+                              .all())
+            for r in records:
+                yield (r.filename, r.status)
+        finally:
+            session.close()
 
-    def __getitem__(self, key: str) -> UploadStatus:
+    @classmethod
+    def get_all_status(cls, directory: Path, status: StatusOptions) -> Iterator[str]:
         """
-        Get the status of a file.
+        Iterate over all files with a given status in the specified directory.
         """
-        if (status := self.get_status(key)) is None:
-            raise KeyError(f"No status found for file: {key}")
-        return status
+        session = DbManager.get_session()
+        try:
+            records = (session.query(FileStatus)
+                              .filter_by(directory=str(directory), status=status)
+                              .all())
+            for r in records:
+                yield r.filename
+        finally:
+            session.close()
 
-    def __setitem__(self, key: str, value: UploadStatus):
-        """
-        Set the status of a file.
-        """
-        self.update_status(key, value)
-
-    def __delitem__(self, key: str):
+    @classmethod
+    def delete_status(cls, file_path : Path):
         """
         Delete the status of a file.
         """
-        with self.lock:
-            self._session.query(StatusRecord).filter_by(
-                directory=str(self.directory),
-                filename=key
+        directory = file_path.parent
+        filename = file_path.name
+        
+        session = DbManager.get_session()
+        try:
+            session.query(FileStatus).filter_by(
+                directory=str(directory),
+                filename=filename
             ).delete()
-            self.save()
+            session.commit()
+        except sqlalchemy.exc.SQLAlchemyError as e:
+            logger.error("Error deleting status: %s", e)
+            session.rollback()
+        finally:
+            session.close()
 
-    def __contains__(self, key: str) -> bool:
-        return self.get_status(key) is not None
+    @classmethod
+    def count(cls, directory: Path) -> int:
+        """
+        Get the number of files tracked in the specified directory.
+        """
+        session = DbManager.get_session()
+        try:
+            return (session.query(FileStatus)
+                          .filter_by(directory=str(directory))
+                          .count())
+        finally:
+            session.close()
 
-    def __enter__(self) -> Status:
+    @classmethod
+    def count_records(cls) -> int:
         """
-        Enter the runtime context related to this object.
+        Get the number of records in the database.
         """
-        return self
+        session = DbManager.get_session()
+        try:
+            return session.query(FileStatus).count()
+        finally:
+            session.close()
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """
-        Exit the runtime context and ensure changes are saved.
-        """
-        self.save()
-        self._session.close()
+class DirectoryStatus(Base):
+    __tablename__ = 'directory_status'
+    __allow_unmapped__ = True
 
-    def __repr__(self) -> str:
-        return f"Status(directory={self.directory})"
+    id = Column(Integer, primary_key=True)
+    directory = Column(String, nullable=False)
+    globs = Column(String, nullable=True)
+    file_count = Column(Integer, nullable=False, default=0)
+    last_modified_time = Column(Float, nullable=False, default=0.0)
+    version = Column(Integer, nullable=False, default=-1)
+
+    _sessionmaker: sessionmaker | None = None
+
+    @classmethod
+    def get_queryset(cls, session : Session) -> Query[Self]:
+        return session.query(DirectoryStatus)
+
+    @classmethod
+    def query(cls, session : Session, directory : Path | None = None, globs : str | list[str] | None = None) -> Query[Self]:
+        q = cls.get_queryset(session)
+        if directory:
+            q = q.filter_by(directory=str(directory))
+            
+        # TODO: Likely a bug here, in the event of globs = None returning records with any glob value
+        # ...instead of the expected behavior of returning records with no glob value
+        # TODO: Another bug exists with the ordering of the list. If the list is not sorted, the query will sometimes fail.
+        if globs:
+            if isinstance(globs, list):
+                globs = ",".join(globs)
+            q = q.filter_by(globs=globs)
+        return q
+
+    @classmethod
+    def get_directory_status(cls, directory: Path, globs: str | list[str] | None = None) -> DirectoryStatus | None:
+        session = DbManager.get_session()
+        try:
+            return (cls.query(session, directory, globs).first())
+        finally:
+            session.close()
+
+    @classmethod
+    def update(cls, directory: Path, file_count: int, last_modified_time : float | None = None, globs: str | list[str] | None = None):
+        """
+        Update or create the directory status record with the current file_count,
+        the directory's last modified time, and the current VERSION.
+        """
+        directory = directory.absolute()
+        session = DbManager.get_session()
+
+        # Convert list of globs into a str
+        if globs and isinstance(globs, list):
+            globs = ",".join(globs)
+        
+        try:
+            record = (cls.query(session, directory, globs).first())
+
+            if not last_modified_time:
+                if not directory.exists():
+                    raise FileNotFoundError(f"Directory {directory} does not exist, and no last mod time provided.")
+                last_modified_time = directory.stat().st_mtime
+
+            if record is None:
+                record = DirectoryStatus(
+                    directory=str(directory),
+                    file_count=file_count,
+                    last_modified_time=last_modified_time,
+                    version=VERSION,
+                    globs=globs
+                )
+                session.add(record)
+            else:
+                record.file_count = file_count
+                record.last_modified_time = last_modified_time
+                record.version = VERSION
+            session.commit()
+        except sqlalchemy.exc.SQLAlchemyError as e:
+            logger.error("Error updating directory status: %s", e)
+            session.rollback()
+        finally:
+            session.close()
+
+    @classmethod
+    def has_directory_changed(cls, directory: Path, file_count: int, last_modified_time : float | None = None, globs : str | list[str] | None = None) -> bool:
+        """
+        Determine if we can skip processing a directory. We skip if:
+          - The directory status exists,
+          - The stored file_count matches the given file_count,
+          - The directory's last_modified_time matches the stored one,
+          - The stored version matches the current VERSION.
+
+        If all these conditions are met, it means the directory has not changed
+        since the last processing, and our version hasn't changed, so we can skip.
+        """
+        session = DbManager.get_session()
+        try:
+            record = (cls.query(session, directory, globs).first())
+
+            if record is None:
+                # No record means we have never processed this directory before
+                return False
+
+            if not last_modified_time:
+                if not directory.exists():
+                    raise FileNotFoundError(f"Directory {directory} does not exist, and no last mod time provided.")
+                last_modified_time = directory.stat().st_mtime
+            return (
+                record.file_count == file_count
+                and record.last_modified_time == last_modified_time
+                and record.version == VERSION
+            )
+        finally:
+            session.close()
+
+    @classmethod
+    def delete_directory_status(cls, directory: Path, globs: str | list[str] | None = None):
+        """
+        Delete the directory status record if it exists.
+        """
+        session = DbManager.get_session()
+        try:
+            cls.query(session, directory, globs).delete()
+            session.commit()
+        except sqlalchemy.exc.SQLAlchemyError as e:
+            logger.error("Error deleting directory status: %s", e)
+            session.rollback()
+        finally:
+            session.close()
+
+    @classmethod
+    def count_records(cls) -> int:
+        """
+        Get the number of records in the database.
+        """
+        session = DbManager.get_session()
+        try:
+            return cls.get_queryset(session).count()
+        finally:
+            session.close()
+
+# Initialize the database at app start
+DbManager.initialize_db()
