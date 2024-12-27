@@ -109,6 +109,10 @@ class Script(BaseModel, ABC):
         """
         Retrieves the SSID of the current network.
         """
+        # If not on Windows, return an empty string
+        if os.name != 'nt' or not shutil.which('powershell.exe'):
+            return ""
+        
         try:
             result = cls.subprocess(
                 ['powershell.exe', 'netsh wlan show interfaces'],

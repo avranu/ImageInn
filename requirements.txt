@@ -12,3 +12,4 @@ cachetools==5.5.0
 python-dotenv==1.0.1
 types-cachetools==5.5.0.20240820
 types-tqdm
+sqlalchemy
