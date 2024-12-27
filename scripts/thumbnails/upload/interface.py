@@ -140,8 +140,6 @@ class ImmichInterface(FileManager, ABC):
         if not v:
             return None
         db_path = Path(v)
-        if not db_path.exists():
-            raise FileNotFoundError(f"Database file {db_path} does not exist.")
         return db_path
 
 
