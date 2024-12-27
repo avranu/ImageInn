@@ -68,7 +68,6 @@ from scripts.thumbnails.upload.meta import DEFAULT_DB_PATH
 
 # Add the root directory of the project to sys.path
 PARENT_DIR = Path(__file__).resolve().parents[3]
-print('Adding path: ', PARENT_DIR.absolute().as_posix())
 sys.path.append(PARENT_DIR.absolute().as_posix())
 
 from scripts import setup_logging

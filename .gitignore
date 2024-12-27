@@ -3,7 +3,6 @@
 logs/
 
 # Compiled code
-__*
 .*_cache
 *.pyc
 *.egg-info
