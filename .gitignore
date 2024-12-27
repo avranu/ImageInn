@@ -19,6 +19,7 @@ package-lock.json
 *.out
 ~*
 *.swp
+__pycache__/
 
 # User configs
 .vscode/
@@ -48,3 +49,6 @@ pgsql
 *.gif
 *.mp4
 *.svg
+
+# Tools
+.aider*
