@@ -17,10 +17,6 @@
     "url": "https://github.com/Avranu/ImageInn/issues"
   },
   "homepage": "https://github.com/Avranu/ImageInn#readme",
-  "devDependencies": {
-  },
-  "dependencies": {
-  },
   "jest": {
     "roots": [
       "<rootDir>/src"
