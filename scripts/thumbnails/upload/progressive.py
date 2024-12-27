@@ -67,7 +67,9 @@ from scripts.lib.db.images import ImagesDatabase
 from scripts.thumbnails.upload.meta import DEFAULT_DB_PATH
 
 # Add the root directory of the project to sys.path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..')))
+PARENT_DIR = Path(__file__).resolve().parents[3]
+print('Adding path: ', PARENT_DIR.absolute().as_posix())
+sys.path.append(PARENT_DIR.absolute().as_posix())
 
 from scripts import setup_logging
 from scripts.lib.types import ProgressBar, RED, CYAN, CYAN2, YELLOW, YELLOW2, BLUE, PURPLE, RESET
