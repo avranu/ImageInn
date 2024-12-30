@@ -22,30 +22,7 @@
 *        2024-12-29     By Jess Mann                                                                                   *
 *                                                                                                                      *
 *********************************************************************************************************************"""
-from setuptools import setup, find_packages
+from setuptools import setup
 
-setup(
-    name='imageinn',
-    version='0.1.2',
-    packages=find_packages(include=["scripts", "scripts.*"]),
-    author="Jess Mann",
-    install_requires=[
-        'tqdm',
-        'exifread',
-        'djangofoundry',
-        'argparse',
-        'rawpy',
-        'imageio',
-        'colorlog',
-        'pydantic',
-        'xxhash',
-        'cachetools',
-        'python-dotenv',
-    ],
-    entry_points={
-        'console_scripts': [
-            'upload=scripts.thumbnails.upload.progressive:main',
-            'organize=scripts.monthly.organize.base:main',
-        ],
-    },
-)
+setup()
+
