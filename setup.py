@@ -29,7 +29,6 @@ setup(
     version='0.1.2',
     packages=find_packages(),
     author="Jess Mann",
-    python_requires=">=3.10",
     install_requires=[
         'tqdm',
         'exifread',
