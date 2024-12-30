@@ -130,7 +130,7 @@ class IGImageProcessor:
     def topaz_available(self) -> bool:
         if self._topaz_available is None:
             self._topaz_available = self.topaz_exe and self.topaz_exe.exists()
-            logger.info('Checking if Topaz DeNoise AI is available: ... %s', self._topaz_available)
+            logger.debug('Checking if Topaz DeNoise AI is available: ... %s', self._topaz_available)
 
         return self._topaz_available
 
