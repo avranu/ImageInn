@@ -13,7 +13,7 @@
 *        Created: 2024-09-25                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
-*        Copyright (c) 2024 Jess Mann                                                                                  *
+*        Copyright (c) 2025 Jess Mann                                                                                  *
 *                                                                                                                      *
 * -------------------------------------------------------------------------------------------------------------------- *
 *                                                                                                                      *
@@ -853,48 +853,54 @@ class FileManager(Script):
             recursive: Whether to delete recursively.
             cleanup: Whether to remove files that stall the process.
         """
-        if not directory.exists():
+        try:
+            if not directory.exists():
+                return True
+            
+            junk_files = []
+            for f in directory.iterdir():
+                if f.is_dir():
+                    if recursive and self.delete_directory_if_empty(f):
+                        # subdir is now deleted, so it doesnt count
+                        continue
+
+                    # A directory exists and we can't remove it...
+                    return False
+
+                if cleanup:
+                    # Remove files we don't care about that stall this process.
+                    if self.is_junk(f):
+                        # Don't remove junk files unless the rest of the dir is empty
+                        junk_files.append(f)
+                        continue
+
+                # something was found, so it's not empty
+                logger.debug('Directory not empty: Found file="%s" in dir="%s".', f, directory.absolute())
+                return False
+
+            # Nothing found except junk files... time to remove them.
+            for junk in junk_files:
+                logger.debug('Deleting file="%s" in directory="%s"', junk, directory)
+                if not self.delete_file(junk, use_trash=False):
+                    logger.error('Unable to delete junk file: %s', junk)
+                    return False
+
+            # Nothing was found
+            if not self.check_dry_run(f'deleting empty directory {directory}'):
+                try:
+                    # use absolute to avoid Path('.').rmdir(), which generates an OSError
+                    directory.absolute().rmdir()
+                except OSError as ose:
+                    logger.error('Unable to delete directory: %s -> %s', directory, ose)
+                    return False
+
+            self.record_delete_directory()
             return True
-        
-        junk_files = []
-        for f in directory.iterdir():
-            if f.is_dir():
-                if recursive and self.delete_directory_if_empty(f):
-                    # subdir is now deleted, so it doesnt count
-                    continue
 
-                # A directory exists and we can't remove it...
-                return False
+        except PermissionError as e:
+            logger.error('Permission denied deleting directory: %s -> %s', directory, e)
 
-            if cleanup:
-                # Remove files we don't care about that stall this process.
-                if self.is_junk(f):
-                    # Don't remove junk files unless the rest of the dir is empty
-                    junk_files.append(f)
-                    continue
-
-            # something was found, so it's not empty
-            logger.debug('Directory not empty: Found file="%s" in dir="%s".', f, directory.absolute())
-            return False
-
-        # Nothing found except junk files... time to remove them.
-        for junk in junk_files:
-            logger.debug('Deleting file="%s" in directory="%s"', junk, directory)
-            if not self.delete_file(junk, use_trash=False):
-                logger.error('Unable to delete junk file: %s', junk)
-                return False
-
-        # Nothing was found
-        if not self.check_dry_run(f'deleting empty directory {directory}'):
-            try:
-                # use absolute to avoid Path('.').rmdir(), which generates an OSError
-                directory.absolute().rmdir()
-            except OSError as ose:
-                logger.error('Unable to delete directory: %s -> %s', directory, ose)
-                return False
-
-        self.record_delete_directory()
-        return True
+        return False
 
     def is_junk(self, file_path : Path) -> bool:
         """
