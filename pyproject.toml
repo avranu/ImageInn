@@ -1,6 +1,6 @@
 [project]
 name = "ImageInn"
-version = "0.1.12"
+version = "0.1.13"
 description = "Processing and Organizing Photos"
 authors = [{ name="Jess Mann", email="jess.a.mann@gmail.com" }]
 dependencies = [
@@ -27,8 +27,14 @@ upload = "scripts.thumbnails.upload.progressive:main"
 organize = "scripts.monthly.organize.base:main"
 ig = "scripts.processing.ig.processor:main"
 
+[tool.setuptools]
+# This ensures "src" is your package root ("package_dir" maps top-level to "src")
+package-dir = { "" = "src" }
+
 [tool.setuptools.packages.find]
 where = ["src"]
+# Optionally ensure it picks up anything starting with 'scripts'
+include = ["scripts*"]
 
 [build-system]
 requires = ["setuptools", "wheel"]
