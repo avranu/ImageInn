@@ -61,15 +61,17 @@ Examples:
 
 from __future__ import annotations
 import logging
+import os
 from pathlib import Path
 import subprocess
 import time
 from PIL import Image, ImageFilter, ImageEnhance
 import argparse
 from tqdm import tqdm
-from dataclasses import dataclass, field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 from decimal import Decimal
 import numpy as np
+from scripts.lib.file_manager import FileManager
 from scripts.lib.types import Number
 from scripts.processing.meta import (
     DEFAULT_CANVAS_SIZE,
@@ -88,8 +90,7 @@ from scripts.processing.ig.image import IGImage
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-@dataclass
-class IGImageProcessor:
+class IGImageProcessor(FileManager):
     """
     Process images for Instagram posts.
 
@@ -107,20 +108,34 @@ class IGImageProcessor:
         make_image_adjustments (bool): Flag to enable/disable image adjustments.
     """
     input_dir: Path
-    margin: int = field(default=DEFAULT_MARGIN)
-    canvas_size: int = field(default=DEFAULT_CANVAS_SIZE)
-    blur_amount: Number = field(default=DEFAULT_BLUR)
-    brightness_factor: Number = field(default=DEFAULT_BRIGHTNESS)
-    contrast_factor: Number = field(default=DEFAULT_CONTRAST)
-    saturation_factor: Number = field(default=DEFAULT_SATURATION)
-    border_size: int = field(default=DEFAULT_BORDER)
-    file_suffix: str = '_ig'
-    max_errors: int = 5
-    skip_image_adjustments: bool = False
-    topaz_exe: Path | None = field(default=DEFAULT_TOPAZ_PATH)
-    _progress_bar : tqdm | None = field(init=False, default=None)
-    _topaz_available: bool | None = field(init=False, default=None)
-    topaz_output_dir : Path | None = field(init=False, default=None)
+    margin: int = Field(default=DEFAULT_MARGIN)
+    canvas_size: int = Field(default=DEFAULT_CANVAS_SIZE)
+    blur_amount: Number = Field(default=DEFAULT_BLUR)
+    brightness_factor: Number = Field(default=DEFAULT_BRIGHTNESS)
+    contrast_factor: Number = Field(default=DEFAULT_CONTRAST)
+    saturation_factor: Number = Field(default=DEFAULT_SATURATION)
+    border_size: int = Field(default=DEFAULT_BORDER)
+    file_suffix: str = Field(default='_ig')
+    max_errors: int = Field(default=5)
+    skip_image_adjustments: bool = Field(default=False)
+    topaz_exe: Path | None = Field(default=DEFAULT_TOPAZ_PATH)
+    topaz_output_dir : Path | None = Field(default=None)
+    
+    _progress_bar : tqdm | None = PrivateAttr(default=None)
+    _topaz_available: bool | None = PrivateAttr(default=None)
+    _ig_output_dir : Path | None = PrivateAttr(default=None)
+
+    @field_validator('input_dir', mode='before')
+    def validate_input_dir(cls, v):
+        return Path(v)
+
+    @field_validator('topaz_exe', mode='before')
+    def validate_topaz_exe(cls, v):
+        return Path(v)
+
+    @field_validator('topaz_output_dir', mode='before')
+    def validate_topaz_output_dir(cls, v):
+        return Path(v)
 
     @property
     def progress_bar(self) -> tqdm | None:
@@ -133,6 +148,24 @@ class IGImageProcessor:
             logger.debug('Checking if Topaz DeNoise AI is available: ... %s', self._topaz_available)
 
         return self._topaz_available
+
+    @property
+    def ig_output_dir(self) -> Path | None:
+        # Cache it
+        if self._ig_output_dir is not None:
+            return self._ig_output_dir
+
+        if os.name == 'nt':
+            # Windows
+            directory = Path('P:/Instagram')
+        else:
+            # Linux
+            directory = Path('/mnt/p/Instagram')
+
+        if directory.exists():
+            return directory
+        
+        return None
 
     def _get_images(self) -> list[Path]:
         files = [img for img in self.input_dir.glob('*.jpg') if img.is_file() and not img.stem.endswith(self.file_suffix)]
@@ -186,6 +219,7 @@ class IGImageProcessor:
                 self.topaz_output_dir.rmdir()
 
         logger.info("Processed %s images", count)
+        
     def update_progress(self, description : str = None) -> None:
         if not self.progress_bar:
             logger.error('Progress bar not initialized')
@@ -222,6 +256,11 @@ class IGImageProcessor:
 
         self.update_progress(f'Saving image: {image.output_path.name}')
         image.save()
+
+        # Copy it to a standard place
+        if self.ig_output_dir:
+            self.update_progress(f'Copying to Instagram folder: {image.output_path.name}')
+            self.copy_file(image.output_path, self.ig_output_dir / image.output_path.name)
 
         # Cleanup, by removing topaz output
         if topaz_file_path:
