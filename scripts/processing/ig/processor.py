@@ -379,6 +379,26 @@ class IGImageProcessor(FileManager):
         logger.debug('Background image processing complete')
         return blurred
 
+class ArgNamespace(argparse.Namespace):
+    """Namespace for argparse arguments."""
+    input_dir: Path
+    margin: int
+    size: int
+    blur: Decimal
+    brightness: Decimal
+    contrast: Decimal
+    saturation: Decimal
+    border: int
+    suffix: str
+    skip_adjustments: bool
+    topaz_exe: Path
+    verbose: bool
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.input_dir = Path(self.input_dir)
+        self.topaz_exe = Path(self.topaz_exe)
+
 def main() -> None:
     """Main function to parse arguments and start the image processing."""
     parser = argparse.ArgumentParser(description='''Instagram Image Processor.
@@ -396,7 +416,11 @@ def main() -> None:
     parser.add_argument('--suffix', type=str, default='_ig', help='Suffix to add to the processed images.')
     parser.add_argument('--skip-adjustments', action='store_true', help='Skip adjustments to the main image based on histogram analysis.')
     parser.add_argument('--topaz-exe', type=Path, default=DEFAULT_TOPAZ_PATH, help='Path to the Topaz DeNoise AI executable.')
-    args = parser.parse_args()
+    parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging.')
+    args = parser.parse_args(namespace=ArgNamespace)
+
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
 
     processor = IGImageProcessor(
         input_dir = args.input_dir,
