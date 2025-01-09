@@ -24,6 +24,7 @@
 *********************************************************************************************************************"""
 from __future__ import annotations
 import asyncio
+from enum import Enum
 import os
 import re
 import subprocess
@@ -84,6 +85,12 @@ PATTERNS = {
     'windows_drive': re.compile(r'[A-Za-z]:[\\/]')
 }
 
+# Tool options (rsync, shutil, teracopy)
+class CopyTools(Enum):
+    RSYNC = 'rsync'
+    SHUTIL = 'shutil'
+    TERACOPY = 'teracopy'
+
 class FileManager(Script):
     directory: Path = Field(default=Path('.'))
     trash_directory : Path | None = None
@@ -100,6 +107,7 @@ class FileManager(Script):
     _cache_lock: Lock = PrivateAttr(default_factory=Lock)
     _glob_patterns : list[str] = PrivateAttr(default_factory=list)
     _trash_subdir : Path | None = None
+    _copy_tool : str | None = None
 
     _sony_clip_pattern : re.Pattern | None = None
 
@@ -173,6 +181,18 @@ class FileManager(Script):
         if not self._sony_clip_pattern:
             self._sony_clip_pattern = re.compile(r'.*/M4ROOT/CLIP/\w+[.](xml|XML)$')
         return self._sony_clip_pattern
+
+    @property
+    def copy_tool(self) -> str:
+        if not self._copy_tool:
+            # Check if rsync is available
+            if shutil.which('rsync'):
+                self._copy_tool = CopyTools.RSYNC.value
+            elif shutil.which('teracopy'):
+                self._copy_tool = CopyTools.TERACOPY.value
+            else:
+                self._copy_tool = CopyTools.SHUTIL.value
+        return self._copy_tool
 
     @classmethod
     def get_default_glob_pattern(cls) -> str:
@@ -1194,7 +1214,12 @@ class FileManager(Script):
         if not self.check_dry_run(f'copying {source_path} to {destination_path}'):
             try:
                 # This verifies the file checksum after copy.
-                self._copy_with_rsync(source_path, destination_path)
+                if self.copy_tool == CopyTools.RSYNC.value:
+                    self._copy_with_rsync(source_path, destination_path)
+                elif self.copy_tool == CopyTools.TERACOPY.value:
+                    self._copy_with_teracopy(source_path, destination_path)
+                else:
+                    self._copy_with_shutil(source_path, destination_path)
             except PermissionError as pe:
                 if 'Operation not permitted' in str(pe) and destination_path.exists():
                     logger.warning('WARNING: Permission error (likely due to copying metadata). source_path="%s", destination_path="%s" -> %s', source_path.absolute(), destination_path.absolute(), pe)
@@ -1219,7 +1244,7 @@ class FileManager(Script):
                 The destination path.
 
         Returns:
-            The destination path.
+            True on success
 
         Raises:
             FileNotFoundError: If the file is not found after copying.
@@ -1239,6 +1264,41 @@ class FileManager(Script):
 
         return True
 
+    def _copy_with_teracopy(self, source_path : Path, destination_path : Path) -> bool:
+        """
+        Copy a file to a new location using TeraCopy.
+
+        Args:
+            source: 
+                The source file to copy.
+            destination: 
+                The destination path.
+
+        Returns:
+            True on success
+
+        Raises:
+            FileNotFoundError: If the file is not found after copying.
+            ValueError: If the checksums do not match after copying.
+        """
+        source_hash = self.hash_file(source_path)
+
+        try:
+            self.subprocess(['teracopy.exe', 'Copy', str(source_path), str(destination_path), '/NoClose', '/RenameAll'])
+        except subprocess.CalledProcessError as e:
+            logger.error(f'Teracopy to {destination_path} failed with error code {e.returncode}')
+            raise
+
+        if not destination_path.exists():
+            raise FileNotFoundError(f"Unable to find file after copy with TeraCopy: {destination_path}")
+
+        destination_hash = self.hash_file(destination_path)
+        if source_hash != destination_hash:
+            logger.critical(f"Checksum mismatch after copying with TeraCopy {source_path} to {destination_path}")
+            raise ValueError(f"Checksum mismatch after copying with TeraCopy {source_path} to {destination_path}")
+
+        return True
+
     def _copy_with_rsync(self, source_path : Path, destination_path : Path, *, timeout : int = 0, retries : int = 3) -> bool:
         """
         Copy a file to a new location using rsync.
@@ -1250,7 +1310,7 @@ class FileManager(Script):
             retries: The number of times to retry the rsync command if it fails for any reason. Default 3.
 
         Returns:
-            The destination path.
+            True on success.
 
         Raises:
             subprocess.CalledProcessError: If an error occurs while copying the file.

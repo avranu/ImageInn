@@ -8,6 +8,8 @@ logs/
 *.egg-info
 **/frontend/static/
 *.ipynb
+build/
+dist/
 
 # Libraries and tools
 node_modules/
