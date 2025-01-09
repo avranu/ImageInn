@@ -10,6 +10,7 @@ dependencies = [
     "djangofoundry==0.0.9",
     "argparse==1.4.0",
     "rawpy==0.23.1",
+    "rawpy==0.23.1",
     "imageio==2.35.1",
     "colorlog==6.8.2",
     "pydantic==2.9.2",
