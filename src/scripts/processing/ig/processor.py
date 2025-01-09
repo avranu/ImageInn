@@ -220,11 +220,28 @@ class IGImageProcessor(FileManager):
                         self.update_progress()
 
         finally:
-            # Cleanup by removing topaz dir
-            if self.topaz_output_dir:
-                self.topaz_output_dir.rmdir()
+            self.cleanup_topaz_output()
 
         logger.info("Processed %s images", count)
+
+    def cleanup_topaz_output(self) -> bool:
+        # No dir to cleanup => success
+        if not self.topaz_output_dir:
+            return True
+
+        try:
+            # Delete all files inside it
+            for file in self.topaz_output_dir.glob('*'):
+                file.unlink()
+
+            # Delete the dir  
+            self.topaz_output_dir.rmdir()
+            
+        except Exception as e:
+            logger.warning("Failed to cleanup Topaz output dir: %s", e)
+            return False
+
+        return True
         
     def update_progress(self, description : str = None) -> None:
         if not self.progress_bar:
@@ -266,7 +283,7 @@ class IGImageProcessor(FileManager):
         # Copy it to a standard place
         if self.ig_output_dir:
             self.update_progress(f'Copying to Instagram folder: {image.output_path.name}')
-            self.copy_file(image.output_path, self.ig_output_dir / image.output_path.name)
+            self.copy_file(image.output_path, self.ig_output_dir / image.output_path.name, skip_existing=True)
 
         # Cleanup, by removing topaz output
         if topaz_file_path:

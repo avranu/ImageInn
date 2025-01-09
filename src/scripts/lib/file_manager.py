@@ -1181,7 +1181,7 @@ class FileManager(Script):
         logger.debug('File move %s: %s -> %s', 'succeeded' if result else 'failed', source_path, destination_path)
         return result
 
-    def copy_file(self, source_path : Path, destination_path : Path) -> Path:
+    def copy_file(self, source_path : Path, destination_path : Path, skip_existing : bool = False) -> Path:
         """
         Copy a file to a new location.
 
@@ -1190,12 +1190,9 @@ class FileManager(Script):
                 The source file to copy.
             destination: 
                 The destination path.
-            verify:
-                Whether to verify the copy by comparing checksums. 
-                If None, verify will be set to True if the source and destination are on different drives.
-                The rationale is that copying files to the same drive just duplicates the file data, and the file data should not change,
-                however, copying files to a different drive will require a full copy, so the file data should be verified.
-
+            skip_existing:
+                Whether to skip the copy if the destination file already exists. If false, an exception will be raised instead.
+                
         Returns:
             The destination path.
         """     
@@ -1209,6 +1206,9 @@ class FileManager(Script):
             destination_path = destination_path / source_path.name
 
         if destination_path.exists():
+            if skip_existing:
+                logger.debug('Skipping copy, destination file already exists: %s', destination_path)
+                return destination_path
             raise FileExistsError(f"Copy Destination file already exists: {destination_path}")
 
         if not self.check_dry_run(f'copying {source_path} to {destination_path}'):

@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_CANVAS_SIZE : int = 2160
 DEFAULT_MARGIN : int = 100
 DEFAULT_BLUR : int = 100
-DEFAULT_BRIGHTNESS : Number = 1.9
+DEFAULT_BRIGHTNESS : Number = 2.5
 DEFAULT_CONTRAST : Number = 0.3
-DEFAULT_SATURATION : Number = 0.5
+DEFAULT_SATURATION : Number = 0.3
 DEFAULT_BORDER : int = 8
 
 class AdjustmentTypes(Enum):
@@ -47,13 +47,13 @@ class AdjustmentTypes(Enum):
     TOPAZ = 'topaz'
 
 def get_topaz_path() -> Path | None:
-    if platform.system() == 'Linux' and ('Microsoft' in platform.release() or os.name == 'posix'):
+    if platform.system() == 'Linux' and ('Microsoft' in platform.release()):
         logger.info('Detected platform: WSL')
         return Path("/mnt/c/Program Files/Topaz Labs LLC/Topaz Photo AI/tpai.exe")
 
     if platform.system() == 'Linux':
-        logger.info('Detected platform: Linux')
-        return Path("/mnt/c/Program Files/Topaz Labs LLC/Topaz Photo AI/tpai.exe")
+        logger.info('Detected platform: Linux. Cannot use topaz ai')
+        return None
 
     if platform.system() == 'Windows':
         logger.info('Detected platform: Windows')
