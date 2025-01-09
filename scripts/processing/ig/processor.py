@@ -49,7 +49,7 @@ Examples:
 *        Created: 2024-07-19                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
-*        Copyright (c) 2024 Jess Mann                                                                                  *
+*        Copyright (c) 2025 Jess Mann                                                                                  *
 *                                                                                                                      *
 * -------------------------------------------------------------------------------------------------------------------- *
 *                                                                                                                      *
@@ -341,7 +341,7 @@ def main() -> None:
                     This script processes JPG images in a directory, scaling them to fit within a square canvas,
                     applyies a blurred and enhanced version of the image as the background, and saving the
                     processed image with a suffix.''')
-    parser.add_argument('input_dir', type=Path, help='Path to the input directory containing JPG images.')
+    parser.add_argument('input_dir', type=Path, nargs="?", default=".", help='Path to the input directory containing JPG images.')
     parser.add_argument('--margin', '-m', type=int, default=DEFAULT_MARGIN, help='Margin size for the canvas.')
     parser.add_argument('--size', '-s', type=int, default=DEFAULT_CANVAS_SIZE, help='Canvas size for the output images.')
     parser.add_argument('--blur', '-b', type=Decimal, default=DEFAULT_BLUR, help='Amount of Gaussian blur to apply.')
