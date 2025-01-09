@@ -1,3 +1,27 @@
+"""*********************************************************************************************************************
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    METADATA:                                                                                                         *
+*                                                                                                                      *
+*        File:    meta.py                                                                                              *
+*        Project: imageinn                                                                                             *
+*        Version: 0.1.0                                                                                                *
+*        Created: 2025-01-09                                                                                           *
+*        Author:  Jess Mann                                                                                            *
+*        Email:   jess.a.mann@gmail.com                                                                                *
+*        Copyright (c) 2025 Jess Mann                                                                                  *
+*                                                                                                                      *
+* -------------------------------------------------------------------------------------------------------------------- *
+*                                                                                                                      *
+*    LAST MODIFIED:                                                                                                    *
+*                                                                                                                      *
+*        2025-01-09     By Jess Mann                                                                                   *
+*                                                                                                                      *
+*********************************************************************************************************************"""
 from enum import Enum
 import logging
 import os
@@ -10,8 +34,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_CANVAS_SIZE : int = 2160
 DEFAULT_MARGIN : int = 100
 DEFAULT_BLUR : int = 100
-DEFAULT_BRIGHTNESS : Number = 1.8
-DEFAULT_CONTRAST : Number = 0.5
+DEFAULT_BRIGHTNESS : Number = 1.9
+DEFAULT_CONTRAST : Number = 0.3
 DEFAULT_SATURATION : Number = 0.5
 DEFAULT_BORDER : int = 8
 
