@@ -151,21 +151,26 @@ class IGImageProcessor(FileManager):
 
     @property
     def ig_output_dir(self) -> Path | None:
-        # Cache it
-        if self._ig_output_dir is not None:
-            return self._ig_output_dir
+        if self._ig_output_dir is None:
+            try:
+                if os.name == 'nt':
+                    # Windows
+                    directory = Path('P:/Instagram')
+                else:
+                    # Linux
+                    directory = Path('/mnt/p/Instagram')
 
-        if os.name == 'nt':
-            # Windows
-            directory = Path('P:/Instagram')
-        else:
-            # Linux
-            directory = Path('/mnt/p/Instagram')
-
-        if directory.exists():
-            return directory
+                if directory.exists():
+                    logger.debug('Instagram output directory found: %s', directory)
+                    # Cache it
+                    self._ig_output_dir = directory
+                else:
+                    logger.debug('Instagram output directory not found')
+            except Exception as e:
+                # Certain envs (windows?) throw an error on bad drives
+                logger.error('Failed to get Instagram output directory: %s', e)
         
-        return None
+        return self._ig_output_dir
 
     def _get_images(self) -> list[Path]:
         files = [img for img in self.input_dir.glob('*.jpg') if img.is_file() and not img.stem.endswith(self.file_suffix)]
