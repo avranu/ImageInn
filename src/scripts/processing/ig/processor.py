@@ -69,7 +69,7 @@ import time
 from PIL import Image, ImageFilter, ImageEnhance
 import argparse
 from tqdm import tqdm
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+from pydantic import Field, PrivateAttr, field_validator
 from decimal import Decimal
 import numpy as np
 from scripts.lib.file_manager import FileManager
@@ -208,6 +208,9 @@ class IGImageProcessor(FileManager):
             with tqdm(total=total, desc="Processing images") as self._progress_bar:
                 for file_path in images:
                     try:
+                        if self.check_if_processed(file_path):
+                            logger.debug(f"Skipping {file_path.name}. Already processed.")
+                            continue
                         self.process_image(file_path)
                         count += 1
                     except Exception as e:
@@ -223,6 +226,13 @@ class IGImageProcessor(FileManager):
             self.cleanup_topaz_output()
 
         logger.info("Processed %s images", count)
+
+    def check_if_processed(self, image_path : Path) -> bool:
+        # Check if any file is in the output dir that begins with image_path.stem and ends with the suffix
+        for image in self.input_dir.glob(f"{image_path.stem}*{self.file_suffix}.jpg"):
+            if image.is_file():
+                return True
+        return False
 
     def cleanup_topaz_output(self) -> bool:
         # No dir to cleanup => success
@@ -340,10 +350,10 @@ class IGImageProcessor(FileManager):
         main_image = image.scaled
 
         # Convert to numpy array for analysis
-        img_array = np.array(main_image)
-        hist, _ = np.histogram(img_array, bins=256, range=(0, 255))
+        #img_array = np.array(main_image)
+        #hist, _ = np.histogram(img_array, bins=256, range=(0, 255))
 
-        # Calculate saturation
+        # Calculate image values
         hsv_img = main_image.convert("HSV")
         h, s, v = hsv_img.split()
         saturation = np.array(s)
