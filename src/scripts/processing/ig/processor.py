@@ -176,7 +176,7 @@ class IGImageProcessor(FileManager):
     def _get_images(self) -> list[Path]:
         files = [img for img in self.input_dir.glob('*.jpg') if img.is_file() and not img.stem.endswith(self.file_suffix)]
 
-        # Check if any files will be overwritten
+        # Check if any files will be overwritten -- TODO: this is broken.
         existing_files = [str(img) for img in files if (self.input_dir / f"{img.stem}{self.file_suffix}.jpg").exists()]
         if existing_files:
             logger.warning(f"{len(existing_files)} files will be overwritten. Waiting for 10 seconds before continuing")
