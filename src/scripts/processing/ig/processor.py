@@ -117,7 +117,7 @@ class IGImageProcessor(FileManager):
     saturation_factor: Number = Field(default=DEFAULT_SATURATION)
     border_size: int = Field(default=DEFAULT_BORDER)
     file_suffix: str = Field(default='_ig')
-    max_errors: int = Field(default=5)
+    max_errors: int = Field(default=10)
     skip_image_adjustments: bool = Field(default=False)
     topaz_exe: Path | None = Field(default=DEFAULT_TOPAZ_PATH)
     topaz_output_dir : Path | None = Field(default=None)
