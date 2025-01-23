@@ -13,3 +13,6 @@ python-dotenv==1.0.1
 types-cachetools==5.5.0.20240820
 types-tqdm
 sqlalchemy
+openai==1.60.0
+requests==2.32.3
+fitz==0.0.1

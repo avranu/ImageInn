@@ -34,6 +34,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# I:\Historical\New York\HRSH\Found Photos\pdfs
+DIRECTORY = Path("/mnt/i/Historical/New York/HRSH/Found Photos/pdfs")
+
 def combine_images_to_pdf():
     """
     Combine pairs of images in the current directory into individual PDF files.
@@ -41,8 +44,8 @@ def combine_images_to_pdf():
     """
     try:
         # Get all image files sorted by filename
-        image_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
-        files = sorted([f for f in Path('.').iterdir() if f.suffix.lower() in image_extensions])
+        image_extensions = {'.jpg'} #, '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
+        files = sorted([f for f in DIRECTORY.iterdir() if f.suffix.lower() in image_extensions])
 
         if len(files) % 2 != 0:
             logger.warning("The number of images is odd. The last image will be ignored.")
@@ -52,6 +55,7 @@ def combine_images_to_pdf():
             front_image_path = files[i]
             back_image_path = files[i + 1]
             output_pdf_name = f"document_{i//2 + 1}.pdf"
+            output_pdf = DIRECTORY / output_pdf_name
 
             logger.info(f"Combining {front_image_path.name} and {back_image_path.name} into {output_pdf_name}")
 
@@ -61,7 +65,7 @@ def combine_images_to_pdf():
                 back_img_rgb = back_img.convert("RGB")
 
                 # Save the combined images as a PDF
-                front_img_rgb.save(output_pdf_name, save_all=True, append_images=[back_img_rgb])
+                front_img_rgb.save(output_pdf, save_all=True, append_images=[back_img_rgb])
 
         logger.info("All pairs have been processed successfully.")
     except Exception as e:

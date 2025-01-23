@@ -13,7 +13,7 @@
 *        Created: 2024-10-09                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
-*        Copyright (c) 2024 Jess Mann                                                                                  *
+*        Copyright (c) 2025 Jess Mann                                                                                  *
 *                                                                                                                      *
 * -------------------------------------------------------------------------------------------------------------------- *
 *                                                                                                                      *
@@ -36,10 +36,11 @@ logger = logging.getLogger(__name__)
 
 class Script(BaseModel, ABC):
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
     max_threads : int = 0
     _progress_bar : ProgressBar | None = PrivateAttr(default=None)
     _progress_message : str | None = PrivateAttr(default=None)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @property
     def progress_bar(self) -> ProgressBar:
