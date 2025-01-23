@@ -199,6 +199,24 @@ class Paperless(BaseModel):
         logger.debug(f"Successfully removed tag '{tag_name}' from document {document['id']}")
         return data
 
+    def add_tag(self, document: dict, tag_name: str) -> dict:
+        """
+        Adds a tag to a document.
+
+        Args:
+            document (dict): The document to add the tag to.
+            tag_name (str): The tag to add.
+
+        Returns:
+            dict: The document with the tag added.
+        """
+        logger.debug(f"Adding tag '{tag_name}' to document {document['id']}")
+        tags = document.get("tags", []) + [tag_name]
+        payload = {"tags": tags}
+        data = self.patch(f"api/documents/{document['id']}/", payload)
+        logger.debug(f"Successfully added tag '{tag_name}' to document {document['id']}")
+        return data
+
     def download_document(self, document: dict) -> bytes | None:
         """
         Downloads a document from Paperless NGX.
@@ -337,6 +355,9 @@ class Paperless(BaseModel):
 
             # Remove the tag after processing
             updated_document = self.remove_tag(updated_document, self.paperless_tag)
+
+            # Add the "described" tag
+            updated_document = self.add_tag(updated_document, "described")
 
             return updated_document
         except requests.RequestException as e:
