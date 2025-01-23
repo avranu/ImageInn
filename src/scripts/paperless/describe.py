@@ -36,6 +36,7 @@ import requests
 from alive_progress import alive_bar
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
+import openai
 from openai import OpenAI
 import fitz
 
@@ -164,10 +165,18 @@ class Paperless(BaseModel):
         for document in documents:
             # If content includes "IMAGE DESCRIPTION", skip
             if "IMAGE DESCRIPTION" in document.get("content", ""):
+                logger.debug("Skipping document with existing description")
                 continue
 
             # If tags include "described", skip
             if any(tag == 162 for tag in document.get("tags", [])):
+                logger.debug("Skipping document with 'described' tag")
+                continue
+
+            # Check it is a supported extension
+            extensions = OPENAI_ACCEPTED_FORMATS + ['pdf']
+            if not any(document['original_file_name'].lower().endswith(ext) for ext in extensions):
+                logger.debug("Skipping document with unsupported extension: %s", document['original_file_name'])
                 continue
 
             yield document
@@ -399,28 +408,32 @@ class Paperless(BaseModel):
 
             # Convert file content to base64
             base64_image = base64.b64encode(content).decode("utf-8")
-            
-            response = self.openai.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": self.openai_prompt,
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-                            },
-                        ],
-                    }
-                ],
-                max_tokens=500,
-            )
-            description = f"IMAGE DESCRIPTION: {response.choices[0].message.content}"
-            logger.debug(f"Generated description for document {document['id']}: {description}")
+
+            try:
+                response = self.openai.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": self.openai_prompt,
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                                },
+                            ],
+                        }
+                    ],
+                    max_tokens=500,
+                )
+                description = f"IMAGE DESCRIPTION: {response.choices[0].message.content}"
+                logger.debug(f"Generated description for document {document['id']}: {description}")
+            except openai.BadRequestError as e:
+                logger.error(f"Failed to generate description for document {document['id']}: {e}")
+                return document
 
             # Add the description as a note
             updated_document = self.add_note(document, description)
