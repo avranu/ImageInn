@@ -40,6 +40,8 @@ import fitz
 
 logger = logging.getLogger(__name__)
 
+OPENAI_ACCEPTED_FORMATS = ['png', 'jpeg', 'gif', 'webp']
+
 class Paperless(BaseModel):
     """
     Main class to handle the script's operations.
@@ -139,6 +141,7 @@ class Paperless(BaseModel):
             return data
         except requests.RequestException as e:
             logger.error(f"Failed to send PATCH request: {e}")
+            raise
             
         return None
 
@@ -199,7 +202,26 @@ class Paperless(BaseModel):
         logger.debug(f"Successfully removed tag '{tag_name}' from document {document['id']}")
         return data
 
-    def add_tag(self, document: dict, tag_name: str) -> dict:
+    def get_tag_id(self, tag_name: str) -> int | None:
+        """
+        Fetches the ID of a tag from the Paperless NGX instance.
+
+        Args:
+            tag_name (str): The tag to fetch the ID of.
+
+        Returns:
+            int: The ID of the tag.
+        """
+        if not (data := self.get("api/tags/")):
+            return None
+
+        for tag in data.get("results", []):
+            if tag["name"] == tag_name:
+                return tag["id"]
+
+        return None
+
+    def add_tag(self, document: dict, tag_name: int | str) -> dict:
         """
         Adds a tag to a document.
 
@@ -211,7 +233,13 @@ class Paperless(BaseModel):
             dict: The document with the tag added.
         """
         logger.debug(f"Adding tag '{tag_name}' to document {document['id']}")
-        tags = document.get("tags", []) + [tag_name]
+        if isinstance(tag_name, int):
+            tag_id = tag_name
+        elif not (tag_id := self.get_tag_id(tag_name)):
+            logger.error(f"Failed to get ID for tag '{tag_name}'")
+            return document
+        
+        tags = document.get("tags", []) + [tag_id]
         payload = {"tags": tags}
         data = self.patch(f"api/documents/{document['id']}/", payload)
         logger.debug(f"Successfully added tag '{tag_name}' to document {document['id']}")
@@ -322,6 +350,11 @@ class Paperless(BaseModel):
                     logger.error(f"No images found in PDF for document {document['id']}.")
                     return document
 
+            # Ensure accepted format
+            elif not any(document['original_file_name'].lower().endswith(ext) for ext in OPENAI_ACCEPTED_FORMATS):
+                logger.error(f"Document {document['id']} is not in an accepted format: {document['original_file_name']}")
+                return document
+
             # Convert file content to base64
             base64_image = base64.b64encode(content).decode("utf-8")
             
@@ -357,11 +390,12 @@ class Paperless(BaseModel):
             updated_document = self.remove_tag(updated_document, self.paperless_tag)
 
             # Add the "described" tag
-            updated_document = self.add_tag(updated_document, "described")
+            updated_document = self.add_tag(updated_document, 162) #"described")
 
             return updated_document
         except requests.RequestException as e:
             logger.error(f"Failed to describe document {document['id']}: {e}")
+            raise
 
         return document
 
