@@ -435,7 +435,6 @@ def main():
         DEFAULT_TAG = "needs-description"
         DEFAULT_PROMPT = os.getenv('OPENAI_PROMPT', 'This image is from the Hudson River Psychiatric Center, taken when it was in operation. It may depict buildings, staff, or patients, and serves as a historical document that will be used to help document and research life in the asylum. Please describe it in detail. Ensure you use keywords that will help find the photo when searching. Describe everything in the image, transcribe any text you see, describe the tone, the colors, and whether the photo was taken indoors or outdoors. Be as thorough and detailed as you possibly can.')
         OPENAI_KEY = os.getenv('OPENAI_API_KEY')
-        print(f'DEFAULT_URL: {DEFAULT_URL}')
 
         parser = argparse.ArgumentParser(description="Fetch documents with a specific tag from Paperless NGX.")
         parser.add_argument('--url', type=str, default=DEFAULT_URL, help="The base URL of the Paperless NGX instance")
