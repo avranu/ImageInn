@@ -30,6 +30,7 @@ from pathlib import Path
 import sys
 import os
 import logging
+from typing import Iterator
 import colorlog
 import requests
 from alive_progress import alive_bar
@@ -102,8 +103,13 @@ class Paperless(BaseModel):
         try:
             logger.debug(f"Fetching data from '{self.paperless_url}'...")
             headers = {"Authorization": f"Token {self.paperless_key}"}
+            if url_path.startswith('http'):
+                url = url_path
+            else:
+                url = f"{self.paperless_url}/{url_path}"
+                
             response = requests.get(
-                f"{self.paperless_url}/{url_path}",
+                url,
                 params=params,
                 headers=headers
             )
@@ -145,25 +151,55 @@ class Paperless(BaseModel):
             
         return None
 
-    def fetch_documents_with_tag(self, tag_name: str | None = None) -> list[dict] | None:
+    def _yield_results(self, documents : Iterator[dict]) -> Iterator[dict]:
+        """
+        Yields documents from the Paperless NGX instance.
+
+        Args:
+            documents (Iterator[dict]): The documents to yield.
+
+        Yields:
+            Iterator[dict]: yields document objects.
+        """
+        for document in documents:
+            # If content includes "IMAGE DESCRIPTION", skip
+            if "IMAGE DESCRIPTION" in document.get("content", ""):
+                continue
+
+            # If tags include "described", skip
+            if any(tag == 162 for tag in document.get("tags", [])):
+                continue
+
+            yield document
+
+    def fetch_documents_with_tag(self, tag_name: str | None = None) -> Iterator[dict]:
         """
         Fetches documents with the specified tag from the Paperless NGX instance.
 
         Args:
             tag_name (str): The tag to filter documents by.
 
-        Returns:
-            list[dict]: A list of document objects with the specified tag.
+        Yields:
+            Iterator[dict]: yields document objects with the specified tag.
         """
         tag_name = tag_name or self.paperless_tag
-        results = []
 
         if not (data := self.get('api/documents/', params={"tag": tag_name})):
-            return results
+            return
         
         results = data.get("results", [])
-        logger.debug(f'Found {len(results)} documents with the tag "{tag_name}"')
-        return results
+        next = data.get("next", None)
+        yield from self._yield_results(results)
+            
+        while next:
+            logger.debug('Requesting next page of results')
+            if not (data := self.get(next)):
+                break
+            results = data.get("results", [])
+            yield from self._yield_results(results)
+            next = data.get("next", None)
+            
+        return
     
     def add_note(self, document: dict, note: str) -> dict:
         """
@@ -184,7 +220,7 @@ class Paperless(BaseModel):
         logger.debug(f"Successfully added note to document {document['id']} -> {data}")
         return data
 
-    def remove_tag(self, document: dict, tag_name: str) -> dict:
+    def remove_tag(self, document: dict, tag_name: int | str) -> dict:
         """
         Removes a tag from a document.
 
@@ -196,7 +232,13 @@ class Paperless(BaseModel):
             dict: The document with the tag removed.
         """
         logger.debug(f"Removing tag '{tag_name}' from document {document['id']}")
-        tags = [tag for tag in document.get("tags", []) if tag != tag_name]
+        if isinstance(tag_name, int):
+            tag_id = tag_name
+        elif not (tag_id := self.get_tag_id(tag_name)):
+            logger.error(f"Failed to get ID for tag '{tag_name}'")
+            return document
+        
+        tags = [tag for tag in document.get("tags", []) if tag != tag_id]
         payload = {"tags": tags}
         data = self.patch(f"api/documents/{document['id']}/", payload)
         logger.debug(f"Successfully removed tag '{tag_name}' from document {document['id']}")
@@ -387,7 +429,7 @@ class Paperless(BaseModel):
             updated_document = self.append_document_content(updated_document, description)
 
             # Remove the tag after processing
-            updated_document = self.remove_tag(updated_document, self.paperless_tag)
+            updated_document = self.remove_tag(updated_document, 161) #self.paperless_tag)
 
             # Add the "described" tag
             updated_document = self.add_tag(updated_document, 162) #"described")
