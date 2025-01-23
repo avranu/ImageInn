@@ -26,11 +26,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+from io import BytesIO
 from pathlib import Path
 import sys
 import os
 import logging
-from typing import Iterator
+from typing import Any, Iterator
 import colorlog
 import requests
 from alive_progress import alive_bar
@@ -39,6 +40,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import openai
 from openai import OpenAI
 import fitz
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +173,11 @@ class Paperless(BaseModel):
             # If tags include "described", skip
             if any(tag == 162 for tag in document.get("tags", [])):
                 logger.debug("Skipping document with 'described' tag")
+                continue
+
+            # If tags DO NOT include "needs-description", skip
+            if not any(tag == 161 for tag in document.get("tags", []):
+                logger.debug("Skipping document without 'needs-description' tag")
                 continue
 
             # Check it is a supported extension
@@ -324,6 +331,7 @@ class Paperless(BaseModel):
 
         return None
 
+
     def extract_first_image_from_pdf(self, pdf_bytes: bytes) -> bytes | None:
         """
         Extracts the first image from a PDF file.
@@ -377,6 +385,72 @@ class Paperless(BaseModel):
         logger.debug(f"Successfully appended content to document {document['id']} -> {data}")
         return data
 
+    def _send_describe_request(self, content : str) -> str | None:
+
+        # Convert file content to base64
+        base64_image = base64.b64encode(content).decode("utf-8")
+        
+        response = self.openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": self.openai_prompt,
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
+                        },
+                    ],
+                }
+            ],
+            max_tokens=500,
+        )
+        description = f"IMAGE DESCRIPTION: {response.choices[0].message.content}"
+        logger.debug(f"Generated description: {description}")
+        return description
+
+
+    def convert_image_to_webp(self, input_contents: Any, quality: int = 80) -> bytes | None:
+        """
+        Converts an image file from its input binary content to WebP format and returns the WebP binary content.
+
+        Args:
+            input_contents (bytes): The binary content of the input image file.
+            quality (int, optional): The quality of the WebP image (0-100). Defaults to 80.
+
+        Returns:
+            bytes: The binary content of the converted WebP image.
+
+        Raises:
+            ValueError: If the input file format is not supported.
+        """
+        try:
+            if isinstance(input_contents, bytes):
+                input_contents = BytesIO(input_contents)
+            elif isinstance(input_contents, str):
+                input_contents = BytesIO(input_contents.encode("utf-8"))
+            elif not isinstance(input_contents, BytesIO):
+                raise ValueError("Invalid input contents type. Must be bytes, str, or BytesIO.")
+            
+            # Read the input image from the binary content
+            with Image.open(input_contents) as img:
+                # Convert to WebP and save to an in-memory bytes buffer
+                output_buffer = BytesIO()
+                img.save(output_buffer, format="WEBP", quality=quality)
+                output_buffer.seek(0)
+                logger.info("Image successfully converted to WebP format.")
+                return output_buffer.getvalue()
+        except Exception as e:
+            logger.error(f"Error converting image to WebP: {e}")
+            #logger.error(f"Image content: {input_contents.getvalue()}")
+            return None
+            raise ValueError(f"Failed to convert image to WebP: {e}")
+            
+
     def describe_document(self, document: dict) -> dict:
         """
         Describes a single document using OpenAI's GPT-4o model.
@@ -406,40 +480,30 @@ class Paperless(BaseModel):
                 logger.error(f"Document {document['id']} is not in an accepted format: {document['original_file_name']}")
                 return document
 
-            # Convert file content to base64
-            base64_image = base64.b64encode(content).decode("utf-8")
-
             try:
-                response = self.openai.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "text",
-                                    "text": self.openai_prompt,
-                                },
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-                                },
-                            ],
-                        }
-                    ],
-                    max_tokens=500,
-                )
-                description = f"IMAGE DESCRIPTION: {response.choices[0].message.content}"
-                logger.debug(f"Generated description for document {document['id']}: {description}")
+                description = self._send_describe_request(content)
             except openai.BadRequestError as e:
-                logger.error(f"Failed to generate description for document {document['id']}: {e}")
-                return document
-
+                if "Please make sure your image has of one the following formats" not in str(e):
+                    logger.error(f"Failed to generate description for document {document['id']}: {e}")
+                    return document
+                
+                # Convert to webp
+                logger.debug(f"Failed to generate description for document {document['id']}. Trying with webp format...")
+                if not (webp := self.convert_image_to_webp(content)):
+                    logger.error(f"Failed to convert document {document['id']} to webp format.")
+                    return document
+                
+                try:
+                    description = self._send_describe_request(webp)
+                except openai.BadRequestError as e:
+                    logger.error(f"Failed to generate description for document, even after converting to webp {document['id']}: {e}")
+                    return document
+                    
             # Add the description as a note
-            updated_document = self.add_note(document, description)
+            #updated_document = self.add_note(document, description)
 
             # Append the description to the document content
-            updated_document = self.append_document_content(updated_document, description)
+            updated_document = self.append_document_content(document, description)
 
             # Remove the tag after processing
             updated_document = self.remove_tag(updated_document, 161) #self.paperless_tag)
