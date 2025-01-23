@@ -98,7 +98,7 @@ class Paperless(BaseModel):
             dict: The response data as a dictionary.
         """
         try:
-            logger.info(f"Fetching data from '{self.paperless_url}'...")
+            logger.debug(f"Fetching data from '{self.paperless_url}'...")
             headers = {"Authorization": f"Token {self.paperless_key}"}
             response = requests.get(
                 f"{self.paperless_url}/{url_path}",
@@ -107,7 +107,7 @@ class Paperless(BaseModel):
             )
             response.raise_for_status()
             data = response.json()
-            logger.info(f"Successfully fetched data from '{self.paperless_url}'")
+            logger.debug(f"Successfully fetched data from '{self.paperless_url}'")
             return data
         except requests.RequestException as e:
             logger.error(f"Failed to fetch data: {e}")
@@ -126,7 +126,7 @@ class Paperless(BaseModel):
             dict: The response data as a dictionary.
         """
         try:
-            logger.info(f"Sending PATCH request to '{self.paperless_url}'...")
+            logger.debug(f"Sending PATCH request to '{self.paperless_url}'...")
             headers = {"Authorization": f"Token {self.paperless_key}"}
             response = requests.patch(
                 f"{self.paperless_url}/{url_path}",
@@ -135,7 +135,7 @@ class Paperless(BaseModel):
             )
             response.raise_for_status()
             data = response.json()
-            logger.info(f"Successfully sent PATCH request to '{self.paperless_url}'")
+            logger.debug(f"Successfully sent PATCH request to '{self.paperless_url}'")
             return data
         except requests.RequestException as e:
             logger.error(f"Failed to send PATCH request: {e}")
@@ -166,6 +166,8 @@ class Paperless(BaseModel):
         """
         Adds a note to a document.
 
+        NOTE: Not apparently working.
+
         Args:
             document (dict): The document to add the note to.
             note (str): The note to add.
@@ -173,10 +175,10 @@ class Paperless(BaseModel):
         Returns:
             dict: The document with the note added.
         """
-        logger.info(f"Adding note to document {document['id']}: {note}")
+        logger.debug(f"Adding note to document {document['id']}: {note}")
         payload = {"notes": note}
         data = self.patch(f"api/documents/{document['id']}/", payload)
-        logger.info(f"Successfully added note to document {document['id']}")
+        logger.debug(f"Successfully added note to document {document['id']} -> {data}")
         return data
 
     def remove_tag(self, document: dict, tag_name: str) -> dict:
@@ -190,11 +192,11 @@ class Paperless(BaseModel):
         Returns:
             dict: The document with the tag removed.
         """
-        logger.info(f"Removing tag '{tag_name}' from document {document['id']}")
+        logger.debug(f"Removing tag '{tag_name}' from document {document['id']}")
         tags = [tag for tag in document.get("tags", []) if tag != tag_name]
         payload = {"tags": tags}
         data = self.patch(f"api/documents/{document['id']}/", payload)
-        logger.info(f"Successfully removed tag '{tag_name}' from document {document['id']}")
+        logger.debug(f"Successfully removed tag '{tag_name}' from document {document['id']}")
         return data
 
     def download_document(self, document: dict) -> bytes | None:
@@ -210,7 +212,7 @@ class Paperless(BaseModel):
             bytes: The content of the document.
         """
         try:
-            logger.info(f"Downloading document {document['id']} from Paperless...")
+            logger.debug(f"Downloading document {document['id']} from Paperless...")
 
             response = requests.get(
                 f"{self.paperless_url}/api/documents/{document['id']}/download/",
@@ -218,7 +220,7 @@ class Paperless(BaseModel):
             )
             response.raise_for_status()
             content = response.content
-            logger.info(f"Downloaded document {document['id']} from Paperless")
+            logger.debug(f"Downloaded document {document['id']} from Paperless")
             return content
         except requests.RequestException as e:
             logger.error(f"Failed to download document {document['id']}: {e}")
@@ -252,7 +254,7 @@ class Paperless(BaseModel):
                 base_image = pdf_document.extract_image(xref)
                 image_bytes = base_image["image"]
 
-                logger.info(f"Extracted first image from page {page_number + 1} of the PDF.")
+                logger.debug(f"Extracted first image from page {page_number + 1} of the PDF.")
                 return image_bytes
 
             logger.warning("No images found in the PDF.")
@@ -260,6 +262,23 @@ class Paperless(BaseModel):
             logger.error(f"Error extracting image from PDF: {e}")
 
         return None
+
+    def append_document_content(self, document: dict, content: str) -> dict:
+        """
+        Appends content to a document.
+
+        Args:
+            document (dict): The document to append content to.
+            content (str): The content to append.
+
+        Returns:
+            dict: The document with the content appended.
+        """
+        logger.debug(f"Appending content to document {document['id']}")
+        payload = {"content": document["content"] + "\n\r\n\r" + content}
+        data = self.patch(f"api/documents/{document['id']}/", payload)
+        logger.debug(f"Successfully appended content to document {document['id']} -> {data}")
+        return data
 
     def describe_document(self, document: dict) -> dict:
         """
@@ -272,11 +291,18 @@ class Paperless(BaseModel):
             dict: The document with the description added.
         """
         try:
-            logger.info(f"Describing document {document['id']} using OpenAI...")
+            logger.debug(f"Describing document {document['id']} using OpenAI...")
             
             if not (content := self.download_document(document)):
                 logger.error("Failed to download document content.")
                 return document
+
+            # Determine if the document is a PDF
+            if document['original_file_name'].lower().endswith('.pdf'):
+                logger.debug(f"Document {document['id']} is a PDF. Extracting the first image...")
+                if not (content := self.extract_first_image_from_pdf(content)):
+                    logger.error(f"No images found in PDF for document {document['id']}.")
+                    return document
 
             # Convert file content to base64
             base64_image = base64.b64encode(content).decode("utf-8")
@@ -298,13 +324,16 @@ class Paperless(BaseModel):
                         ],
                     }
                 ],
-                max_tokens=300,
+                max_tokens=500,
             )
-            description = response.choices[0].message.content
-            logger.info(f"Generated description for document {document['id']}: {description}")
+            description = f"IMAGE DESCRIPTION: {response.choices[0].message.content}"
+            logger.debug(f"Generated description for document {document['id']}: {description}")
 
             # Add the description as a note
             updated_document = self.add_note(document, description)
+
+            # Append the description to the document content
+            updated_document = self.append_document_content(updated_document, description)
 
             # Remove the tag after processing
             updated_document = self.remove_tag(updated_document, self.paperless_tag)
@@ -332,8 +361,6 @@ class Paperless(BaseModel):
             for document in documents:
                 results.append(self.describe_document(document))
                 self.progress_bar()
-                logger.warning('Exiting early for testing')
-                return results
         return results
 
 

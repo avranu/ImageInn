@@ -15,4 +15,4 @@ types-tqdm
 sqlalchemy
 openai==1.60.0
 requests==2.32.3
-fitz==0.0.1
+pymupdf==1.24.5
