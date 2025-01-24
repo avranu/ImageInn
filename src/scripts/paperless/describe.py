@@ -46,9 +46,9 @@ logger = logging.getLogger(__name__)
 
 OPENAI_ACCEPTED_FORMATS = ['png', 'jpeg', 'gif', 'webp']
 
-class Paperless(BaseModel):
+class DescribePhotos(BaseModel):
     """
-    Main class to handle the script's operations.
+    Describes photos in the Paperless NGX instance using OpenAI's GPT-4o model.
     """
     max_threads: int = 0
     paperless_url : str = Field(..., env='PAPERLESS_URL')
@@ -176,7 +176,7 @@ class Paperless(BaseModel):
                 continue
 
             # If tags DO NOT include "needs-description", skip
-            if not any(tag == 161 for tag in document.get("tags", []):
+            if not any(tag == 161 for tag in document.get("tags", [])):
                 logger.debug("Skipping document without 'needs-description' tag")
                 continue
 
@@ -609,7 +609,7 @@ def main():
             logger.error("PAPERLESS_KEY environment variable is not set.")
             sys.exit(1)
 
-        paperless = Paperless(
+        paperless = DescribePhotos(
             paperless_url=args.url, 
             paperless_key=args.key, 
             paperless_tag=args.tag, 
