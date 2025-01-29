@@ -358,7 +358,7 @@ class DescribePhotos(BaseModel):
         return None
 
 
-    def extract_first_image_from_pdf(self, pdf_bytes: bytes) -> bytes | None:
+    def extract_images_from_pdf(self, pdf_bytes: bytes, max_images : int = 1) -> list[bytes]:
         """
         Extracts the first image from a PDF file.
 
@@ -368,6 +368,7 @@ class DescribePhotos(BaseModel):
         Returns:
             bytes | None: The first image as bytes or None if no image is found.
         """
+        results = []
         try:
             # Open the PDF from bytes
             pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -379,20 +380,23 @@ class DescribePhotos(BaseModel):
                 if not images:
                     continue
 
-                # Extract the first image on the page
-                first_image = images[0]
-                xref = first_image[0]
-                base_image = pdf_document.extract_image(xref)
-                image_bytes = base_image["image"]
+                for image in images:
+                    if len(results) >= max_images:
+                        break
 
-                logger.debug(f"Extracted first image from page {page_number + 1} of the PDF.")
-                return image_bytes
+                    xref = image[0]
+                    base_image = pdf_document.extract_image(xref)
+                    image_bytes = base_image["image"]
+                    results.append(image_bytes)
+                    logger.debug(f"Extracted image from page {page_number + 1} of the PDF.")
+ 
+            if not results:
+                logger.warning("No images found in the PDF.")
 
-            logger.warning("No images found in the PDF.")
         except Exception as e:
             logger.error(f"Error extracting image from PDF: {e}")
 
-        return None
+        return results
 
     def append_document_content(self, document: PaperlessDocument, content: str) -> PaperlessDocument:
         """
@@ -448,28 +452,24 @@ class DescribePhotos(BaseModel):
         updated_document = PaperlessDocument.model_validate(data)
         return updated_document
 
-    def standardize_image_contents(self, content : str | bytes) -> str:
+    def standardize_image_contents(self, content : str) -> list[str]:
+            
         try:
-            return self._convert_to_png(content)
+            return [self._convert_to_png(content)]
         except Exception as e:
             logger.debug(f"Failed to convert contents to png, will try other methods: {e}")
 
         # Interpret it as a pdf
-        if (image_contents := self.extract_first_image_from_pdf(content)):
-            return self._convert_to_png(image_contents)
+        if (image_contents_list := self.extract_images_from_pdf(content)):
+            return [self._convert_to_png(image) for image in image_contents_list]
 
-        if content.startswith(b'%PDF-'):
-            error_message = "Contents are a pdf, but could not extract first image."
-        else:
-            error_message = "Unable to standardize image."
-
-        raise ValueError(error_message)
+        raise ValueError("Unable to standardize image.")
 
     def _convert_to_png(self, content : str) -> str:
         img = Image.open(BytesIO(content))
 
         # Resize large images
-        if img.size[0] > 2048 or img.size[1] > 2048:
+        if img.size[0] > 1024 or img.size[1] > 1024:
             img.thumbnail((1024, 1024))
 
         # Re-save it as PNG in-memory
@@ -481,28 +481,34 @@ class DescribePhotos(BaseModel):
         return base64.b64encode(buf.read()).decode("utf-8")
             
 
-    def _send_describe_request(self, content : str, document : PaperlessDocument) -> str | None:
+    def _send_describe_request(self, content : str | list[str], document : PaperlessDocument) -> str | None:
 
         description : str | None = None
+        if isinstance(content, str):
+            content = [content]
+            
         try:
-            # Convert to base64
-            base64_image = self.standardize_image_contents(content)
+            images = [self.standardize_image_contents(image) for image in content]
+
+            message_contents = [
+                {
+                    "type": "text",
+                    "text": self.get_prompt(document),
+                }
+            ]
+            
+            for image in images:
+                message_contents.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image}"},
+                })
             
             response = self.openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {
                         "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": self.get_prompt(document),
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{base64_image}"},
-                            },
-                        ],
+                        "content": message_contents
                     }
                 ],
                 max_tokens=500,
@@ -535,7 +541,7 @@ class DescribePhotos(BaseModel):
             # Determine if the document is a PDF
             if document.original_file_name.lower().endswith('.pdf'):
                 logger.debug(f"Document {document.id} is a PDF. Extracting the first image...")
-                if not (content := self.extract_first_image_from_pdf(content)):
+                if not (content := self.extract_images_from_pdf(content)):
                     logger.error(f"No images found in PDF for document {document.id}.")
                     return document
 
