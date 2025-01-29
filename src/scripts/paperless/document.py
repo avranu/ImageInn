@@ -26,7 +26,8 @@ from __future__ import annotations
 
 from datetime import datetime, date
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+import dateparser
 
 class CustomField(BaseModel):
     value: Any = None
@@ -41,7 +42,7 @@ class PaperlessDocument(BaseModel):
     content: str | None = None
     tags: list[int] = Field(default_factory=list)
     created: datetime
-    created_date: date
+    created_date: date | datetime
     modified: datetime | None = None
     added: datetime
     deleted_at: datetime | None = None
@@ -54,6 +55,21 @@ class PaperlessDocument(BaseModel):
     notes: list[dict[str, Any]] = Field(default_factory=list)
     custom_fields: list[CustomField] = Field(default_factory=list)
     page_count: int | None = None
+
+    model_config = ConfigDict(arbitrary_types_allowed = True, extra="ignore")
+
+
+    @field_validator("created_date", mode="before")
+    def validate_created_date(cls, v: date | datetime | str) -> date:
+        if isinstance(v, datetime):
+            return v.date()
+        elif isinstance(v, str):
+            if parsed := dateparser.parse(v):
+                return parsed.date()
+            
+            raise ValueError("Could not parse date")
+        
+        return v
 
     def get_corrected_date(self) -> date:
         """

@@ -64,6 +64,7 @@ TAG_DESCRIBED = 162
 TAG_NEEDS_DESCRIPTION = 161
 TAG_NEEDS_TITLE = 190
 TAG_NEEDS_DATE = 191
+VERSION = "0.1.0"
 
 class DescribePhotos(BaseModel):
     """
@@ -401,7 +402,7 @@ class DescribePhotos(BaseModel):
                             raise
  
             if not results:
-                logger.warning("No images found in the PDF.")
+                raise ValueError("No images found in the PDF.")
 
         except Exception as e:
             logger.error(f"extract_images_from_pdf: Error extracting image from PDF: {e}")
@@ -570,9 +571,12 @@ class DescribePhotos(BaseModel):
             )
             description = response.choices[0].message.content
             logger.debug(f"Generated description: {description}")
+
+        except ValueError as ve:
+            logger.warning("Failed to generate description for document #%s: %s. Continuing anyway -> %s", document.id, document.original_file_name, ve)
         
         except Exception as e:
-            logger.error("Failed to generate description for document #%s: %s -> %s", document.id, document.original_file_name, e)
+            logger.error("Unexpected Error generating description for document #%s: %s -> %s", document.id, document.original_file_name, e)
             raise
 
         return description
@@ -613,12 +617,6 @@ class DescribePhotos(BaseModel):
                     
             # Process the response
             self.process_response(response, document)
-
-            # Remove the tag after processing
-            self.remove_tag(document, TAG_NEEDS_DESCRIPTION)
-
-            # Add the "described" tag
-            self.add_tag(document, TAG_DESCRIBED)
         except requests.RequestException as e:
             logger.error(f"Failed to describe document {document.id}: {e}")
             raise
@@ -631,13 +629,13 @@ class DescribePhotos(BaseModel):
         try:
             parsed_response = json.loads(response)
         except json.JSONDecodeError:
-            logger.error("Failed to parse response as JSON. Saving response raw in document content.")
+            logger.error("Failed to parse response as JSON. Saving response raw in document content. Document #%s: %s", document.id, document.original_file_name)
             updated_document = self.append_document_content(document, response)
             return updated_document
 
         # Check if parsed_response is a dictionary
         if not isinstance(parsed_response, dict):
-            logger.error("Parsed response is not a dictionary. Saving response raw in document content.")
+            logger.error("Parsed response is not a dictionary. Saving response raw in document content. Document #%s: %s", document.id, document.original_file_name)
             updated_document = self.append_document_content(document, response)
             return updated_document
 
@@ -646,7 +644,7 @@ class DescribePhotos(BaseModel):
         description = parsed_response.get("description", None)
         tags = parsed_response.get("tags", None)
         date = parsed_response.get("date", None)
-        full_description = f"""IMAGE DESCRIPTION: 
+        full_description = f"""IMAGE DESCRIPTION (v{VERSION}): 
             Suggested Title: {title}
             Inferred Date: {date}
             Suggested Tags: {tags}
@@ -660,17 +658,19 @@ class DescribePhotos(BaseModel):
                 updated_document = self.update_document_title(document, title)
                 updated_document = self.remove_tag(document, TAG_NEEDS_TITLE)
             except Exception as e:
-                logger.error(f"Failed to update document title: {e}")
+                logger.error("Failed to update document title. Document #%s: %s -> %s", document.id, document.original_file_name, e)
 
         if date and TAG_NEEDS_DATE in document.tags:
             try:
                 updated_document = self.update_document_date(document, date)
                 updated_document = self.remove_tag(document, TAG_NEEDS_DATE)
             except Exception as e:
-                logger.error(f"Failed to update document date: {e}")
+                logger.error("Failed to update document date. Document #%s: %s -> %s", document.id, document.original_file_name, e)
 
         # Append the description to the document
         updated_document = self.append_document_content(document, full_description)
+        self.remove_tag(document, TAG_NEEDS_DESCRIPTION)
+        self.add_tag(document, TAG_DESCRIBED)
         logger.debug(f"Successfully described document {document.id}")
 
     def describe_documents(self, documents : list[PaperlessDocument] | None = None) -> list[PaperlessDocument]:
