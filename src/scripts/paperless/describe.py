@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import base64
 from io import BytesIO
+import json
 from pathlib import Path
 import sys
 import os
@@ -42,15 +43,25 @@ from openai import OpenAI
 import fitz
 from PIL import Image
 from jinja2 import Environment, FileSystemLoader
+from datetime import datetime, date
 
 from scripts.paperless.document import PaperlessDocument
 
 logger = logging.getLogger(__name__)
 
 OPENAI_ACCEPTED_FORMATS = ['png', 'jpeg', 'gif', 'webp']
+MIME_TYPES = {
+    'png': 'image/png',
+    'jpeg': 'image/jpeg',
+    'jpg': 'image/jpeg',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+}
 
 TAG_DESCRIBED = 162
 TAG_NEEDS_DESCRIPTION = 161
+TAG_NEEDS_TITLE = 190
+TAG_NEEDS_DATE = 191
 
 class DescribePhotos(BaseModel):
     """
@@ -169,9 +180,9 @@ class DescribePhotos(BaseModel):
             self._jinja_env = Environment(loader=FileSystemLoader(str(templates_path)), autoescape=True)
         template = self._jinja_env.get_template("photo.jinja")
 
-        description = template.render(document=document)
-        print(f'Description is: {description}')
-        sys.exit(1)
+        if not (description := template.render(document=document, location="Hudson River State Hospital (HRSH), which is a now-closed psychiatric hospital in Poughkeepsie, New York, built with the Kirkbride Plan.")):
+            raise ValueError("Failed to generate prompt.")
+
         return description
 
     def filter_documents(self, documents : Iterator[dict | PaperlessDocument]) -> Iterator[PaperlessDocument]:
@@ -383,7 +394,7 @@ class DescribePhotos(BaseModel):
 
         return None
 
-    def append_document_content(self, document: PaperlessDocument, content: str) -> dict:
+    def append_document_content(self, document: PaperlessDocument, content: str) -> PaperlessDocument:
         """
         Appends content to a document.
 
@@ -395,76 +406,114 @@ class DescribePhotos(BaseModel):
             dict: The document with the content appended.
         """
         logger.debug(f"Appending content to document {document.id}")
-        payload = {"content": document["content"] + "\n\r\n\r" + content}
+        payload = {"content": document.content + "\n\r\n\r" + content}
         data = self.patch(f"api/documents/{document.id}/", payload)
         logger.debug(f"Successfully appended content to document {document.id} -> {data}")
-        return data
+        updated_document = PaperlessDocument.model_validate(data)
+        return updated_document
+
+    def update_document_title(self, document: PaperlessDocument, title: str) -> PaperlessDocument:
+        """
+        Updates the title of a document.
+
+        Args:
+            document (dict): The document to update.
+            title (str): The new title.
+
+        Returns:
+            dict: The updated document.
+        """
+        logger.debug(f"Updating title of document {document.id} to '{title}'")
+        payload = {"title": title}
+        data = self.patch(f"api/documents/{document.id}/", payload)
+        logger.debug(f"Successfully updated title of document {document.id} to '{title}'")
+        updated_document = PaperlessDocument.model_validate(data)
+        return updated_document
+
+    def update_document_date(self, document: PaperlessDocument, date: date) -> PaperlessDocument:
+        """
+        Updates the date of a document.
+
+        Args:
+            document (dict): The document to update.
+            date (str): The new date in 'YYYY-MM-DD' format.
+
+        Returns:
+            dict: The updated document.
+        """
+        logger.debug(f"Updating date of document {document.id} to '{date}'")
+        payload = {"created_date": date.strftime("%m/%d/%Y")} 
+        data = self.patch(f"api/documents/{document.id}/", payload)
+        logger.debug(f"Successfully updated date of document {document.id} to '{date}'")
+        updated_document = PaperlessDocument.model_validate(data)
+        return updated_document
+
+    def standardize_image_contents(self, content : str | bytes) -> str:
+        try:
+            return self._convert_to_png(content)
+        except Exception as e:
+            logger.debug(f"Failed to convert contents to png, will try other methods: {e}")
+
+        # Interpret it as a pdf
+        if (image_contents := self.extract_first_image_from_pdf(content)):
+            return self._convert_to_png(image_contents)
+
+        if content.startswith(b'%PDF-'):
+            error_message = "Contents are a pdf, but could not extract first image."
+        else:
+            error_message = "Unable to standardize image."
+
+        raise ValueError(error_message)
+
+    def _convert_to_png(self, content : str) -> str:
+        img = Image.open(BytesIO(content))
+
+        # Resize large images
+        if img.size[0] > 2048 or img.size[1] > 2048:
+            img.thumbnail((1024, 1024))
+
+        # Re-save it as PNG in-memory
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+
+        # Convert to base64
+        return base64.b64encode(buf.read()).decode("utf-8")
+            
 
     def _send_describe_request(self, content : str, document : PaperlessDocument) -> str | None:
 
-        # Convert file content to base64
-        base64_image = base64.b64encode(content).decode("utf-8")
-        
-        response = self.openai.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": self.get_prompt(document),
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
-                        },
-                    ],
-                }
-            ],
-            max_tokens=500,
-        )
-        description = f"IMAGE DESCRIPTION: {response.choices[0].message.content}"
-        logger.debug(f"Generated description: {description}")
-        return description
-
-
-    def convert_image_to_webp(self, input_contents: Any, quality: int = 80) -> bytes | None:
-        """
-        Converts an image file from its input binary content to WebP format and returns the WebP binary content.
-
-        Args:
-            input_contents (bytes): The binary content of the input image file.
-            quality (int, optional): The quality of the WebP image (0-100). Defaults to 80.
-
-        Returns:
-            bytes: The binary content of the converted WebP image.
-
-        Raises:
-            ValueError: If the input file format is not supported.
-        """
+        description : str | None = None
         try:
-            if isinstance(input_contents, bytes):
-                input_contents = BytesIO(input_contents)
-            elif isinstance(input_contents, str):
-                input_contents = BytesIO(input_contents.encode("utf-8"))
-            elif not isinstance(input_contents, BytesIO):
-                raise ValueError("Invalid input contents type. Must be bytes, str, or BytesIO.")
+            # Convert to base64
+            base64_image = self.standardize_image_contents(content)
             
-            # Read the input image from the binary content
-            with Image.open(input_contents) as img:
-                # Convert to WebP and save to an in-memory bytes buffer
-                output_buffer = BytesIO()
-                img.save(output_buffer, format="WEBP", quality=quality)
-                output_buffer.seek(0)
-                logger.info("Image successfully converted to WebP format.")
-                return output_buffer.getvalue()
+            response = self.openai.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": self.get_prompt(document),
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{base64_image}"},
+                            },
+                        ],
+                    }
+                ],
+                max_tokens=500,
+            )
+            description = response.choices[0].message.content
+            logger.debug(f"Generated description: {description}")
+        
         except Exception as e:
-            logger.error(f"Error converting image to WebP: {e}")
-            #logger.error(f"Image content: {input_contents.getvalue()}")
-            return None
-            raise ValueError(f"Failed to convert image to WebP: {e}")
-            
+            logger.error("Failed to generate description for document #%s: %s -> %s", document.id, document.original_file_name, e)
+
+        return description
 
     def describe_document(self, document: PaperlessDocument) -> PaperlessDocument:
         """
@@ -496,42 +545,78 @@ class DescribePhotos(BaseModel):
                 return document
 
             try:
-                description = self._send_describe_request(content, document)
+                if not (response := self._send_describe_request(content, document)):
+                    logger.error(f"OpenAI returned empty description for document {document.id}.")
+                    return document
             except openai.BadRequestError as e:
-                if "Please make sure your image has of one the following formats" not in str(e):
-                    logger.error(f"Failed to generate description for document {document.id}: {e}")
+                if "invalid_image_format" not in str(e):
+                    logger.error("Failed to generate description for document #%s: %s -> %s", document.id, document.original_file_name, e)
                     return document
-                
-                # Convert to webp
-                logger.debug(f"Failed to generate description for document {document.id}. Trying with webp format...")
-                if not (webp := self.convert_image_to_webp(content)):
-                    logger.error(f"Failed to convert document {document.id} to webp format.")
-                    return document
-                
-                try:
-                    description = self._send_describe_request(webp, document)
-                except openai.BadRequestError as e:
-                    logger.error(f"Failed to generate description for document, even after converting to webp {document.id}: {e}")
-                    return document
-                    
-            # Add the description as a note
-            #updated_document = self.add_note(document, description)
 
-            # Append the description to the document content
-            updated_document = self.append_document_content(document, description)
+                logger.debug("Bad format for document #%s: %s -> %s", document.id, document.original_file_name, e)
+                return document
+                    
+            # Process the response
+            self.process_response(response, document)
 
             # Remove the tag after processing
-            updated_document = self.remove_tag(updated_document, TAG_NEEDS_DESCRIPTION)
+            self.remove_tag(document, TAG_NEEDS_DESCRIPTION)
 
             # Add the "described" tag
-            updated_document = self.add_tag(updated_document, TAG_DESCRIBED)
-
-            return updated_document
+            self.add_tag(document, TAG_DESCRIBED)
         except requests.RequestException as e:
             logger.error(f"Failed to describe document {document.id}: {e}")
             raise
 
         return document
+
+    def process_response(self, response : str, document : PaperlessDocument):
+
+        # Attempt to parse response as json
+        try:
+            parsed_response = json.loads(response)
+        except json.JSONDecodeError:
+            logger.error("Failed to parse response as JSON. Saving response raw in document content.")
+            updated_document = self.append_document_content(document, response)
+            return updated_document
+
+        # Check if parsed_response is a dictionary
+        if not isinstance(parsed_response, dict):
+            logger.error("Parsed response is not a dictionary. Saving response raw in document content.")
+            updated_document = self.append_document_content(document, response)
+            return updated_document
+
+        # Attempt to grab "title", "description", "tags", "date" from parsed_response
+        title = parsed_response.get("title", None)
+        description = parsed_response.get("description", None)
+        tags = parsed_response.get("tags", None)
+        date = parsed_response.get("date", None)
+        full_description = f"""IMAGE DESCRIPTION: 
+            Suggested Title: {title}
+            Inferred Date: {date}
+            Suggested Tags: {tags}
+            Description: {description or parsed_response}
+            Previous Title: {document.title}
+            Previous Date: {document.created_date}
+        """
+
+        if title and TAG_NEEDS_TITLE in document.tags:
+            try:
+                updated_document = self.update_document_title(document, title)
+                updated_document = self.remove_tag(document, TAG_NEEDS_TITLE)
+            except Exception as e:
+                logger.error(f"Failed to update document title: {e}")
+
+        if date and TAG_NEEDS_DATE in document.tags:
+            try:
+                updated_document = self.update_document_date(document, date)
+                updated_document = self.remove_tag(document, TAG_NEEDS_DATE)
+            except Exception as e:
+                logger.error(f"Failed to update document date: {e}")
+
+        # Append the description to the document
+        updated_document = self.append_document_content(document, full_description)
+        logger.info(f"Successfully described document {document.id}")
 
     def describe_documents(self, documents : list[PaperlessDocument] | None = None) -> list[PaperlessDocument]:
         """

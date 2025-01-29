@@ -34,26 +34,26 @@ class CustomField(BaseModel):
 
 class PaperlessDocument(BaseModel):
     id: int
-    correspondent: int | None
-    document_type: int | None
-    storage_path: int | None
+    correspondent: int | None = None
+    document_type: int | None = None
+    storage_path: int | None = None
     title: str
-    content: str | None
+    content: str | None = None
     tags: list[int] = Field(default_factory=list)
     created: datetime
     created_date: date
-    modified: datetime | None
+    modified: datetime | None = None
     added: datetime
-    deleted_at: datetime | None
-    archive_serial_number: str | None
-    original_file_name: str | None
-    archived_file_name: str | None
-    owner: int | None
-    user_can_change: bool
-    is_shared_by_requester: bool
+    deleted_at: datetime | None = None
+    archive_serial_number: int | str | None = None
+    original_file_name: str | None = None
+    archived_file_name: str | None = None
+    owner: int | None = None
+    user_can_change: bool | None = None
+    is_shared_by_requester: bool | None = None
     notes: list[dict[str, Any]] = Field(default_factory=list)
     custom_fields: list[CustomField] = Field(default_factory=list)
-    page_count: int | None
+    page_count: int | None = None
 
     def get_corrected_date(self) -> date:
         """

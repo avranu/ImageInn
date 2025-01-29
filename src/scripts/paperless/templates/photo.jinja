@@ -1,4 +1,4 @@
-{% if document.location %}The photo I'm showing you is from {{ document.location }}. {% endif %}This photo may depict buildings, staff, patients, daily activities, medical procedures, institutional life, or events. It serves as a historical document and will be used to research and document life at this location.
+{% if location %}The photo I'm showing you is from {{ location }}. {% endif %}This photo may depict buildings, staff, patients, daily activities, medical procedures, institutional life, or events. It serves as a historical document and will be used to research and document life at this location.
 
 # Instructions
 Analyze the image carefully and provide a detailed, structured description. Ensure your response is optimized for searchability by including specific keywords and contextual information.
@@ -53,4 +53,3 @@ Other
 # Metadata
 The photo has the following metadata.
 {% if document.title %}Current Title: {{ document.title }}{% endif %}
-{% if document.tags %}Current Tags: {{ document.tags | join(', ') }}{% endif %}

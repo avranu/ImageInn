@@ -1,4 +1,4 @@
-{% if document.location %}The document I'm showing you is from {{ document.location }}. {% endif %}This paperwork may contain correspondence, reports, ledgers, forms, or other institutional records. It serves as a historical or research document and will be used to provide context and detailed information about its content and origin.
+{% if location %}The document I'm showing you is from {{ location }}. {% endif %}This paperwork may contain correspondence, reports, ledgers, forms, or other institutional records. It serves as a historical or research document and will be used to provide context and detailed information about its content and origin.
 
 # Instructions
 Analyze the document thoroughly and provide a structured summary of its contents. Focus on any keywords, topics, or unique features that will make it easier to search or categorize. Follow the guidelines below:
@@ -57,4 +57,3 @@ Other
 # Metadata
 The document has the following metadata.
 {% if document.title %}Current Title: {{ document.title }}{% endif %}
-{% if document.tags %}Current Tags: {{ document.tags | join(', ') }}{% endif %}
