@@ -29,6 +29,7 @@ import base64
 from io import BytesIO
 import json
 from pathlib import Path
+import re
 import sys
 import os
 import logging
@@ -44,12 +45,13 @@ import fitz
 from PIL import Image
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, date
+import dateparser
 
 from scripts.paperless.document import PaperlessDocument
 
 logger = logging.getLogger(__name__)
 
-OPENAI_ACCEPTED_FORMATS = ['png', 'jpeg', 'gif', 'webp']
+OPENAI_ACCEPTED_FORMATS = ['png', 'jpeg', 'gif', 'webp', 'pdf']
 MIME_TYPES = {
     'png': 'image/png',
     'jpeg': 'image/jpeg',
@@ -222,8 +224,7 @@ class DescribePhotos(BaseModel):
                 continue
 
             # Check it is a supported extension
-            extensions = OPENAI_ACCEPTED_FORMATS + ['pdf']
-            if not any(document.original_file_name.lower().endswith(ext) for ext in extensions):
+            if not any(document.original_file_name.lower().endswith(ext) for ext in OPENAI_ACCEPTED_FORMATS):
                 logger.debug("Skipping document with unsupported extension: %s", document.original_file_name)
                 continue
 
@@ -358,7 +359,7 @@ class DescribePhotos(BaseModel):
         return None
 
 
-    def extract_images_from_pdf(self, pdf_bytes: bytes, max_images : int = 1) -> list[bytes]:
+    def extract_images_from_pdf(self, pdf_bytes: bytes, max_images : int = 2) -> list[bytes]:
         """
         Extracts the first image from a PDF file.
 
@@ -366,7 +367,7 @@ class DescribePhotos(BaseModel):
             pdf_bytes (bytes): The PDF file content as bytes.
 
         Returns:
-            bytes | None: The first image as bytes or None if no image is found.
+            bytes | None: The first {max_images} images as bytes or None if no image is found.
         """
         results = []
         try:
@@ -374,6 +375,9 @@ class DescribePhotos(BaseModel):
             pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
 
             for page_number in range(len(pdf_document)):
+                if len(results) >= max_images:
+                    break
+                
                 page = pdf_document[page_number]
                 images = page.get_images(full=True)
                 
@@ -384,17 +388,24 @@ class DescribePhotos(BaseModel):
                     if len(results) >= max_images:
                         break
 
-                    xref = image[0]
-                    base_image = pdf_document.extract_image(xref)
-                    image_bytes = base_image["image"]
-                    results.append(image_bytes)
-                    logger.debug(f"Extracted image from page {page_number + 1} of the PDF.")
+                    try:
+                        xref = image[0]
+                        base_image = pdf_document.extract_image(xref)
+                        image_bytes = base_image["image"]
+                        results.append(image_bytes)
+                        logger.debug(f"Extracted image from page {page_number + 1} of the PDF.")
+                    except Exception as e:
+                        count = len(results)
+                        logger.error(f"Failed to extract one image from page {page_number} of PDF. Result count {count}: {e}")
+                        if count < 1:
+                            raise
  
             if not results:
                 logger.warning("No images found in the PDF.")
 
         except Exception as e:
-            logger.error(f"Error extracting image from PDF: {e}")
+            logger.error(f"extract_images_from_pdf: Error extracting image from PDF: {e}")
+            raise
 
         return results
 
@@ -409,6 +420,9 @@ class DescribePhotos(BaseModel):
         Returns:
             dict: The document with the content appended.
         """
+        if not content:
+            raise ValueError("Content should not be empty.")
+
         logger.debug(f"Appending content to document {document.id}")
         payload = {"content": document.content + "\n\r\n\r" + content}
         data = self.patch(f"api/documents/{document.id}/", payload)
@@ -427,6 +441,10 @@ class DescribePhotos(BaseModel):
         Returns:
             dict: The updated document.
         """
+        title = str(title).strip()
+        if not title or len(title) < 10:
+            raise ValueError("Title should be at least 10 characters.")
+        
         logger.debug(f"Updating title of document {document.id} to '{title}'")
         payload = {"title": title}
         data = self.patch(f"api/documents/{document.id}/", payload)
@@ -434,7 +452,35 @@ class DescribePhotos(BaseModel):
         updated_document = PaperlessDocument.model_validate(data)
         return updated_document
 
-    def update_document_date(self, document: PaperlessDocument, date: date) -> PaperlessDocument:
+    def parse_date(self, date_str: str) -> date | None:
+        """
+        Parses a date string.
+
+        Args:
+            date_str (str): The date string to parse.
+
+        Returns:
+            date: The parsed date.
+        """
+        if not date_str:
+            return None
+        
+        date_str = str(date_str).strip()
+        
+        # "Date unknown" or "Unknown date" or "No date"
+        if re.match(r"^(date unknown|unknown date|no date|none|unknown|n/?a)$", date_str, re.IGNORECASE):
+            return None
+        
+        # Handle "circa 1950"
+        if matches := re.match(r"^((around|circa) *)?(\d{4})s?$", date_str, re.IGNORECASE):
+            date_str = f'{matches.group(3)}-01-01'
+        
+        parsed_date = dateparser.parse(date_str)
+        if not parsed_date:
+            raise ValueError(f"Invalid date format: {date_str=}")
+        return parsed_date.date()
+
+    def update_document_date(self, document: PaperlessDocument, date: str | date | datetime) -> PaperlessDocument:
         """
         Updates the date of a document.
 
@@ -445,10 +491,19 @@ class DescribePhotos(BaseModel):
         Returns:
             dict: The updated document.
         """
-        logger.debug(f"Updating date of document {document.id} to '{date}'")
-        payload = {"created_date": date.strftime("%m/%d/%Y")} 
+        parsed_date = date
+        if isinstance(parsed_date, str):
+            parsed_date = self.parse_date(parsed_date)
+        if isinstance(parsed_date, datetime):
+            parsed_date = parsed_date.date()
+            
+        if not parsed_date:
+            raise ValueError(f"Invalid date format: {date=}")
+        
+        logger.debug(f"Updating date of document {document.id} to '{parsed_date}'")
+        payload = {"created_date": parsed_date.strftime("%Y-%m-%d")} 
         data = self.patch(f"api/documents/{document.id}/", payload)
-        logger.debug(f"Successfully updated date of document {document.id} to '{date}'")
+        logger.debug(f"Successfully updated date of document {document.id} to '{parsed_date}'")
         updated_document = PaperlessDocument.model_validate(data)
         return updated_document
 
@@ -481,10 +536,10 @@ class DescribePhotos(BaseModel):
         return base64.b64encode(buf.read()).decode("utf-8")
             
 
-    def _send_describe_request(self, content : str | list[str], document : PaperlessDocument) -> str | None:
+    def _send_describe_request(self, content : str | bytes | list[str | bytes], document : PaperlessDocument) -> str | None:
 
         description : str | None = None
-        if isinstance(content, str):
+        if not isinstance(content, list):
             content = [content]
             
         try:
@@ -518,6 +573,7 @@ class DescribePhotos(BaseModel):
         
         except Exception as e:
             logger.error("Failed to generate description for document #%s: %s -> %s", document.id, document.original_file_name, e)
+            raise
 
         return description
 
@@ -538,15 +594,8 @@ class DescribePhotos(BaseModel):
                 logger.error("Failed to download document content.")
                 return document
 
-            # Determine if the document is a PDF
-            if document.original_file_name.lower().endswith('.pdf'):
-                logger.debug(f"Document {document.id} is a PDF. Extracting the first image...")
-                if not (content := self.extract_images_from_pdf(content)):
-                    logger.error(f"No images found in PDF for document {document.id}.")
-                    return document
-
             # Ensure accepted format
-            elif not any(document.original_file_name.lower().endswith(ext) for ext in OPENAI_ACCEPTED_FORMATS):
+            if not any(document.original_file_name.lower().endswith(ext) for ext in OPENAI_ACCEPTED_FORMATS):
                 logger.error(f"Document {document.id} is not in an accepted format: {document.original_file_name}")
                 return document
 
