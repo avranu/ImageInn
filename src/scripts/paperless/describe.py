@@ -42,7 +42,7 @@ from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 import openai
 from openai import OpenAI
 import fitz
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, date
 import dateparser
@@ -573,7 +573,10 @@ class DescribePhotos(BaseModel):
             logger.debug(f"Generated description: {description}")
 
         except ValueError as ve:
-            logger.warning("Failed to generate description for document #%s: %s. Continuing anyway -> %s", document.id, document.original_file_name, ve)
+            logger.warning("Failed to generate description for document #%s: %s. Continuing with next image -> %s", document.id, document.original_file_name, ve)
+
+        except UnidentifiedImageError as uii:
+            logger.warning('Failed to identify image format for document #%s: %s. Continuing with next image -> %s', document.id, document.original_file_name, uii)
         
         except Exception as e:
             logger.error("Unexpected Error generating description for document #%s: %s -> %s", document.id, document.original_file_name, e)
