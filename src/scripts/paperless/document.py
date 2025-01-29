@@ -28,6 +28,9 @@ from datetime import datetime, date
 from typing import Any
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 import dateparser
+import logging
+
+logger = logging.getLogger(__name__)
 
 class CustomField(BaseModel):
     value: Any = None
@@ -41,8 +44,8 @@ class PaperlessDocument(BaseModel):
     title: str
     content: str | None = None
     tags: list[int] = Field(default_factory=list)
-    created: datetime
-    created_date: date | datetime
+    created: datetime | None = None
+    created_date: date | datetime | None
     modified: datetime | None = None
     added: datetime
     deleted_at: datetime | None = None
@@ -60,14 +63,15 @@ class PaperlessDocument(BaseModel):
 
 
     @field_validator("created_date", mode="before")
-    def validate_created_date(cls, v: date | datetime | str) -> date:
+    def validate_created_date(cls, v: date | datetime | str) -> date | None:
         if isinstance(v, datetime):
             return v.date()
         elif isinstance(v, str):
             if parsed := dateparser.parse(v):
                 return parsed.date()
             
-            raise ValueError("Could not parse date")
+            logger.error("Could not parse date")
+            return None
         
         return v
 
@@ -75,12 +79,17 @@ class PaperlessDocument(BaseModel):
     def parse_datetime(cls, v: str | datetime | None) -> datetime | None:
         if isinstance(v, datetime) or v is None:
             return v
+        
         if isinstance(v, str):
             parsed = dateparser.parse(v)
             if parsed:
                 return parsed
-            raise ValueError(f"Could not parse datetime: {v}")
-        raise ValueError(f"Invalid datetime value: {v}")
+            
+            logger.error(f"Could not parse datetime: {v}")
+            return None
+        
+        logger.error(f"Invalid datetime value: {v}")
+        return None
 
     def get_corrected_date(self) -> date:
         """
