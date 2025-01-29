@@ -41,10 +41,16 @@ import openai
 from openai import OpenAI
 import fitz
 from PIL import Image
+from jinja2 import Environment, FileSystemLoader
+
+from scripts.paperless.document import PaperlessDocument
 
 logger = logging.getLogger(__name__)
 
 OPENAI_ACCEPTED_FORMATS = ['png', 'jpeg', 'gif', 'webp']
+
+TAG_DESCRIBED = 162
+TAG_NEEDS_DESCRIPTION = 161
 
 class DescribePhotos(BaseModel):
     """
@@ -55,7 +61,7 @@ class DescribePhotos(BaseModel):
     paperless_key : str | None = Field(..., env='PAPERLESS_KEY')
     paperless_tag : str | None = Field('needs-description', env='PAPERLESS_TAG')
     openai_key : str | None = Field(..., env='OPENAI_API_KEY')
-    openai_prompt : str | None = Field(..., env='OPENAI_PROMPT')
+    _jinja_env : Environment = PrivateAttr(default=None)
     _progress_bar = PrivateAttr(default=None)
     _progress_message: str | None = PrivateAttr(default=None)
     _openai : OpenAI | None = PrivateAttr(default=None)
@@ -154,41 +160,65 @@ class DescribePhotos(BaseModel):
             
         return None
 
-    def _yield_results(self, documents : Iterator[dict]) -> Iterator[dict]:
+    def get_prompt(self, document : PaperlessDocument) -> str:
+        """
+        Generate a prompt to sent to openai using a jinja template.
+        """
+        if not self._jinja_env:
+            templates_path = Path(__file__).parent / 'templates'
+            self._jinja_env = Environment(loader=FileSystemLoader(str(templates_path)), autoescape=True)
+        template = self._jinja_env.get_template("photo.jinja")
+
+        description = template.render(document=document)
+        print(f'Description is: {description}')
+        sys.exit(1)
+        return description
+
+    def filter_documents(self, documents : Iterator[dict | PaperlessDocument]) -> Iterator[PaperlessDocument]:
         """
         Yields documents from the Paperless NGX instance.
 
         Args:
-            documents (Iterator[dict]): The documents to yield.
+            documents (Iterator[dict]): The documents to filter, as returned directly by PaperlessNGX
 
         Yields:
-            Iterator[dict]: yields document objects.
+            Iterator[PaperlessDocument]: The filtered documents.
         """
-        for document in documents:
+        for paperless_dict in documents:
+            if isinstance(paperless_dict, PaperlessDocument):
+                document = paperless_dict
+            else:
+                try:
+                    document = PaperlessDocument.model_validate(paperless_dict)
+                except Exception as e:
+                    logger.error(f"Failed to parse document: {e}")
+                    logger.error('Document: %s', paperless_dict)
+                    continue
+            
             # If content includes "IMAGE DESCRIPTION", skip
-            if "IMAGE DESCRIPTION" in document.get("content", ""):
+            if "IMAGE DESCRIPTION" in document.content:
                 logger.debug("Skipping document with existing description")
                 continue
 
             # If tags include "described", skip
-            if any(tag == 162 for tag in document.get("tags", [])):
+            if any(tag == TAG_DESCRIBED for tag in document.tags):
                 logger.debug("Skipping document with 'described' tag")
                 continue
 
             # If tags DO NOT include "needs-description", skip
-            if not any(tag == 161 for tag in document.get("tags", [])):
+            if not any(tag == TAG_NEEDS_DESCRIPTION for tag in document.tags):
                 logger.debug("Skipping document without 'needs-description' tag")
                 continue
 
             # Check it is a supported extension
             extensions = OPENAI_ACCEPTED_FORMATS + ['pdf']
-            if not any(document['original_file_name'].lower().endswith(ext) for ext in extensions):
-                logger.debug("Skipping document with unsupported extension: %s", document['original_file_name'])
+            if not any(document.original_file_name.lower().endswith(ext) for ext in extensions):
+                logger.debug("Skipping document with unsupported extension: %s", document.original_file_name)
                 continue
 
             yield document
 
-    def fetch_documents_with_tag(self, tag_name: str | None = None) -> Iterator[dict]:
+    def fetch_documents_with_tag(self, tag_name: str | None = None) -> Iterator[PaperlessDocument]:
         """
         Fetches documents with the specified tag from the Paperless NGX instance.
 
@@ -196,7 +226,7 @@ class DescribePhotos(BaseModel):
             tag_name (str): The tag to filter documents by.
 
         Yields:
-            Iterator[dict]: yields document objects with the specified tag.
+            Iterator[PaperlessDocument]: yields document objects with the specified tag.
         """
         tag_name = tag_name or self.paperless_tag
 
@@ -204,39 +234,20 @@ class DescribePhotos(BaseModel):
             return
         
         results = data.get("results", [])
-        next = data.get("next", None)
-        yield from self._yield_results(results)
+        yield from self.filter_documents(results)
             
+        next = data.get("next", None)
         while next:
             logger.debug('Requesting next page of results')
             if not (data := self.get(next)):
                 break
             results = data.get("results", [])
-            yield from self._yield_results(results)
+            yield from self.filter_documents(results)
             next = data.get("next", None)
             
         return
-    
-    def add_note(self, document: dict, note: str) -> dict:
-        """
-        Adds a note to a document.
 
-        NOTE: Not apparently working.
-
-        Args:
-            document (dict): The document to add the note to.
-            note (str): The note to add.
-
-        Returns:
-            dict: The document with the note added.
-        """
-        logger.debug(f"Adding note to document {document['id']}: {note}")
-        payload = {"notes": note}
-        data = self.patch(f"api/documents/{document['id']}/", payload)
-        logger.debug(f"Successfully added note to document {document['id']} -> {data}")
-        return data
-
-    def remove_tag(self, document: dict, tag_name: int | str) -> dict:
+    def remove_tag(self, document: PaperlessDocument, tag_name: int | str) -> dict:
         """
         Removes a tag from a document.
 
@@ -247,17 +258,19 @@ class DescribePhotos(BaseModel):
         Returns:
             dict: The document with the tag removed.
         """
-        logger.debug(f"Removing tag '{tag_name}' from document {document['id']}")
+        logger.debug(f"Removing tag '{tag_name}' from document {document.id}")
+        
         if isinstance(tag_name, int):
             tag_id = tag_name
         elif not (tag_id := self.get_tag_id(tag_name)):
             logger.error(f"Failed to get ID for tag '{tag_name}'")
             return document
         
-        tags = [tag for tag in document.get("tags", []) if tag != tag_id]
+        tags = [tag for tag in document.tags if tag != tag_id]
         payload = {"tags": tags}
-        data = self.patch(f"api/documents/{document['id']}/", payload)
-        logger.debug(f"Successfully removed tag '{tag_name}' from document {document['id']}")
+        data = self.patch(f"api/documents/{document.id}/", payload)
+        
+        logger.debug(f"Successfully removed tag '{tag_name}' from document {document.id}")
         return data
 
     def get_tag_id(self, tag_name: str) -> int | None:
@@ -279,7 +292,7 @@ class DescribePhotos(BaseModel):
 
         return None
 
-    def add_tag(self, document: dict, tag_name: int | str) -> dict:
+    def add_tag(self, document: PaperlessDocument, tag_name: int | str) -> dict:
         """
         Adds a tag to a document.
 
@@ -290,20 +303,22 @@ class DescribePhotos(BaseModel):
         Returns:
             dict: The document with the tag added.
         """
-        logger.debug(f"Adding tag '{tag_name}' to document {document['id']}")
+        logger.debug(f"Adding tag '{tag_name}' to document {document.id}")
+        
         if isinstance(tag_name, int):
             tag_id = tag_name
         elif not (tag_id := self.get_tag_id(tag_name)):
             logger.error(f"Failed to get ID for tag '{tag_name}'")
             return document
         
-        tags = document.get("tags", []) + [tag_id]
+        tags = document.tags + [tag_id]
         payload = {"tags": tags}
-        data = self.patch(f"api/documents/{document['id']}/", payload)
-        logger.debug(f"Successfully added tag '{tag_name}' to document {document['id']}")
+        data = self.patch(f"api/documents/{document.id}/", payload)
+        
+        logger.debug(f"Successfully added tag '{tag_name}' to document {document.id}")
         return data
 
-    def download_document(self, document: dict) -> bytes | None:
+    def download_document(self, document: PaperlessDocument) -> bytes | None:
         """
         Downloads a document from Paperless NGX.
 
@@ -316,18 +331,18 @@ class DescribePhotos(BaseModel):
             bytes: The content of the document.
         """
         try:
-            logger.debug(f"Downloading document {document['id']} from Paperless...")
+            logger.debug(f"Downloading document {document.id} from Paperless...")
 
             response = requests.get(
-                f"{self.paperless_url}/api/documents/{document['id']}/download/",
+                f"{self.paperless_url}/api/documents/{document.id}/download/",
                 headers={"Authorization": f"Token {self.paperless_key}"}
             )
             response.raise_for_status()
             content = response.content
-            logger.debug(f"Downloaded document {document['id']} from Paperless")
+            logger.debug(f"Downloaded document {document.id} from Paperless")
             return content
         except requests.RequestException as e:
-            logger.error(f"Failed to download document {document['id']}: {e}")
+            logger.error(f"Failed to download document {document.id}: {e}")
 
         return None
 
@@ -368,7 +383,7 @@ class DescribePhotos(BaseModel):
 
         return None
 
-    def append_document_content(self, document: dict, content: str) -> dict:
+    def append_document_content(self, document: PaperlessDocument, content: str) -> dict:
         """
         Appends content to a document.
 
@@ -379,13 +394,13 @@ class DescribePhotos(BaseModel):
         Returns:
             dict: The document with the content appended.
         """
-        logger.debug(f"Appending content to document {document['id']}")
+        logger.debug(f"Appending content to document {document.id}")
         payload = {"content": document["content"] + "\n\r\n\r" + content}
-        data = self.patch(f"api/documents/{document['id']}/", payload)
-        logger.debug(f"Successfully appended content to document {document['id']} -> {data}")
+        data = self.patch(f"api/documents/{document.id}/", payload)
+        logger.debug(f"Successfully appended content to document {document.id} -> {data}")
         return data
 
-    def _send_describe_request(self, content : str) -> str | None:
+    def _send_describe_request(self, content : str, document : PaperlessDocument) -> str | None:
 
         # Convert file content to base64
         base64_image = base64.b64encode(content).decode("utf-8")
@@ -398,7 +413,7 @@ class DescribePhotos(BaseModel):
                     "content": [
                         {
                             "type": "text",
-                            "text": self.openai_prompt,
+                            "text": self.get_prompt(document),
                         },
                         {
                             "type": "image_url",
@@ -451,7 +466,7 @@ class DescribePhotos(BaseModel):
             raise ValueError(f"Failed to convert image to WebP: {e}")
             
 
-    def describe_document(self, document: dict) -> dict:
+    def describe_document(self, document: PaperlessDocument) -> PaperlessDocument:
         """
         Describes a single document using OpenAI's GPT-4o model.
 
@@ -462,41 +477,41 @@ class DescribePhotos(BaseModel):
             dict: The document with the description added.
         """
         try:
-            logger.debug(f"Describing document {document['id']} using OpenAI...")
+            logger.debug(f"Describing document {document.id} using OpenAI...")
             
             if not (content := self.download_document(document)):
                 logger.error("Failed to download document content.")
                 return document
 
             # Determine if the document is a PDF
-            if document['original_file_name'].lower().endswith('.pdf'):
-                logger.debug(f"Document {document['id']} is a PDF. Extracting the first image...")
+            if document.original_file_name.lower().endswith('.pdf'):
+                logger.debug(f"Document {document.id} is a PDF. Extracting the first image...")
                 if not (content := self.extract_first_image_from_pdf(content)):
-                    logger.error(f"No images found in PDF for document {document['id']}.")
+                    logger.error(f"No images found in PDF for document {document.id}.")
                     return document
 
             # Ensure accepted format
-            elif not any(document['original_file_name'].lower().endswith(ext) for ext in OPENAI_ACCEPTED_FORMATS):
-                logger.error(f"Document {document['id']} is not in an accepted format: {document['original_file_name']}")
+            elif not any(document.original_file_name.lower().endswith(ext) for ext in OPENAI_ACCEPTED_FORMATS):
+                logger.error(f"Document {document.id} is not in an accepted format: {document.original_file_name}")
                 return document
 
             try:
-                description = self._send_describe_request(content)
+                description = self._send_describe_request(content, document)
             except openai.BadRequestError as e:
                 if "Please make sure your image has of one the following formats" not in str(e):
-                    logger.error(f"Failed to generate description for document {document['id']}: {e}")
+                    logger.error(f"Failed to generate description for document {document.id}: {e}")
                     return document
                 
                 # Convert to webp
-                logger.debug(f"Failed to generate description for document {document['id']}. Trying with webp format...")
+                logger.debug(f"Failed to generate description for document {document.id}. Trying with webp format...")
                 if not (webp := self.convert_image_to_webp(content)):
-                    logger.error(f"Failed to convert document {document['id']} to webp format.")
+                    logger.error(f"Failed to convert document {document.id} to webp format.")
                     return document
                 
                 try:
-                    description = self._send_describe_request(webp)
+                    description = self._send_describe_request(webp, document)
                 except openai.BadRequestError as e:
-                    logger.error(f"Failed to generate description for document, even after converting to webp {document['id']}: {e}")
+                    logger.error(f"Failed to generate description for document, even after converting to webp {document.id}: {e}")
                     return document
                     
             # Add the description as a note
@@ -506,19 +521,19 @@ class DescribePhotos(BaseModel):
             updated_document = self.append_document_content(document, description)
 
             # Remove the tag after processing
-            updated_document = self.remove_tag(updated_document, 161) #self.paperless_tag)
+            updated_document = self.remove_tag(updated_document, TAG_NEEDS_DESCRIPTION)
 
             # Add the "described" tag
-            updated_document = self.add_tag(updated_document, 162) #"described")
+            updated_document = self.add_tag(updated_document, TAG_DESCRIBED)
 
             return updated_document
         except requests.RequestException as e:
-            logger.error(f"Failed to describe document {document['id']}: {e}")
+            logger.error(f"Failed to describe document {document.id}: {e}")
             raise
 
         return document
 
-    def describe_documents(self, documents : list[dict] | None = None) -> list[dict]:
+    def describe_documents(self, documents : list[PaperlessDocument] | None = None) -> list[PaperlessDocument]:
         """
         Describes a list of documents using OpenAI's GPT-4o model.
 
@@ -576,7 +591,6 @@ class ArgNamespace(argparse.Namespace):
     tag: str
     url: str
     key: str
-    prompt: str
 
 def main():
     try:
@@ -586,14 +600,12 @@ def main():
         DEFAULT_URL = os.getenv("PAPERLESS_URL")
         DEFAULT_KEY = os.getenv("PAPERLESS_KEY")
         DEFAULT_TAG = "needs-description"
-        DEFAULT_PROMPT = os.getenv('OPENAI_PROMPT', 'This image is from the Hudson River Psychiatric Center, taken when it was in operation. It may depict buildings, staff, or patients, and serves as a historical document that will be used to help document and research life in the asylum. Please describe it in detail. Ensure you use keywords that will help find the photo when searching. Describe everything in the image, transcribe any text you see, describe the tone, the colors, and whether the photo was taken indoors or outdoors. Be as thorough and detailed as you possibly can.')
         OPENAI_KEY = os.getenv('OPENAI_API_KEY')
 
         parser = argparse.ArgumentParser(description="Fetch documents with a specific tag from Paperless NGX.")
         parser.add_argument('--url', type=str, default=DEFAULT_URL, help="The base URL of the Paperless NGX instance")
         parser.add_argument('--key', type=str, default=DEFAULT_KEY, help="The API key for the Paperless NGX instance")
         parser.add_argument('--tag', type=str, default=DEFAULT_TAG, help="Tag to filter documents (default: 'needs-description')")
-        parser.add_argument('--prompt', type=str, default=DEFAULT_PROMPT, help="The prompt to use for OpenAI's model")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         
         args = parser.parse_args(namespace=ArgNamespace())
@@ -613,8 +625,7 @@ def main():
             paperless_url=args.url, 
             paperless_key=args.key, 
             paperless_tag=args.tag, 
-            openai_key=OPENAI_KEY,
-            openai_prompt=args.prompt
+            openai_key=OPENAI_KEY
         )
         results = paperless.describe_documents()
         if results:

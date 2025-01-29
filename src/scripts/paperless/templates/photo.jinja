@@ -1,0 +1,56 @@
+{% if document.location %}The photo I'm showing you is from {{ document.location }}. {% endif %}This photo may depict buildings, staff, patients, daily activities, medical procedures, institutional life, or events. It serves as a historical document and will be used to research and document life at this location.
+
+# Instructions
+Analyze the image carefully and provide a detailed, structured description. Ensure your response is optimized for searchability by including specific keywords and contextual information.
+
+## Title Suggestion
+Provide a concise and relevant title that best describes the image in 5-10 words.
+The title should be descriptive yet practical, ensuring it aids in quick identification.
+
+## Detailed Description
+Describe everything visible in the image, including buildings, people, objects, clothing, signage, and any other relevant elements.
+Transcribe any text that appears in the image (e.g., signs, documents, nameplates, captions).
+Describe the scene’s atmosphere—is it formal, clinical, serene, crowded, eerie, or historical?
+Note any visible medical or institutional artifacts, such as patient records, uniforms, medical equipment, or architectural details.
+Identify whether the photo was taken indoors or outdoors, mentioning relevant background details.
+Comment on the color tones (e.g., faded sepia, grayscale, vibrant, warm, sterile).
+Describe details of the room that may help identify where the photo was taken, such as furniture, wall decorations, windows, doors, and flooring.
+Note any institutional markings, stamps, or annotations present in the image.
+If the image references a known event (e.g., an asylum fire, a visit from officials), mention it.
+Provide keywords that may be helpful for searchability which are not already present in the description. Include synonyms and related terms.
+
+## Date Identification
+If a date is visible anywhere in the image, extract and format it as YYYY-MM-DD.
+If no explicit date is visible but an approximate time period can be inferred from clothing, architecture, or objects, provide an estimated decade (e.g., "circa 1920s"). If no date can be determined, state "Date unknown."
+
+## Tag Suggestions
+Suggest tags for the image, if any apply. These tags are available to use:
+asylum patients, asylum staff, arts and crafts, building interior, building exterior, children, audit, award, black and white, color photo, candid, by-laws, mistreatment, christmas, circus, cleanup, closure, crime, death, enrichment, escape, event, fire, fire department, graffiti, Halloween, holiday, inappropriate, occupational therapy, play, police department, portrait, safety, scan, stained glass, survey, tile pattern, valentine's day, vehicles
+
+## Document Type
+Classify the image as one of the following document types:
+Photograph
+Newspaper
+Report
+Postcard
+Blueprint
+Letter
+Magazine
+Poster
+Receipt
+Side-by-Side Photo
+Other
+
+# Example Output Format
+{
+	"title": "Outdoor Patient Gathering at HRSH, 1950s",
+	"description": "The image depicts a gathering of patients and staff outdoors in a sprawling courtyard at the Hudson River Psychiatric Center. The scene features a lush, well-maintained lawn dotted with rows of wooden benches, and a series of tall oak trees providing partial shade. A man wearing a dark suit stands behind a simple wooden podium, addressing the assembled audience. Many attendees are dressed in uniform-like garments or simple, lightweight clothing appropriate for a warm day. In the distance, a large, multi-story institutional brick building displays tall windows with arched frames, indicative of mid-19th-century construction. Several balconies overlook the courtyard, and a few onlookers can be seen peering down at the gathering.\n\nNear the podium, an American flag is prominently displayed alongside a small bouquet of flowers. Some children, likely visitors or relatives of the staff, play quietly near the trees, occasionally glancing at the speaker. The ambiance is formal yet communal, suggesting a celebratory or commemorative event. The overall color palette is moderately faded, with pastel hues dominating the clothing and greenery that looks somewhat washed out — characteristic of color photographs from the mid-20th century. A handwritten sign in the background reads 'Annual Staff & Patient Wellness Ceremony — 1952.' Patients and staff seem engaged, some taking notes, while a nurse dressed in a crisp white uniform circulates among them, offering refreshments.\n\nAdditional Notes: At the lower right corner of the photograph, a date has been stamped: 'Oct 5, 1952.' The expression on many attendees’ faces seems optimistic, and the presence of small children alongside staff indicates a relatively inclusive environment. A second banner, partially obscured by a tree branch, references a hospital anniversary celebration. Keywords: grass, leaves, ceremony, spring, summer, patriotic, speech, pastoral grounds, institutional life, wellness event, public address, historical architecture.\n",
+	"date": "1952-10-05",
+	"tags": ["asylum patients", "asylum staff", "building exterior", "event", "color photo", "children"],
+	"document_type": "Photograph"
+}
+
+# Metadata
+The photo has the following metadata.
+{% if document.title %}Current Title: {{ document.title }}{% endif %}
+{% if document.tags %}Current Tags: {{ document.tags | join(', ') }}{% endif %}
