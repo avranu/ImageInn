@@ -51,7 +51,7 @@ from scripts.paperless.document import PaperlessDocument
 
 logger = logging.getLogger(__name__)
 
-OPENAI_ACCEPTED_FORMATS = ['png', 'jpeg', 'gif', 'webp', 'pdf']
+OPENAI_ACCEPTED_FORMATS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf']
 MIME_TYPES = {
     'png': 'image/png',
     'jpeg': 'image/jpeg',
