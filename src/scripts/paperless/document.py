@@ -71,6 +71,17 @@ class PaperlessDocument(BaseModel):
         
         return v
 
+    @field_validator("created", "modified", "added", "deleted_at", mode="before")
+    def parse_datetime(cls, v: str | datetime | None) -> datetime | None:
+        if isinstance(v, datetime) or v is None:
+            return v
+        if isinstance(v, str):
+            parsed = dateparser.parse(v)
+            if parsed:
+                return parsed
+            raise ValueError(f"Could not parse datetime: {v}")
+        raise ValueError(f"Invalid datetime value: {v}")
+
     def get_corrected_date(self) -> date:
         """
         """
