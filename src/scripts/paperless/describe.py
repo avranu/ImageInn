@@ -472,7 +472,7 @@ class DescribePhotos(BaseModel):
             return None
         
         # Handle "circa 1950"
-        if matches := re.match(r"^((around|circa) *)?(\d{4})s?$", date_str, re.IGNORECASE):
+        if matches := re.match(r"^((around|circa|mid|early|late|before|after) *)?(\d{4})s?$", date_str, re.IGNORECASE):
             date_str = f'{matches.group(3)}-01-01'
         
         parsed_date = dateparser.parse(date_str)
