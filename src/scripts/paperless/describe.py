@@ -616,7 +616,7 @@ class DescribePhotos(BaseModel):
 
         # Append the description to the document
         updated_document = self.append_document_content(document, full_description)
-        logger.info(f"Successfully described document {document.id}")
+        logger.debug(f"Successfully described document {document.id}")
 
     def describe_documents(self, documents : list[PaperlessDocument] | None = None) -> list[PaperlessDocument]:
         """
