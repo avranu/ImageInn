@@ -47,7 +47,7 @@ class PaperlessDocument(BaseModel):
     created: datetime | None = None
     created_date: date | datetime | None
     modified: datetime | None = None
-    added: datetime
+    added: datetime | None = None
     deleted_at: datetime | None = None
     archive_serial_number: int | str | None = None
     original_file_name: str | None = None
@@ -63,7 +63,7 @@ class PaperlessDocument(BaseModel):
 
 
     @field_validator("created_date", mode="before")
-    def validate_created_date(cls, v: date | datetime | str) -> date | None:
+    def validate_created_date(cls, v: date | datetime | str | None) -> date | None:
         if isinstance(v, datetime):
             return v.date()
         elif isinstance(v, str):
