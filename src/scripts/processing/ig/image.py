@@ -1,5 +1,7 @@
 """*********************************************************************************************************************
 *                                                                                                                      *
+        2025-01-30: Dimension values were hardcoded, so self.canvas_size and self.target_size are not used. 
+            - Will refactor at some point.
 *                                                                                                                      *
 *                                                                                                                      *
 *                                                                                                                      *
@@ -13,7 +15,7 @@
 *        Created: 2024-07-20                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
-*        Copyright (c) 2024 Jess Mann                                                                                  *
+*        Copyright (c) 2025 Jess Mann                                                                                  *
 *                                                                                                                      *
 * -------------------------------------------------------------------------------------------------------------------- *
 *                                                                                                                      *
@@ -124,26 +126,22 @@ class IGImage:
 
     def recalculate_canvas_size(self) -> None:
         """
-        If the image is smaller than the canvas, reduce the canvas size.
+        Adjusts the canvas size dynamically to maintain the correct aspect ratio.
         """
-        # If the original image is smaller than the target size, halve the canvas size
-        if max(self.original.width, self.original.height) < self.target_size:
-            self.canvas_size = max(1080, self.canvas_size // 2)
-            self.margin = max(50, self.margin // 2)
-            self.border_size = max(4, self.border_size // 2)
+        self.canvas_size = (1080, 1350)  # Fixed 4:5 aspect ratio
+        self.margin = max(50, self.margin // 2)
+        self.border_size = max(4, self.border_size // 2)
+
 
     def scale_image(self) -> Image.Image:
         """
-        Scale the image to fit within the target size, maintaining aspect ratio.
-
-        Args:
-            image (Image.Image): Original image to be scaled.
+        Scale the image to fit within the 1080x1350 size while maintaining aspect ratio.
 
         Returns:
             Image.Image: Scaled image.
         """
-        target_size = self.target_size
-        img_ratio = min(target_size / self.original.width, target_size / self.original.height)
+        target_width, target_height = 1080, 1350
+        img_ratio = min(target_width / self.original.width, target_height / self.original.height)
         new_size = (int(self.original.width * img_ratio), int(self.original.height * img_ratio))
 
         logger.debug("Scaling image to %s", new_size)
@@ -168,20 +166,20 @@ class IGImage:
 
     def setup_canvas(self) -> Image.Image:
         """
-        Setup the canvas and layers on top of it.
+        Creates a 1080x1350 canvas, places the blurred background, and centers the scaled image.
         """
         logger.debug('Creating canvas')
-        self._canvas = Image.new('RGB', (self.canvas_size, self.canvas_size), (255, 255, 255))
+        self._canvas = Image.new('RGB', (1080, 1350), (255, 255, 255))
 
         logger.debug('Copying blurred image to canvas')
         self._canvas.paste(self.blurred, (0, 0))
 
         logger.debug('Placing scaled image on canvas')
-        canvas_size = self.canvas_size
-        x_offset = (canvas_size - self.scaled.width) // 2
-        y_offset = (canvas_size - self.scaled.height) // 2
-        self.canvas.paste(self.scaled, (x_offset, y_offset))
+        x_offset = (1080 - self.scaled.width) // 2
+        y_offset = (1350 - self.scaled.height) // 2
+        self._canvas.paste(self.scaled, (x_offset, y_offset))
 
+        # Add optional border
         border_img = ImageOps.expand(self.scaled, self.border_size, fill='black').convert('RGBA')
         self._canvas.paste(border_img, (x_offset - self.border_size, y_offset - self.border_size))
 
