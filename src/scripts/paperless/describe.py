@@ -469,11 +469,11 @@ class DescribePhotos(BaseModel):
         date_str = str(date_str).strip()
         
         # "Date unknown" or "Unknown date" or "No date"
-        if re.match(r"^(date unknown|unknown date|no date|none|unknown|n/?a)$", date_str, re.IGNORECASE):
+        if re.match(r"(date unknown|unknown date|no date|none|unknown|n/?a)$", date_str, re.IGNORECASE):
             return None
         
         # Handle "circa 1950"
-        if matches := re.match(r"^((around|circa|mid|early|late|before|after) *)?(\d{4})s?$", date_str, re.IGNORECASE):
+        if matches := re.match(r"((around|circa|mid|early|late|before|after) *)?(\d{4})s?$", date_str, re.IGNORECASE):
             date_str = f'{matches.group(3)}-01-01'
         
         parsed_date = dateparser.parse(date_str)
@@ -499,7 +499,7 @@ class DescribePhotos(BaseModel):
             parsed_date = parsed_date.date()
             
         if not parsed_date:
-            raise ValueError(f"Invalid date format: {date=}")
+            return document
         
         logger.debug(f"Updating date of document {document.id} to '{parsed_date}'")
         payload = {"created_date": parsed_date.strftime("%Y-%m-%d")} 
