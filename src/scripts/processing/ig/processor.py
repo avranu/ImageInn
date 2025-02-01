@@ -174,7 +174,10 @@ class IGImageProcessor(FileManager):
         return self._ig_output_dir
 
     def _get_images(self) -> list[Path]:
-        files = [img for img in self.input_dir.glob('*.jpg') if img.is_file() and not img.stem.endswith(self.file_suffix)]
+        globs = ['*.jpg', '*.png']
+        files = []
+        for glob in globs:
+            files.extend([img for img in self.input_dir.glob(glob) if img.is_file() and not img.stem.endswith(self.file_suffix)])
 
         # Check if any files will be overwritten -- TODO: this is broken.
         existing_files = [str(img) for img in files if (self.input_dir / f"{img.stem}{self.file_suffix}.jpg").exists()]
