@@ -13,7 +13,7 @@
 *        Created: 2024-07-19                                                                                           *
 *        Author:  Jess Mann                                                                                            *
 *        Email:   jess.a.mann@gmail.com                                                                                *
-*        Copyright (c) 2024 Jess Mann                                                                                  *
+*        Copyright (c) 2025 Jess Mann                                                                                  *
 *                                                                                                                      *
 * -------------------------------------------------------------------------------------------------------------------- *
 *                                                                                                                      *
@@ -30,6 +30,7 @@ from scripts.processing.meta import (
 	DEFAULT_CONTRAST,
 	DEFAULT_SATURATION,
 	DEFAULT_BORDER,
-	AdjustmentTypes
+	AdjustmentTypes,
+	Formats,
 )
 from scripts.processing.ig import IGImageProcessor, IGImage

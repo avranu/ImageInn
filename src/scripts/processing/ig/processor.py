@@ -83,6 +83,7 @@ from scripts.processing.meta import (
     DEFAULT_SATURATION,
     DEFAULT_BORDER,
     AdjustmentTypes,
+    Formats,
     to_windows_path,
     DEFAULT_TOPAZ_PATH
 )
@@ -122,6 +123,7 @@ class IGImageProcessor(FileManager):
     skip_image_adjustments: bool = Field(default=False)
     topaz_exe: Path | None = Field(default=DEFAULT_TOPAZ_PATH)
     topaz_output_dir : Path | None = Field(default=None)
+    format : str = Formats.POST.value
     
     _progress_bar : tqdm | None = PrivateAttr(default=None)
     _topaz_available: bool | None = PrivateAttr(default=None)
@@ -138,6 +140,12 @@ class IGImageProcessor(FileManager):
     @field_validator('topaz_output_dir', mode='before')
     def validate_topaz_output_dir(cls, v):
         return Path(v)
+
+    @field_validator('format', mode='before')
+    def validate_format(cls, v):
+        if not v or str(v).lower() not in [Formats.POST.value, Formats.STORY.value]:
+            raise ValueError(f"Invalid format: {v}. Must be one of {Formats.__members__.keys()}")
+        return v
 
     @property
     def progress_bar(self) -> tqdm | None:
@@ -178,14 +186,26 @@ class IGImageProcessor(FileManager):
     def output_dir(self) -> Path:
         return self.input_dir / self.output_folder
 
+    def get_file_suffix(self) -> str:
+        match self.format:
+            case Formats.POST.value:
+                fmt = 'post'
+            case Formats.STORY.value:
+                fmt = 'story'
+            case _:
+                logger.error('Unknown format: %s', self.format)
+                fmt = 'post'
+
+        return f"_{fmt}{self.file_suffix}.jpg"
+
     def _get_images(self) -> list[Path]:
         globs = ['*.jpg', '*.png']
         files = []
         for glob in globs:
-            files.extend([img for img in self.input_dir.glob(glob) if img.is_file() and not img.stem.endswith(self.file_suffix)])
+            files.extend([img for img in self.input_dir.glob(glob) if img.is_file() and not img.stem.endswith(self.get_file_suffix())])
 
         # Check if any files will be overwritten -- TODO: this is broken.
-        existing_files = [str(img) for img in files if (self.input_dir / f"{img.stem}{self.file_suffix}.jpg").exists()]
+        existing_files = [str(img) for img in files if (self.input_dir / f"{img.stem}{self.get_file_suffix()}.jpg").exists()]
         if existing_files:
             logger.warning(f"{len(existing_files)} files will be overwritten. Waiting for 10 seconds before continuing")
             time.sleep(10)
@@ -241,7 +261,7 @@ class IGImageProcessor(FileManager):
 
     def check_if_processed(self, image_path : Path) -> bool:
         # Check if any file is in the output dir that begins with image_path.stem and ends with the suffix
-        for image in self.output_dir.glob(f"{image_path.stem}*{self.file_suffix}.jpg"):
+        for image in self.output_dir.glob(f"{image_path.stem}*{self.get_file_suffix()}.jpg"):
             if image.is_file():
                 return True
         return False
@@ -422,6 +442,7 @@ class IGImageProcessor(FileManager):
 class ArgNamespace(argparse.Namespace):
     """Namespace for argparse arguments."""
     input_dir: Path
+    format : str
     margin: int
     size: int
     blur: Decimal
@@ -440,12 +461,16 @@ class ArgNamespace(argparse.Namespace):
         self.topaz_exe = Path(self.topaz_exe)
 
 def main() -> None:
-    """Main function to parse arguments and start the image processing."""
+    """
+    Main function to parse arguments and start the image processing.
+    """
+    format_choices = [Formats.POST.value, Formats.STORY.value]
     parser = argparse.ArgumentParser(description='''Instagram Image Processor.
                     This script processes JPG images in a directory, scaling them to fit within a square canvas,
                     applyies a blurred and enhanced version of the image as the background, and saving the
                     processed image with a suffix.''')
     parser.add_argument('input_dir', type=Path, nargs="?", default=".", help='Path to the input directory containing JPG images.')
+    parser.add_argument('--format', type=str, default=Formats.POST.value, choices=format_choices, help='Format for the output images.')
     parser.add_argument('--margin', '-m', type=int, default=DEFAULT_MARGIN, help='Margin size for the canvas.')
     parser.add_argument('--size', '-s', type=int, default=DEFAULT_CANVAS_SIZE, help='Canvas size for the output images.')
     parser.add_argument('--blur', '-b', type=Decimal, default=DEFAULT_BLUR, help='Amount of Gaussian blur to apply.')
@@ -464,6 +489,7 @@ def main() -> None:
 
     processor = IGImageProcessor(
         input_dir = args.input_dir,
+        format = args.format,
         margin = args.margin,
         canvas_size = args.size,
         blur_amount = args.blur,

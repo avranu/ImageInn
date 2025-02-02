@@ -46,6 +46,10 @@ class AdjustmentTypes(Enum):
     CONTRAST = 'contrast'
     TOPAZ = 'topaz'
 
+class Formats(Enum):
+    POST = 'post'
+    STORY = 'story'
+
 def get_topaz_path() -> Path | None:
     if platform.system() == 'Linux' and ('Microsoft' in platform.release()):
         logger.info('Detected platform: WSL')

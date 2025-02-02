@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from PIL import Image, ImageOps
 from dataclasses import dataclass, field
-from scripts.processing.meta import AdjustmentTypes
+from scripts.processing.meta import AdjustmentTypes, Formats
 
 if TYPE_CHECKING:
     from scripts.processing.ig.processor import IGImageProcessor
@@ -53,10 +53,16 @@ class IGImage:
     output_dir : Path | None = None
 
     def __post_init__(self):
-        self._output_suffix = self.processor.file_suffix
-        # processor might define a default 1080x1350 or something else
-        # For best IG results, we default to double 1080x1350 unless changed
-        self.canvas_size = (2160, 2700)
+        self._output_suffix = self.processor.get_file_suffix()
+        # For best IG results, we default to double the minimum unless changed
+        match self.processor.format:
+            case Formats.POST.value:
+                self.canvas_size = (2160, 2700)
+            case Formats.STORY.value:
+                self.canvas_size = (2160, 3840)
+            case _:
+                raise ValueError(f"Invalid format: {self.processor.format}")
+            
         self.margin = self.processor.margin
         self.border_size = self.processor.border_size
         self.open_image()
