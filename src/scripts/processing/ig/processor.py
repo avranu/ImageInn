@@ -109,6 +109,7 @@ class IGImageProcessor(FileManager):
         make_image_adjustments (bool): Flag to enable/disable image adjustments.
     """
     input_dir: Path
+    output_folder : str = "processed"
     margin: int = Field(default=DEFAULT_MARGIN)
     canvas_size: int = Field(default=DEFAULT_CANVAS_SIZE)
     blur_amount: Number = Field(default=DEFAULT_BLUR)
@@ -173,6 +174,10 @@ class IGImageProcessor(FileManager):
         
         return self._ig_output_dir
 
+    @property
+    def output_dir(self) -> Path:
+        return self.input_dir / self.output_folder
+
     def _get_images(self) -> list[Path]:
         globs = ['*.jpg', '*.png']
         files = []
@@ -188,7 +193,7 @@ class IGImageProcessor(FileManager):
         return files
 
     def create_image(self, file_path : Path) -> IGImage:
-        return IGImage(file_path = file_path, processor = self)
+        return IGImage(file_path = file_path, processor = self, output_dir = self.output_dir)
 
     def process_images(self) -> None:
         """
@@ -201,7 +206,11 @@ class IGImageProcessor(FileManager):
         images = self._get_images()
         total = len(images)
 
+
         try:
+            # Ensure output dirs exist
+            self.output_dir.mkdir(exist_ok=True)
+
             if not self.skip_image_adjustments:
                 if self.topaz_available:
                     total *= 2
@@ -232,7 +241,7 @@ class IGImageProcessor(FileManager):
 
     def check_if_processed(self, image_path : Path) -> bool:
         # Check if any file is in the output dir that begins with image_path.stem and ends with the suffix
-        for image in self.input_dir.glob(f"{image_path.stem}*{self.file_suffix}.jpg"):
+        for image in self.output_dir.glob(f"{image_path.stem}*{self.file_suffix}.jpg"):
             if image.is_file():
                 return True
         return False
@@ -327,7 +336,7 @@ class IGImageProcessor(FileManager):
         subprocess.run(cmd, capture_output=True, check=True, timeout=timeout)
 
         # Check for output. Original filename in the output_path dir
-        topaz_output = self.topaz_output_dir / f"{image_path.stem}.jpg"
+        topaz_output = self.topaz_output_dir / image_path.name
         if not topaz_output.exists():
             logger.error("Topaz output not found: %s", topaz_output)
             return None

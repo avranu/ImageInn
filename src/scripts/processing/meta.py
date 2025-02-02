@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_CANVAS_SIZE : int = 2160
 DEFAULT_MARGIN : int = 100
 DEFAULT_BLUR : int = 100
-DEFAULT_BRIGHTNESS : Number = 2.5
+DEFAULT_BRIGHTNESS : Number = 1.8
 DEFAULT_CONTRAST : Number = 0.3
-DEFAULT_SATURATION : Number = 0.3
+DEFAULT_SATURATION : Number = 0.4
 DEFAULT_BORDER : int = 8
 
 class AdjustmentTypes(Enum):

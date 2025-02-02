@@ -50,12 +50,13 @@ class IGImage:
     _scaled: Image.Image | None = field(init=False, default=None)
     _blurred: Image.Image | None = field(init=False, default=None)
     _canvas: Image.Image | None = field(init=False, default=None)
+    output_dir : Path | None = None
 
     def __post_init__(self):
         self._output_suffix = self.processor.file_suffix
         # processor might define a default 1080x1350 or something else
-        # For best IG results, we default to 1080x1350 unless changed
-        self.canvas_size = (1080, 1350)
+        # For best IG results, we default to double 1080x1350 unless changed
+        self.canvas_size = (2160, 2700)
         self.margin = self.processor.margin
         self.border_size = self.processor.border_size
         self.open_image()
@@ -69,7 +70,8 @@ class IGImage:
 
     @property
     def output_path(self) -> Path:
-        return self.file_path.parent / f"{self.file_path.stem}{self.output_suffix}.jpg"
+        folder = self.output_dir or self.file_path.parent
+        return folder / f"{self.file_path.stem}{self.output_suffix}.jpg"
 
     @property
     def original(self) -> Image.Image:
@@ -118,7 +120,7 @@ class IGImage:
     def recalculate_canvas_size(self) -> None:
         """
         Optionally adjust the final canvas or margin based on image size.
-        Keeps final ratio at 4:5 (1080x1350) but can reduce margins if the image is very small.
+        Keeps final ratio at 4:5 (e.g. 1080x1350) but can reduce margins if the image is very small.
         """
         base_w, base_h = self.canvas_size
         # If original is very small, reduce margin/border to avoid overwhelming the image
@@ -141,7 +143,7 @@ class IGImage:
 
     def create_blurred_background(self) -> Image.Image:
         """
-        Create a blurred background that covers the full 1080x1350 (or final canvas_size).
+        Create a blurred background that covers the full 4:5 image (or final canvas_size).
         """
         final_w, final_h = self.canvas_size
         # Scale original so it's at least as large as the canvas in both dimensions
