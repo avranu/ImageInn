@@ -67,7 +67,11 @@ TAG_DESCRIBED = 162
 TAG_NEEDS_DESCRIPTION = 161
 TAG_NEEDS_TITLE = 190
 TAG_NEEDS_DATE = 191
-VERSION = "0.1.0"
+TAG_CLEANUP = 77
+DOCUMENT_TYPE_PHOTO = 8
+DOCUMENT_TYPE_DETAIL_CLOSEUP = 30
+DOCUMENT_TYPE_ITEMS = 11
+VERSION = "0.2.2"
 
 class DescribePhotos(BaseModel):
     """
@@ -177,6 +181,25 @@ class DescribePhotos(BaseModel):
             
         return None
 
+    def choose_template(selff, document : PaperlessDocument) -> str:
+        """
+        Choose a jinja template for a document
+        """
+        # If the document type is NOT "photo", choose paperwork.jinja
+        if document.document_type not in [DOCUMENT_TYPE_PHOTO, DOCUMENT_TYPE_DETAIL_CLOSEUP, DOCUMENT_TYPE_ITEMS]:
+            return "paperwork.jinja"
+        
+        # If it has the "cleanup" tag, choose cleanup_photo.jinja
+        if any(tag == TAG_CLEANUP for tag in document.tags):
+            return "cleanup_photo.jinja"
+
+        # If the date is prior to 2010, choose old_photo.jinja
+        if document.created_date and document.created_date.year < 2010:
+            return "old_photo.jinja"
+
+        # Newer photos
+        return "comparison_photo.jinja"
+
     def get_prompt(self, document : PaperlessDocument) -> str:
         """
         Generate a prompt to sent to openai using a jinja template.
@@ -184,7 +207,10 @@ class DescribePhotos(BaseModel):
         if not self._jinja_env:
             templates_path = Path(__file__).parent / 'templates'
             self._jinja_env = Environment(loader=FileSystemLoader(str(templates_path)), autoescape=True)
-        template = self._jinja_env.get_template("photo.jinja")
+
+        template_name = self.choose_template(document)
+        logger.debug('Using template: %s', template_name)
+        template = self._jinja_env.get_template(template_name)
 
         if not (description := template.render(document=document, location="Hudson River State Hospital (HRSH), which is a now-closed psychiatric hospital in Poughkeepsie, New York, built with the Kirkbride Plan.")):
             raise ValueError("Failed to generate prompt.")
@@ -629,35 +655,68 @@ class DescribePhotos(BaseModel):
 
         return document
 
-    def process_response(self, response : str, document : PaperlessDocument):
-
+    def parse_json(self, response : str, document : PaperlessDocument) -> dict | None:
         # Attempt to parse response as json
         try:
-            parsed_response = json.loads(response)
+            return json.loads(response)
         except json.JSONDecodeError:
-            logger.error("Failed to parse response as JSON. Saving response raw in document content. Document #%s: %s", document.id, document.original_file_name)
-            updated_document = self.append_document_content(document, response)
-            return updated_document
+            logger.debug("Failed to parse response as JSON. Saving response raw in document content. Document #%s: %s", document.id, document.original_file_name)
+
+        # If "```json" is present, strip everything before it
+        if "```json" in response:
+            response = response[response.index("```json") + 7:]
+            # Strip everything after "```"
+            if "```" in response:
+                response = response[:response.index("```")]
+
+        # try again
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError:
+            logger.debug('Failed again after stripping json block')
+
+        logger.error('Failed to parse response as JSON. Saving response raw in document content. Document #%s: %s', document.id, document.original_file_name)
+        self.append_document_content(document, response)
+        return None
+
+    def process_response(self, response : str, document : PaperlessDocument):
+        # Attempt to parse response as json
+        if not (parsed_response := self.parse_json(response, document)):
+            logger.debug('Unable to process response after failed json parsing')
+            return document
 
         # Check if parsed_response is a dictionary
         if not isinstance(parsed_response, dict):
             logger.error("Parsed response is not a dictionary. Saving response raw in document content. Document #%s: %s", document.id, document.original_file_name)
-            updated_document = self.append_document_content(document, response)
-            return updated_document
-
+            self.append_document_content(document, response)
+            return document
+        
         # Attempt to grab "title", "description", "tags", "date" from parsed_response
         title = parsed_response.get("title", None)
         description = parsed_response.get("description", None)
+        summary = parsed_response.get("summary", None)
+        content = parsed_response.get("content", None)
         tags = parsed_response.get("tags", None)
         date = parsed_response.get("date", None)
-        full_description = f"""IMAGE DESCRIPTION (v{VERSION}): 
+        full_description = f"""AI IMAGE DESCRIPTION (v{VERSION}): 
+            The following description was provided by an Artificial Intelligence (GPT-4o by OpenAI).
+            It may not be fully accurate. Its purpose is to provide keywords and context
+            so that the document can be more easily searched.
             Suggested Title: {title}
             Inferred Date: {date}
             Suggested Tags: {tags}
-            Description: {description or parsed_response}
             Previous Title: {document.title}
             Previous Date: {document.created_date}
         """
+
+        if summary:
+            full_description += f"\n\nSummary: {summary}"
+        if content:
+            full_description += f"\n\nContent: {content}"
+        if description:
+            full_description += f"\n\nDescription: {description}"
+        if not any([description, summary, content]):
+            full_description += f"\n\nFull AI Response: {parsed_response}"
 
         if title and TAG_NEEDS_TITLE in document.tags:
             try:
@@ -678,6 +737,7 @@ class DescribePhotos(BaseModel):
         self.remove_tag(document, TAG_NEEDS_DESCRIPTION)
         self.add_tag(document, TAG_DESCRIBED)
         logger.debug(f"Successfully described document {document.id}")
+        return updated_document
 
     def describe_documents(self, documents : list[PaperlessDocument] | None = None) -> list[PaperlessDocument]:
         """
