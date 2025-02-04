@@ -68,6 +68,8 @@ TAG_NEEDS_DESCRIPTION = 161
 TAG_NEEDS_TITLE = 190
 TAG_NEEDS_DATE = 191
 TAG_CLEANUP = 77
+TAG_HRSH = 2
+TAG_NYS_OMH = 229
 DOCUMENT_TYPE_PHOTO = 8
 DOCUMENT_TYPE_DETAIL_CLOSEUP = 30
 DOCUMENT_TYPE_ITEMS = 11
@@ -118,6 +120,13 @@ class DescribePhotos(BaseModel):
             logger.warning('OPENAI_API_KEY environment variable is not set.')
             raise ValueError('OPENAI_API_KEY environment variable is not set.')
         return value
+
+    @property
+    def jinja_env(self) -> Environment:
+        if not self._jinja_env:
+            templates_path = Path(__file__).parent / 'templates'
+            self._jinja_env = Environment(loader=FileSystemLoader(str(templates_path)), autoescape=True)
+        return self._jinja_env
 
     def get(self, url_path : str, params : dict | None = None) -> dict | None:
         """
@@ -204,19 +213,33 @@ class DescribePhotos(BaseModel):
         """
         Generate a prompt to sent to openai using a jinja template.
         """
-        if not self._jinja_env:
-            templates_path = Path(__file__).parent / 'templates'
-            self._jinja_env = Environment(loader=FileSystemLoader(str(templates_path)), autoescape=True)
-
         template_name = self.choose_template(document)
         logger.debug('Using template: %s', template_name)
-        template = self._jinja_env.get_template(template_name)
+        template = self.jinja_env.get_template(template_name)
+        location = self.get_location(document)
 
-        if not (description := template.render(document=document, location="Hudson River State Hospital (HRSH), which is a now-closed psychiatric hospital in Poughkeepsie, New York, built with the Kirkbride Plan.")):
+        if not (description := template.render(document=document, location=location)):
             raise ValueError("Failed to generate prompt.")
 
         return description
 
+    def get_location(self, document : PaperlessDocument) -> str | None:
+        """
+        Get the location of a document.
+        """
+        template = None
+
+        if any(tag == TAG_HRSH for tag in document.tags):
+            template = self.jinja_env.get_template("locations/hrsh.jinja")
+        if any(tag == TAG_NYS_OMH for tag in document.tags):
+            template = self.jinja_env.get_template("locations/nys_omh.jinja")
+
+        if template:
+            return template.render(document=document)
+        # Temporary TODO
+        raise Exception("No location template found.")
+        return None
+        
     def filter_documents(self, documents : Iterator[dict | PaperlessDocument]) -> Iterator[PaperlessDocument]:
         """
         Yields documents from the Paperless NGX instance.

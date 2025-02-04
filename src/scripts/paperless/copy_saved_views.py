@@ -37,21 +37,20 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 VIEWS_TO_REPLICATE = [
-    "HRSH - 38 - Straight View of Stage",
-    "Books, Magazines, Reports",
-    "CRIS",
-    "Default View",
-    "HRSH",
-    "HRSH - Admin",
+    #"Books, Magazines, Reports",
+    #"CRIS",
+    #"Default View",
+    #"HRSH",
     "HRSH - Before Closure",
     "HRSH - Morgue",
-    "HRSH - Refreshment Stand",
-    "HRSH - Tailor Shop",
+    #"HRSH - Refreshment Stand",
+    "HHRSH - Tailor Shop",
     "Maps, Blueprints, Aerials",
     "My Files",
     "Paperwork",
     "Photography",
-    "Unknown Building",
+    #"Unknown Building",
+    "HRSH - 38 - Straight View of Stage",
 ]
 
 class Paperless(BaseModel):
