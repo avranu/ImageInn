@@ -236,8 +236,6 @@ class DescribePhotos(BaseModel):
 
         if template:
             return template.render(document=document)
-        # Temporary TODO
-        raise Exception("No location template found.")
         return None
         
     def filter_documents(self, documents : Iterator[dict | PaperlessDocument]) -> Iterator[PaperlessDocument]:
