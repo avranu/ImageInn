@@ -1,6 +1,6 @@
 [project]
 name = "ImageInn"
-version = "0.1.16"
+version = "0.2.0"
 description = "Processing and Organizing Photos"
 authors = [{ name="Jess Mann", email="jess.a.mann@gmail.com" }]
 dependencies = [
@@ -26,6 +26,7 @@ requires-python = ">=3.12"
 upload = "scripts.thumbnails.upload.progressive:main"
 organize = "scripts.monthly.organize.base:main"
 ig = "scripts.processing.ig.processor:main"
+describe = "scripts.paperless.describe:main"
 
 [tool.setuptools]
 # This ensures "src" is your package root ("package_dir" maps top-level to "src")

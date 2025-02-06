@@ -26,7 +26,7 @@ import argparse
 import logging
 import os
 import sys
-from typing import Any, List
+from typing import Any, Iterator, List
 
 import requests
 from alive_progress import alive_bar
@@ -41,16 +41,23 @@ VIEWS_TO_REPLICATE = [
     #"CRIS",
     #"Default View",
     #"HRSH",
-    "HRSH - Before Closure",
-    "HRSH - Morgue",
+    #"HRSH - Before Closure",
+    #"HRSH - Morgue",
     #"HRSH - Refreshment Stand",
-    "HHRSH - Tailor Shop",
-    "Maps, Blueprints, Aerials",
-    "My Files",
-    "Paperwork",
-    "Photography",
+    #"HHRSH - Tailor Shop",
+    #"Maps, Blueprints, Aerials",
+    #"My Files",
+    #"Paperwork",
+    #"Photography",
     #"Unknown Building",
-    "HRSH - 38 - Straight View of Stage",
+    #"HRSH - 38 - Straight View of Stage",
+    "Example: Everything Except HRSH",
+	"Example: HRSH Auditorium - Photos",
+	"Example: HRSH Auditorium - Straight View of Stage",
+	"Example: HRSH Auditorium - Straight View of Stage	Alyssa",
+	"Example: HRSH Morgue - 2nd Floor",
+	"Example: Photos of Building Exteriors",
+	"Example: Tags and Metadata Visible",
 ]
 
 class Paperless(BaseModel):
@@ -65,9 +72,15 @@ class Paperless(BaseModel):
 
     def get(self, url_path: str, params: dict | None = None) -> Any:
         """Send a GET request to the Paperless NGX API."""
+        # If url begins with http, do not append the url_path
+        if url_path.startswith("http"):
+            address = url_path
+        else:
+            address = f"{self.paperless_url}/{url_path}"
+        
         headers = {"Authorization": f"Token {self.paperless_key}"}
-        logger.debug(f'GET: {self.paperless_url}/{url_path} with params: {params}')
-        response = requests.get(f"{self.paperless_url}/{url_path}", headers=headers, params=params)
+        logger.debug(f'GET: {address} with params: {params}')
+        response = requests.get(address, headers=headers, params=params)
         logger.debug(f"Response Status: {response.status_code}")
         logger.debug(f"Response Content: {response.text}")
         response.raise_for_status()
@@ -83,14 +96,33 @@ class Paperless(BaseModel):
         response.raise_for_status()
         return response.json()
 
-    def fetch_saved_views(self, user_id: int) -> List[dict]:
+    def fetch_saved_views(self, user_id: int | None = None) -> Iterator[dict]:
         """Fetch all saved views for a specific user."""
         data = self.get("api/saved_views/")
         if not data or "results" not in data:
             logger.warning("No saved views found.")
             return []
-        return [view for view in data["results"] if view["owner"] == user_id]
 
+        results = data["results"]
+        while results:
+            if user_id is None:
+                yield from results
+            else: 
+                yield from (view for view in results if view["owner"] == user_id)
+
+            # Not another page
+            if "next" not in data or not data["next"]:
+                logger.info("No more saved views found.")
+                break
+
+            logger.info('Fetching next page of saved views... %s', data["next"])
+            data = self.get(data["next"])
+            if not data or "results" not in data:
+                logger.debug("No more saved views found.")
+                break
+            results = data["results"]
+
+        return
 
     def create_saved_view(self, view_data: dict, user_id: int) -> dict:
         """Create a new saved view for a user."""
@@ -102,7 +134,7 @@ class Paperless(BaseModel):
 
     def replicate_saved_views(self, source_user_id: int, target_user_ids: List[int]) -> None:
         """Replicate saved views from one user to others."""
-        saved_views = self.fetch_saved_views(source_user_id)
+        saved_views = self.fetch_saved_views() #source_user_id)
         if not saved_views:
             logger.warning(f"No saved views found for source user ID {source_user_id}.")
             return
@@ -110,6 +142,7 @@ class Paperless(BaseModel):
         for target_user_id in target_user_ids:
             for view in saved_views:
                 if view["name"] not in VIEWS_TO_REPLICATE:
+                    logger.info(f"Skipping view '{view['name']}' for user {target_user_id}")
                     continue
 
                 try:
