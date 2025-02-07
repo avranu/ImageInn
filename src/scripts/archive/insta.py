@@ -10,10 +10,9 @@ Date: 2024-09-25
 Status: WIP
 
 Sample command (without this script):
-instaloader --post-metadata-txt="Caption: '{caption}' - Title: '{title}' - {mediacount} images - {likes} likes - {comments} comments - hashtags: {caption
- _hashtags} - mentions: {caption_mentions} - tagged: {tagged_users} - {url}" --storyitem-metadata-txt="Caption: '{caption}' - {date} - hashtags: {caption_
- hashtags} - mentions: {caption_mentions} - {url}" --login="very.mary.2" gypsy.owl73
-*                                                                                                                      *
+instaloader --post-metadata-txt="Caption: '{caption}' - Title: '{title}' - {mediacount} images - {likes} likes - {comments} comments - hashtags: {caption_hashtags} - mentions: {caption_mentions} - tagged: {tagged_users} - {url}" --storyitem-metadata-txt="Caption: '{caption}' - {date} - hashtags: {caption_hashtags} - mentions: {caption_mentions} - {url}" --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36" --no-iphone gypsy.owl73
+*             
+*
 *                                                                                                                      *
 * -------------------------------------------------------------------------------------------------------------------- *
 *                                                                                                                      *
