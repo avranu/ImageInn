@@ -1,0 +1,106 @@
+// https://services.arcgis.com/1xFZPtKn1wKC6POA/arcgis/rest/services/Building_USN_Points/FeatureServer/2/query?where=USNNum%20%3D%20'00102.000125'&outFields=*&outSR=4326&f=json
+
+{
+	"objectIdFieldName": "OBJECTID",
+	"uniqueIdField": {
+		"name": "OBJECTID",
+		"isSystemMaintained": true
+	},
+	"globalIdFieldName": "",
+	"geometryType": "esriGeometryPoint",
+	"spatialReference": {
+		"wkid": 4326,
+		"latestWkid": 4326
+	},
+	"fields": [
+		{
+			"name": "USNNum",
+			"type": "esriFieldTypeString",
+			"alias": "NYSHPO USN Number",
+			"sqlType": "sqlTypeOther",
+			"length": 12,
+			"domain": null,
+			"defaultValue": null
+		},
+		{
+			"name": "USNName",
+			"type": "esriFieldTypeString",
+			"alias": "Property Name",
+			"sqlType": "sqlTypeOther",
+			"length": 400,
+			"domain": null,
+			"defaultValue": null
+		},
+		{
+			"name": "HouseNum",
+			"type": "esriFieldTypeString",
+			"alias": "House Number",
+			"sqlType": "sqlTypeOther",
+			"length": 15,
+			"domain": null,
+			"defaultValue": null
+		},
+		{
+			"name": "StreetName",
+			"type": "esriFieldTypeString",
+			"alias": "Street Name",
+			"sqlType": "sqlTypeOther",
+			"length": 50,
+			"domain": null,
+			"defaultValue": null
+		},
+		{
+			"name": "City",
+			"type": "esriFieldTypeString",
+			"alias": "City",
+			"sqlType": "sqlTypeOther",
+			"length": 50,
+			"domain": null,
+			"defaultValue": null
+		},
+		{
+			"name": "Zip",
+			"type": "esriFieldTypeString",
+			"alias": "ZIP Code",
+			"sqlType": "sqlTypeOther",
+			"length": 10,
+			"domain": null,
+			"defaultValue": null
+		},
+		{
+			"name": "EligibilityDesc",
+			"type": "esriFieldTypeString",
+			"alias": "Eligibility Status",
+			"sqlType": "sqlTypeOther",
+			"length": 30,
+			"domain": null,
+			"defaultValue": null
+		},
+		{
+			"name": "OBJECTID",
+			"type": "esriFieldTypeOID",
+			"alias": "OBJECTID",
+			"sqlType": "sqlTypeOther",
+			"domain": null,
+			"defaultValue": null
+		}
+	],
+	"features": [
+		{
+			"attributes": {
+				"USNNum": "00102.000125",
+				"USNName": null,
+				"HouseNum": "1721",
+				"StreetName": "NEW SCOTLAND RD",
+				"City": "BETHLEHEM",
+				"Zip": null,
+				"EligibilityDesc": "Undetermined",
+				"OBJECTID": 114
+			},
+			"geometry": {
+				"x": -73.87912220756351,
+				"y": 42.626949019025176
+			}
+		}
+	]
+}

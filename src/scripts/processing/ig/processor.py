@@ -112,6 +112,7 @@ class IGImageProcessor(FileManager):
     input_dir: Path
     output_folder : str = "processed"
     margin: int = Field(default=DEFAULT_MARGIN)
+    place_into_canvas : bool = Field(default=False)
     canvas_size: int = Field(default=DEFAULT_CANVAS_SIZE)
     blur_amount: Number = Field(default=DEFAULT_BLUR)
     brightness_factor: Number = Field(default=DEFAULT_BRIGHTNESS)
@@ -213,7 +214,7 @@ class IGImageProcessor(FileManager):
         return files
 
     def create_image(self, file_path : Path) -> IGImage:
-        return IGImage(file_path = file_path, processor = self, output_dir = self.output_dir)
+        return IGImage(file_path = file_path, processor = self, output_dir = self.output_dir, place_into_canvas=self.place_into_canvas)
 
     def process_images(self) -> None:
         """
@@ -410,13 +411,16 @@ class IGImageProcessor(FileManager):
         image.scaled = main_image
         logger.debug('Image adjustments complete')
 
-    def create_blurred_background(self, image : Image.Image, size : tuple[int, int], luminance : int = 185) -> Image.Image:
+    def create_blurred_background(self, image : Image.Image, size : tuple[int, int], luminance : int = 185) -> Image.Image | None:
         """
         Create a blurred and enhanced version of the image for background.
 
         Returns:
-            Image.Image: Processed background image.
+            Image.Image: Processed background image.U
         """
+        if not self.place_into_canvas:
+            return None
+        
         blurred = image.copy().resize(size, Image.LANCZOS)
 
         logger.debug('Applying blur to background image')
@@ -450,6 +454,7 @@ class ArgNamespace(argparse.Namespace):
     contrast: Decimal
     saturation: Decimal
     border: int
+    canvas : bool
     suffix: str
     skip_adjustments: bool
     topaz_exe: Path
@@ -481,6 +486,7 @@ def main() -> None:
     parser.add_argument('--suffix', type=str, default='_ig', help='Suffix to add to the processed images.')
     parser.add_argument('--skip-adjustments', action='store_true', help='Skip adjustments to the main image based on histogram analysis.')
     parser.add_argument('--topaz-exe', type=Path, default=DEFAULT_TOPAZ_PATH, help='Path to the Topaz DeNoise AI executable.')
+    parser.add_argument('--canvas', action='store_true', help='Place the image into a canvas.')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging.')
     args = parser.parse_args(namespace=ArgNamespace)
 
@@ -499,7 +505,8 @@ def main() -> None:
         border_size = args.border,
         file_suffix = args.suffix,
         skip_image_adjustments = args.skip_adjustments,
-        topaz_exe = args.topaz_exe
+        topaz_exe = args.topaz_exe,
+        place_into_canvas=args.canvas
     )
     processor.process_images()
 
