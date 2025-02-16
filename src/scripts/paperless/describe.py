@@ -83,7 +83,10 @@ class DescribePhotos(BaseModel):
     paperless_url : str = Field(..., env='PAPERLESS_URL')
     paperless_key : str | None = Field(..., env='PAPERLESS_KEY')
     paperless_tag : str | None = Field('needs-description', env='PAPERLESS_TAG')
-    openai_key : str | None = Field(..., env='OPENAI_API_KEY')
+    openai_key : str | None = Field(default=None, env='PAPERLESS_OPENAI_API_KEY')
+    openai_url : str | None = Field(None, env='PAPERLESS_OPENAI_URL')
+    openai_model : str = Field(default="gpt-4o-mini", env="PAPERLESS_OPENAI_MODEL")
+    prompt : str | None = Field(None)
     _jinja_env : Environment = PrivateAttr(default=None)
     _progress_bar = PrivateAttr(default=None)
     _progress_message: str | None = PrivateAttr(default=None)
@@ -100,7 +103,12 @@ class DescribePhotos(BaseModel):
     @property
     def openai(self) -> OpenAI:
         if not self._openai:
-            self._openai = OpenAI()
+            if self.openai_url:
+                logger.info('Using custom OpenAI URL: %s', self.openai_url)
+                self._openai = OpenAI(api_key=self.openai_key, base_url=self.openai_url)
+            else:
+                logger.info('Using default OpenAI URL')
+                self._openai = OpenAI()
         return self._openai
 
     @field_validator('max_threads', mode='before')
@@ -213,6 +221,9 @@ class DescribePhotos(BaseModel):
         """
         Generate a prompt to sent to openai using a jinja template.
         """
+        if self.prompt:
+            return self.prompt
+        
         template_name = self.choose_template(document)
         logger.debug('Using template: %s', template_name)
         template = self.jinja_env.get_template(template_name)
@@ -610,7 +621,7 @@ class DescribePhotos(BaseModel):
                 })
             
             response = self.openai.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.openai_model,
                 messages=[
                     {
                         "role": "user",
@@ -619,7 +630,10 @@ class DescribePhotos(BaseModel):
                 ],
                 max_tokens=500,
             )
+            logger.critical('Response is %s', response)
             description = response.choices[0].message.content
+            logger.critical('Descr is: %s', description)
+            sys.exit(1)
             logger.debug(f"Generated description: {description}")
 
         except ValueError as ve:
@@ -816,8 +830,10 @@ class ArgNamespace(argparse.Namespace):
     """
     verbose: bool = False
     tag: str
-    url: str
-    key: str
+    url: str | None = None
+    key: str | None = None
+    model: str
+    prompt: str | None = None
 
 def main():
     try:
@@ -827,12 +843,16 @@ def main():
         DEFAULT_URL = os.getenv("PAPERLESS_URL")
         DEFAULT_KEY = os.getenv("PAPERLESS_KEY")
         DEFAULT_TAG = "needs-description"
-        OPENAI_KEY = os.getenv('OPENAI_API_KEY')
+        OPENAI_URL = os.getenv('PAPERLESS_OPENAI_URL')
+        OPENAI_KEY = os.getenv('PAPERLESS_OPENAI_API_KEY')
+        OPENAI_MODEL = os.getenv('PAPERLESS_OPENAI_MODEL', 'gpt-4o-mini')
 
         parser = argparse.ArgumentParser(description="Fetch documents with a specific tag from Paperless NGX.")
         parser.add_argument('--url', type=str, default=DEFAULT_URL, help="The base URL of the Paperless NGX instance")
         parser.add_argument('--key', type=str, default=DEFAULT_KEY, help="The API key for the Paperless NGX instance")
+        parser.add_argument('--model', type=str, default=OPENAI_MODEL, help="The OpenAI model to use (default: 'gpt-4o-mini')")
         parser.add_argument('--tag', type=str, default=DEFAULT_TAG, help="Tag to filter documents (default: 'needs-description')")
+        parser.add_argument('--prompt', type=str, default=None, help="Prompt to use for OpenAI")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         
         args = parser.parse_args(namespace=ArgNamespace())
@@ -852,7 +872,10 @@ def main():
             paperless_url=args.url, 
             paperless_key=args.key, 
             paperless_tag=args.tag, 
-            openai_key=OPENAI_KEY
+            openai_key=OPENAI_KEY,
+            openai_url=OPENAI_URL,
+            openai_model=OPENAI_MODEL,
+            prompt=args.prompt
         )
         results = paperless.describe_documents()
         if results:
