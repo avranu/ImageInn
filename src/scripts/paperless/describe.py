@@ -63,6 +63,7 @@ MIME_TYPES = {
     'webp': 'image/webp',
 }
 
+DEFAULT_OPENAI_MODEL="gpt-4o-mini"
 TAG_DESCRIBED = 162
 TAG_NEEDS_DESCRIPTION = 161
 TAG_NEEDS_TITLE = 190
@@ -77,7 +78,7 @@ VERSION = "0.2.2"
 
 class DescribePhotos(BaseModel):
     """
-    Describes photos in the Paperless NGX instance using OpenAI's GPT-4o model.
+    Describes photos in the Paperless NGX instance using an LLM (such as OpenAI's GPT-4o model).
     """
     max_threads: int = 0
     paperless_url : str = Field(..., env='PAPERLESS_URL')
@@ -85,7 +86,8 @@ class DescribePhotos(BaseModel):
     paperless_tag : str | None = Field('needs-description', env='PAPERLESS_TAG')
     openai_key : str | None = Field(default=None, env='PAPERLESS_OPENAI_API_KEY')
     openai_url : str | None = Field(None, env='PAPERLESS_OPENAI_URL')
-    openai_model : str = Field(default="gpt-4o-mini", env="PAPERLESS_OPENAI_MODEL")
+    openai_model : str = Field(default=DEFAULT_OPENAI_MODEL, env="PAPERLESS_OPENAI_MODEL")
+    force_openai : bool = Field(default=False)
     prompt : str | None = Field(None)
     _jinja_env : Environment = PrivateAttr(default=None)
     _progress_bar = PrivateAttr(default=None)
@@ -103,6 +105,12 @@ class DescribePhotos(BaseModel):
     @property
     def openai(self) -> OpenAI:
         if not self._openai:
+            if self.force_openai:
+                if self.openai_url:
+                    # Reset the model for openai
+                    self.openai_model = DEFAULT_OPENAI_MODEL
+                    self.openai_url = None
+                    
             if self.openai_url:
                 logger.info('Using custom OpenAI URL: %s', self.openai_url)
                 self._openai = OpenAI(api_key=self.openai_key, base_url=self.openai_url)
@@ -198,7 +206,7 @@ class DescribePhotos(BaseModel):
             
         return None
 
-    def choose_template(selff, document : PaperlessDocument) -> str:
+    def choose_template(self, document : PaperlessDocument) -> str:
         """
         Choose a jinja template for a document
         """
@@ -225,8 +233,9 @@ class DescribePhotos(BaseModel):
             return self.prompt
         
         template_name = self.choose_template(document)
-        logger.debug('Using template: %s', template_name)
-        template = self.jinja_env.get_template(template_name)
+        template_path = f"output_json/{template_name}"
+        logger.debug('Using template: %s', template_path)
+        template = self.jinja_env.get_template(template_path)
         location = self.get_location(document)
 
         if not (description := template.render(document=document, location=location)):
@@ -630,10 +639,7 @@ class DescribePhotos(BaseModel):
                 ],
                 max_tokens=500,
             )
-            logger.critical('Response is %s', response)
             description = response.choices[0].message.content
-            logger.critical('Descr is: %s', description)
-            sys.exit(1)
             logger.debug(f"Generated description: {description}")
 
         except ValueError as ve:
@@ -789,7 +795,8 @@ class DescribePhotos(BaseModel):
         results = []
         with alive_bar(title='Running', unknown='waves') as self._progress_bar:
             for document in documents:
-                results.append(self.describe_document(document))
+                if (description := self.describe_document(document)):
+                    results.append(description)
                 self.progress_bar()
         return results
 
@@ -821,6 +828,10 @@ def setup_logging():
     root_logger.handlers = []  # Clear existing handlers
     root_logger.addHandler(handler)
     root_logger.setLevel(logging.INFO)
+    
+    # Suppress logs from the 'requests' library below ERROR level
+    logging.getLogger("urllib3").setLevel(logging.ERROR)
+    logging.getLogger("requests").setLevel(logging.ERROR)
 
     return root_logger
 
@@ -830,10 +841,11 @@ class ArgNamespace(argparse.Namespace):
     """
     verbose: bool = False
     tag: str
-    url: str | None = None
-    key: str | None = None
-    model: str
+    url: str
+    key: str
+    model: str | None = None
     prompt: str | None = None
+    force_openai : bool = False
 
 def main():
     try:
@@ -845,14 +857,15 @@ def main():
         DEFAULT_TAG = "needs-description"
         OPENAI_URL = os.getenv('PAPERLESS_OPENAI_URL')
         OPENAI_KEY = os.getenv('PAPERLESS_OPENAI_API_KEY')
-        OPENAI_MODEL = os.getenv('PAPERLESS_OPENAI_MODEL', 'gpt-4o-mini')
+        OPENAI_MODEL = os.getenv('PAPERLESS_OPENAI_MODEL', DEFAULT_OPENAI_MODEL)
 
         parser = argparse.ArgumentParser(description="Fetch documents with a specific tag from Paperless NGX.")
         parser.add_argument('--url', type=str, default=DEFAULT_URL, help="The base URL of the Paperless NGX instance")
         parser.add_argument('--key', type=str, default=DEFAULT_KEY, help="The API key for the Paperless NGX instance")
-        parser.add_argument('--model', type=str, default=OPENAI_MODEL, help="The OpenAI model to use (default: 'gpt-4o-mini')")
+        parser.add_argument('--model', type=str, default=OPENAI_MODEL, help=f"The OpenAI model to use (default: {DEFAULT_OPENAI_MODEL})")
         parser.add_argument('--tag', type=str, default=DEFAULT_TAG, help="Tag to filter documents (default: 'needs-description')")
         parser.add_argument('--prompt', type=str, default=None, help="Prompt to use for OpenAI")
+        parser.add_argument('--force-openai', action='store_true', help="Force the use of OpenAI, instead of urls or models loaded from env vars or other parameters")
         parser.add_argument('--verbose', '-v', action='store_true', help="Verbose output")
         
         args = parser.parse_args(namespace=ArgNamespace())
@@ -875,7 +888,8 @@ def main():
             openai_key=OPENAI_KEY,
             openai_url=OPENAI_URL,
             openai_model=OPENAI_MODEL,
-            prompt=args.prompt
+            prompt=args.prompt,
+            force_openai=args.force_openai
         )
         results = paperless.describe_documents()
         if results:

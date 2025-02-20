@@ -1,0 +1,62 @@
+{% if location %}The document I'm showing you is from {{ location }}. {% endif %}This paperwork may contain correspondence, reports, ledgers, forms, or other institutional records. It serves as a historical or research document and will be used to provide context and detailed information about its content and origin.
+
+# Instructions
+Analyze the document thoroughly and provide a structured summary of its contents. Focus on any keywords, topics, or unique features that will make it easier to search or categorize. Follow the guidelines below:
+
+## Title
+If the document itself has a title or heading, provide it (or propose one if none is explicitly given).
+Keep the title concise and informative (5-10 words).
+
+## Summary  
+Summarize the main points, purpose, or subject of the document. Include any significant names, places, or events mentioned. Highlight critical pieces of information like dates, official references, or institutional data.
+
+## Detailed Content  
+Mention any relevant sections or headings in the document.
+Transcribe critical text, such as signatures, official seals, letterheads, stamps, or other markings.
+Note the style/tone of the document (formal, personal, procedural, etc.).
+Identify if the document is handwritten, typed, printed, or a mix.
+Note any institutional or archival markings, page numbering, or references to other documents.
+If there are anomalies (e.g., torn pages, handwriting in margins, missing sections), mention them.
+Provide any additional keywords not already in the text that could help with search or categorization.
+Provide keywords that may be helpful for searchability which are not already present in the description. Include synonyms and related terms.
+
+## Date Identification  
+If the document contains an explicit date, format it as **YYYY-MM-DD**.
+If no explicit date is found but an approximate era or year can be inferred (e.g., from letterheads, references, or known historical context), provide an estimate (e.g., "circa 1920s").
+If no date can be determined, state "Date unknown."
+
+## Tag Suggestions
+Suggest tags for the image, if any apply. These tags are available to use:
+asylum patients, asylum staff, arts and crafts, building interior, building exterior, children, audit, award, black and white, color photo, candid, by-laws, mistreatment, christmas, circus, cleanup, closure, crime, death, enrichment, escape, event, fire, fire department, graffiti, Halloween, holiday, inappropriate, occupational therapy, play, police department, portrait, safety, scan, stained glass, survey, tile pattern, valentine's day, vehicles
+
+## Document Type
+Classify the image as one of the following document types:
+Photograph
+Newspaper
+Report
+Postcard
+Blueprint
+Letter
+Magazine
+Poster
+Receipt
+Side-by-Side Photo
+Other
+
+## Output Format
+The output should be a JSON object with the following keys: title, summary, content, date, tags, and document_type. Do not include anything else in the output; just the JSON object.
+
+# Example Output
+{
+    "title": "Ward Report for Ward 7, 1952",
+    "summary": "The document is a ward report for Ward 7 of the Hudson River State Hospital, dated October 5, 1952. It provides a detailed account of patient activities, staff assignments, and institutional events. The report includes a list of patients, their conditions, and any notable incidents that occurred during the week. It also outlines staff schedules and mentions an upcoming event for the patients.",
+    "content": "The report is divided into sections: 'Patient Activities,' 'Staff Assignments,' and 'Upcoming Events.' Key names include Dr. John Smith, the ward supervisor, and Nurse Jane Doe. The document is typed on official letterhead with the hospital's seal at the top. It is printed on standard A4 paper with no visible watermarks or stains. The tone is formal and procedural, typical of institutional reports from this era. There are no handwritten notes or annotations on the document. The full OCR text for the document is as follows: Ward 7 Report - October 5, 1952. Patient Activities: The patients participated in various activities including arts and crafts, occupational therapy, and a special event for Halloween. Staff Assignments: Dr. John Smith (Ward Supervisor), Nurse Jane Doe (Lead Nurse), and others. Upcoming Events: A Halloween party is scheduled for October 31, 1952. Keywords: patient activities, staff assignments, enrichment, autumn, fall, holiday, halloween.",
+    "date": "1952-10-05",
+    "tags": ["asylum patients", "asylum staff", "holiday", "occupational therapy", "enrichment", "Halloween"],
+    "document_type": "Report"
+}
+
+
+# Metadata
+The document has the following metadata.
+{% if document.title %}Current Title: {{ document.title }}{% endif %}

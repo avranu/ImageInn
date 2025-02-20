@@ -1,0 +1,29 @@
+{% if location %}The photo Im showing you is from {{ location }}. {% endif %}This photo may depict buildings, staff, patients, daily activities, medical procedures, institutional life, or events. It serves as a historical document and will be used to research and document life at this location.
+
+# Metadata
+The photo has the following metadata.
+{% if document.title %}Current Title: {{ document.title }}{% endif %}
+
+# Instructions
+Analyze the image carefully and provide a detailed, structured description. Ensure your response is optimized for searchability by including specific keywords and contextual information.
+
+## Title Suggestion
+Provide a concise and relevant title that best describes the image in 5-10 words.
+The title should be descriptive yet practical, ensuring it aids in quick identification.
+
+## Detailed Description
+Describe everything visible in the image, including buildings, people, objects, clothing, signage, and any other relevant elements.
+Transcribe any text that appears in the image (e.g., signs, documents, nameplates, captions).
+Describe the scenes atmosphere.
+Note any visible medical or institutional artifacts, such as patient records, uniforms, medical equipment, or architectural details.
+Identify whether the photo was taken indoors or outdoors, mentioning relevant background details.
+Comment on the color tones (e.g., faded sepia, grayscale, vibrant, warm, sterile).
+Describe details of the room that may help identify where the photo was taken, such as furniture, wall decorations, windows, doors, and flooring.
+Provide keywords that may be helpful for searchability which are not already present in the description. Include synonyms and related terms.
+
+## Output Format
+The output should contain the following information: title and description. Do not include anything else in the output.
+
+# Example Output
+Title: Outdoor Patient Gathering at HRSH, 1950s
+Description: The image depicts a gathering of patients and staff outdoors in a sprawling courtyard at the Hudson River Psychiatric Center. The scene features a lush, well-maintained lawn dotted with rows of wooden benches, and a series of tall oak trees providing partial shade. A man wearing a dark suit stands behind a simple wooden podium, addressing the assembled audience. Many attendees are dressed in uniform-like garments or simple, lightweight clothing appropriate for a warm day. In the distance, a large, multi-story institutional brick building displays tall windows with arched frames, indicative of mid-19th-century construction. Several balconies overlook the courtyard, and a few onlookers can be seen peering down at the gathering. Near the podium, an American flag is prominently displayed alongside a small bouquet of flowers. Some children, likely visitors or relatives of the staff, play quietly near the trees, occasionally glancing at the speaker. The ambiance is formal yet communal, suggesting a celebratory or commemorative event. The overall color palette is moderately faded, with pastel hues dominating the clothing and greenery that looks somewhat washed out - characteristic of color photographs from the mid-20th century. A handwritten sign in the background reads Annual Staff and Patient Wellness Ceremony - 1952. Patients and staff seem engaged, some taking notes, while a nurse dressed in a crisp white uniform circulates among them, offering refreshments. Additional Notes: At the lower right corner of the photograph, a date has been stamped: Oct 5, 1952. The expression on many attendees faces seems optimistic, and the presence of small children alongside staff indicates a relatively inclusive environment. A second banner, partially obscured by a tree branch, references a hospital anniversary celebration. Keywords: grass, leaves, ceremony, spring, summer, patriotic, speech, pastoral grounds, institutional life, wellness event, public address, historical architecture.

@@ -1,0 +1,36 @@
+{% if location %}The photo I'm showing you is from {{ location }}. {% endif %}It was taken as part of an ongoing effort to document the state of the campus in a given year. The campus, which was closed in the late 1900s, has remained vacant ever since, subject to the effects of time, weather, and human activity. These documentation photos serve as a historical record of the structures as they currently exist, capturing details that may change over time due to natural decay, vandalism, restoration efforts, or demolition. By taking these images, the goal is to preserve the visual history of the site, allowing future generations to compare changes and better understand the evolution of the campus over the years.  
+
+# Instructions  
+Analyze the image carefully and provide a detailed, structured description. Ensure your response is optimized for searchability by including specific keywords and contextual information.  
+
+## Title Suggestion  
+Provide a concise and relevant title that best describes the image in 5-10 words.  
+The title should be descriptive yet practical, ensuring it aids in quick identification.  
+
+## Detailed Description  
+Describe everything visible in the image, including buildings, objects, signage, and environmental conditions.  
+Transcribe any text that appears in the image (e.g., signs, documents, nameplates, captions).  
+Note any visible architectural details, damage, deterioration, or structural modifications.  
+Identify whether the photo was taken indoors or outdoors, mentioning relevant background details such as trees, sky, or other structures.  
+Comment on the color tones (e.g., faded, vibrant, warm, sterile) and the color of elements in the scene, such as brickwork, wallpaper, flooring, ceiling tiles, and so on.  
+Describe any signs of decay, including peeling paint, water damage, rust, broken windows, missing tiles, or overgrown vegetation.  
+Document elements that may indicate human activity, such as graffiti, trash, barricades, or signs of attempted repairs.  
+Provide keywords that may be helpful for searchability which are not already present in the description. Include synonyms and related terms.  
+
+## Tag Suggestions  
+Suggest tags for the image, if any apply. These tags are available to use:  
+arts and crafts, building interior, building exterior, candid, Christmas, fire, fire department, graffiti, Halloween, holiday, portrait, safety, stained glass, tile pattern, Valentine's Day, vehicles  
+
+## Output Format
+The output should be a JSON object with the following keys: title, description, and tags. Do not include anything else in the output; just the JSON object.
+
+# Example Output  
+{  
+	"title": "Exterior of Administration Building - 2025",  
+	"description": "This image captures the administration building as it appeared in 2025, providing a reference for future comparisons. The building's red brick façade, once uniform and well-maintained, now shows signs of erosion and discoloration, with dark streaks running down from the upper windows. The roofline remains intact, but several shingles appear to be missing or damaged, exposing sections to the elements. The large central entrance is framed by decorative stonework, which has begun to crack and crumble at the edges. The foreground reveals a concrete walkway leading up to the entrance, now fractured with weeds growing through the gaps. To the left of the entrance, an old lamppost leans slightly, its glass panels either broken or missing. The surrounding vegetation is overgrown, with vines creeping up the side of the building and obscuring lower-level windows. Many of the windows on the upper floors are either broken or boarded up, while others remain intact but clouded with grime. Some still have their original wooden frames, though the paint has peeled away to expose the raw wood beneath. The lower-level windows have graffiti scrawled across them in various colors, with some words and symbols partially obscured by layers of paint. One piece of graffiti is text that may be a person's name: "Tac0". Another appears to be a phallace symbolThe sky above is overcast, casting a grayish hue over the building. The overall tone of the image is muted, with faded colors and the dull texture of brick, stone, and glass contributing to the sense of abandonment. Despite the decay, the structure remains largely intact. Keywords: historical documentation, abandoned building, administration building, decay, urban exploration, graffiti, overgrown vegetation, broken windows, cracked stonework, weathering.",  
+	"tags": ["building exterior", "graffiti"]  
+}
+
+# Metadata  
+The photo has the following metadata.  
+{% if document.title %}Current Title: {{ document.title }}{% endif %}

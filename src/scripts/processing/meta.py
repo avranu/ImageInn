@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CANVAS_SIZE : int = 2160
 # For a blurred background: 100. For no blurred background: 0
-DEFAULT_MARGIN : int = 0
+DEFAULT_MARGIN : int = 100
 # For a blurred background: 8. For no blurred background: 0
-DEFAULT_BORDER : int = 0
+DEFAULT_BORDER : int = 8
 DEFAULT_BLUR : int = 100
 DEFAULT_BRIGHTNESS : Number = 1.8
 DEFAULT_CONTRAST : Number = 0.3

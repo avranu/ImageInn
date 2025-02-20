@@ -1,0 +1,35 @@
+{% if location %}The photo I'm showing you is from {{ location }}. {% endif %}It was taken during a cleanup project, where several parts of the campus were cleaned, repaired, and restored by a group named "Ashes to Arches". The campus had previously been closed in the late 1900s, and has sat vacant ever since, suffering from graffiti, theft and vandalism. The Ashes to Arches project aimed to reverse that vandalism, and encourage others in the urban exploration community to do the same. Therefore, these photos will show historic locations before, during, or after cleanup. They serve as a record of the restoration efforts and the state of the campus at that time.
+
+# Instructions
+Analyze the image carefully and provide a detailed, structured description. Ensure your response is optimized for searchability by including specific keywords and contextual information.
+
+## Title Suggestion
+Provide a concise and relevant title that best describes the image in 5-10 words.
+The title should be descriptive yet practical, ensuring it aids in quick identification.
+
+## Detailed Description
+Describe everything visible in the image, including buildings, people, objects, clothing, signage, and any other relevant elements.
+Transcribe any text that appears in the image (e.g., signs, documents, nameplates, captions).
+Note any visible medical or institutional artifacts, such as patient records, uniforms, medical equipment, or architectural details.
+Identify whether the photo was taken indoors or outdoors, mentioning relevant background details.
+Comment on the color tones (e.g., faded sepia, grayscale, vibrant, warm, sterile), and the color of elements in the scene, such as wallpaper, flooring, ceiling tiles, and so on.
+Describe details of the room that may help identify where the photo was taken, such as furniture, wall decorations, windows, doors, and flooring.
+Provide keywords that may be helpful for searchability which are not already present in the description. Include synonyms and related terms.
+
+## Tag Suggestions
+Suggest tags for the image, if any apply. These tags are available to use:
+arts and crafts, building interior, building exterior, candid, christmas, fire, fire department, graffiti, Halloween, holiday, portrait, safety, stained glass, tile pattern, valentine's day, vehicles
+
+## Output Format
+The output should be a JSON object with the following keys: title, description, and tags. Do not include anything else in the output; just the JSON object.
+
+# Example Output
+{
+	"title": "Cleanup of Laboratory Building",
+	"description": "The image captures a moment during the cleanup of a historic institutional room, revealing layers of decay and preservation beneath years of neglect. The walls, once adorned with delicate wallpaper in a floral pattern, are now faded and peeling, revealing the plaster beneath in irregular patches. Some sections have been stripped away entirely, exposing the structure's raw history. The ornate trim along the ceiling, originally painted in a muted cream, is now chipped and discolored, with dust collecting in its intricate details. The flooring is a mix of checkered ceramic tiles, some cracked and others missing altogether, exposing the wooden subfloor beneath. Decades of dirt and grime have settled into the tile's grooves, though in some areas, cleaning efforts have begun to restore the original luster. The corners of the room are particularly dust-laden, with small piles of debris and broken plaster scattered throughout. A large stained-glass window stands as the room's most striking feature. Though coated in years of grime, its intricate geometric patterns and rich colors—deep blues, greens, and reds—still manage to filter light into the space. The glass has survived largely intact, though a few small fractures hint at the passage of time. The light from the window casts a faint mosaic of color onto the worn floor, a reminder of the room's former grandeur. The countertops, once polished and functional, are now coated in a fine layer of dust, their surfaces marred by years of use and abandonment. Some drawers hang open, their contents long since looted or deteriorated beyond recognition. Rusted metal fixtures cling stubbornly to the edges of the cabinetry, corroded by moisture seeping through broken windows and leaky ceilings. Graffiti mars the walls in stark contrast to the room's original elegance. Brightly colored spray paint scrawls across faded wallpaper and crumbling plaster, a chaotic overlay on an otherwise muted scene. Some tags are large and elaborate, while others are hastily scribbled messages, their meanings lost to time. Near the entrance, remnants of past break-ins are evident—splintered wood, a broken lock, and footprints in the dust. Despite the decay, the image captures the room in a transitional state—cleanup efforts are evident. Piles of discarded debris have been neatly swept into corners, and portions of the floor have been cleared, revealing glimpses of the original beauty beneath the neglect. The contrast between the untouched sections and the areas already cleaned highlights the effort to restore and preserve what remains. Keywords: cleanup, restoration, stained glass, tile pattern, institutional decay, peeling wallpaper, graffiti, dust, debris, abandoned architecture.",
+	"tags": ["cleanup", "stained glass", "tile pattern", "graffiti", "building interior"]
+}
+
+# Metadata
+The photo has the following metadata.
+{% if document.title %}Current Title: {{ document.title }}{% endif %}

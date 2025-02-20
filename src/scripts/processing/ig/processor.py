@@ -112,7 +112,7 @@ class IGImageProcessor(FileManager):
     input_dir: Path
     output_folder : str = "processed"
     margin: int = Field(default=DEFAULT_MARGIN)
-    place_into_canvas : bool = Field(default=False)
+    place_into_canvas : bool = Field(default=True)
     canvas_size: int = Field(default=DEFAULT_CANVAS_SIZE)
     blur_amount: Number = Field(default=DEFAULT_BLUR)
     brightness_factor: Number = Field(default=DEFAULT_BRIGHTNESS)
@@ -132,14 +132,20 @@ class IGImageProcessor(FileManager):
 
     @field_validator('input_dir', mode='before')
     def validate_input_dir(cls, v):
+        if not v:
+            return None
         return Path(v)
 
     @field_validator('topaz_exe', mode='before')
     def validate_topaz_exe(cls, v):
+        if not v:
+            return None
         return Path(v)
 
     @field_validator('topaz_output_dir', mode='before')
     def validate_topaz_output_dir(cls, v):
+        if not v:
+            return None
         return Path(v)
 
     @field_validator('format', mode='before')
@@ -454,7 +460,7 @@ class ArgNamespace(argparse.Namespace):
     contrast: Decimal
     saturation: Decimal
     border: int
-    canvas : bool
+    no_canvas : bool
     suffix: str
     skip_adjustments: bool
     topaz_exe: Path
@@ -486,7 +492,7 @@ def main() -> None:
     parser.add_argument('--suffix', type=str, default='_ig', help='Suffix to add to the processed images.')
     parser.add_argument('--skip-adjustments', action='store_true', help='Skip adjustments to the main image based on histogram analysis.')
     parser.add_argument('--topaz-exe', type=Path, default=DEFAULT_TOPAZ_PATH, help='Path to the Topaz DeNoise AI executable.')
-    parser.add_argument('--canvas', action='store_true', help='Place the image into a canvas.')
+    parser.add_argument('--no-canvas', action='store_true', help='Do not place the image into a canvas.')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging.')
     args = parser.parse_args(namespace=ArgNamespace)
 
@@ -506,7 +512,7 @@ def main() -> None:
         file_suffix = args.suffix,
         skip_image_adjustments = args.skip_adjustments,
         topaz_exe = args.topaz_exe,
-        place_into_canvas=args.canvas
+        place_into_canvas = not args.no_canvas
     )
     processor.process_images()
 
