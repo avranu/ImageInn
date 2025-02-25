@@ -26,4 +26,4 @@ from __future__ import annotations
 import colorlog
 import logging
 
-from scripts.logging import setup_logging
+from src.scripts.setup_logging import setup_logging
