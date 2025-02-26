@@ -48,7 +48,7 @@ import shutil
 from cachetools import LRUCache
 from threading import Lock
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
-from src.scripts.setup_logging import setup_logging
+from scripts.setup_logging import setup_logging
 from scripts.exceptions import ShouldTerminateError, ChecksumMismatchError, UnexpectedStateError
 from scripts.lib.script import Script
 from scripts.lib.types import YELLOW, RESET, GREEN
