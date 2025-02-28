@@ -36,7 +36,7 @@ import re
 import sys
 import os
 import logging
-from typing import Any, Iterator
+from typing import Any, AsyncIterator, Iterator, Optional, List
 import colorlog
 import requests
 from alive_progress import alive_bar
@@ -50,7 +50,9 @@ from jinja2 import Environment, FileSystemLoader
 from datetime import datetime, date
 import dateparser
 
-from scripts.paperless.document import PaperlessDocument
+# Import pypaperless
+from pypaperless.models import Document, Tag
+from scripts.paperless.wrapper import PaperlessWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +65,7 @@ MIME_TYPES = {
     'webp': 'image/webp',
 }
 
-DEFAULT_OPENAI_MODEL="gpt-4o-mini"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 TAG_DESCRIBED = 162
 TAG_NEEDS_DESCRIPTION = 161
 TAG_NEEDS_TITLE = 190
@@ -81,18 +83,19 @@ class DescribePhotos(BaseModel):
     Describes photos in the Paperless NGX instance using an LLM (such as OpenAI's GPT-4o model).
     """
     max_threads: int = 0
-    paperless_url : str = Field(..., env='PAPERLESS_URL')
-    paperless_key : str | None = Field(..., env='PAPERLESS_KEY')
-    paperless_tag : str | None = Field('needs-description', env='PAPERLESS_TAG')
-    openai_key : str | None = Field(default=None, env='PAPERLESS_OPENAI_API_KEY')
-    openai_url : str | None = Field(None, env='PAPERLESS_OPENAI_URL')
-    openai_model : str = Field(default=DEFAULT_OPENAI_MODEL, env="PAPERLESS_OPENAI_MODEL")
-    force_openai : bool = Field(default=False)
-    prompt : str | None = Field(None)
-    _jinja_env : Environment = PrivateAttr(default=None)
+    paperless_url: str = Field(..., env='PAPERLESS_URL')
+    paperless_key: str | None = Field(..., env='PAPERLESS_KEY')
+    paperless_tag: str | None = Field('needs-description', env='PAPERLESS_TAG')
+    openai_key: str | None = Field(default=None, env='PAPERLESS_OPENAI_API_KEY')
+    openai_url: str | None = Field(None, env='PAPERLESS_OPENAI_URL')
+    openai_model: str = Field(default=DEFAULT_OPENAI_MODEL, env="PAPERLESS_OPENAI_MODEL")
+    force_openai: bool = Field(default=False)
+    prompt: str | None = Field(None)
+    _jinja_env: Environment = PrivateAttr(default=None)
     _progress_bar = PrivateAttr(default=None)
     _progress_message: str | None = PrivateAttr(default=None)
-    _openai : OpenAI | None = PrivateAttr(default=None)
+    _openai: OpenAI | None = PrivateAttr(default=None)
+    _paperless_client: PaperlessWrapper = PrivateAttr(default=None)
     
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -101,6 +104,13 @@ class DescribePhotos(BaseModel):
         if not self._progress_bar:
             self._progress_bar = alive_bar(title='Running', unknown='waves')
         return self._progress_bar
+
+    @property
+    def paperless_client(self) -> PaperlessWrapper:
+        """Return or initialize the Paperless instance."""
+        if not self._paperless_client:
+            self._paperless_client = PaperlessWrapper(self.paperless_url, self.paperless_key)
+        return self._paperless_client
 
     @property
     def openai(self) -> OpenAI:
@@ -144,69 +154,7 @@ class DescribePhotos(BaseModel):
             self._jinja_env = Environment(loader=FileSystemLoader(str(templates_path)), autoescape=True)
         return self._jinja_env
 
-    def get(self, url_path : str, params : dict | None = None) -> dict | None:
-        """
-        Fetches data from the Paperless NGX instance.
-
-        Args:
-            url_path (str): The URL path to fetch data from.
-            params (dict): Query parameters to include in the request.
-
-        Returns:
-            dict: The response data as a dictionary.
-        """
-        try:
-            logger.debug(f"Fetching data from '{self.paperless_url}'...")
-            headers = {"Authorization": f"Token {self.paperless_key}"}
-            if url_path.startswith('http'):
-                url = url_path
-            else:
-                url = f"{self.paperless_url}/{url_path}"
-                
-            response = requests.get(
-                url,
-                params=params,
-                headers=headers
-            )
-            response.raise_for_status()
-            data = response.json()
-            logger.debug(f"Successfully fetched data from '{self.paperless_url}'")
-            return data
-        except requests.RequestException as e:
-            logger.error(f"Failed to fetch data: {e}")
-            
-        return None
-
-    def patch(self, url_path : str, payload : dict) -> dict | None:
-        """
-        Sends a PATCH request to the Paperless NGX instance.
-
-        Args:
-            url_path (str): The URL path to send the PATCH request to.
-            payload (dict): The payload to send with the request.
-
-        Returns:
-            dict: The response data as a dictionary.
-        """
-        try:
-            logger.debug(f"Sending PATCH request to '{self.paperless_url}'...")
-            headers = {"Authorization": f"Token {self.paperless_key}"}
-            response = requests.patch(
-                f"{self.paperless_url}/{url_path}",
-                json=payload,
-                headers=headers
-            )
-            response.raise_for_status()
-            data = response.json()
-            logger.debug(f"Successfully sent PATCH request to '{self.paperless_url}'")
-            return data
-        except requests.RequestException as e:
-            logger.error(f"Failed to send PATCH request: {e}")
-            raise
-            
-        return None
-
-    def choose_template(self, document : PaperlessDocument) -> str:
+    def choose_template(self, document: Document) -> str:
         """
         Choose a jinja template for a document
         """
@@ -215,17 +163,17 @@ class DescribePhotos(BaseModel):
             return "paperwork.jinja"
         
         # If it has the "cleanup" tag, choose cleanup_photo.jinja
-        if any(tag == TAG_CLEANUP for tag in document.tags):
+        if any(tag.id == TAG_CLEANUP for tag in document.tags):
             return "cleanup_photo.jinja"
 
         # If the date is prior to 2010, choose old_photo.jinja
-        if document.created_date and document.created_date.year < 2010:
+        if document.created and document.created.year < 2010:
             return "old_photo.jinja"
 
         # Newer photos
         return "comparison_photo.jinja"
 
-    def get_prompt(self, document : PaperlessDocument) -> str:
+    def get_prompt(self, document: Document) -> str:
         """
         Generate a prompt to sent to openai using a jinja template.
         """
@@ -243,194 +191,98 @@ class DescribePhotos(BaseModel):
 
         return description
 
-    def get_location(self, document : PaperlessDocument) -> str | None:
+    def get_location(self, document: Document) -> str | None:
         """
         Get the location of a document.
         """
         template = None
 
-        if any(tag == TAG_HRSH for tag in document.tags):
+        if any(tag.id == TAG_HRSH for tag in document.tags):
             template = self.jinja_env.get_template("locations/hrsh.jinja")
-        if any(tag == TAG_NYS_OMH for tag in document.tags):
+        if any(tag.id == TAG_NYS_OMH for tag in document.tags):
             template = self.jinja_env.get_template("locations/nys_omh.jinja")
 
         if template:
             return template.render(document=document)
         return None
         
-    def filter_documents(self, documents : Iterator[dict | PaperlessDocument]) -> Iterator[PaperlessDocument]:
+    def filter_documents(self, documents: List[Document]) -> Iterator[Document]:
         """
-        Yields documents from the Paperless NGX instance.
+        Yields documents from the Paperless NGX instance that need description.
 
         Args:
-            documents (Iterator[dict]): The documents to filter, as returned directly by PaperlessNGX
+            documents (List[Document]): The documents to filter
 
         Yields:
-            Iterator[PaperlessDocument]: The filtered documents.
+            Iterator[Document]: The filtered documents.
         """
-        for paperless_dict in documents:
-            if isinstance(paperless_dict, PaperlessDocument):
-                document = paperless_dict
-            else:
-                try:
-                    document = PaperlessDocument.model_validate(paperless_dict)
-                except Exception as e:
-                    logger.error(f"Failed to parse document: {e}")
-                    logger.error('Document: %s', paperless_dict)
-                    continue
-            
+        for document in documents:
             # If content includes "IMAGE DESCRIPTION", skip
-            if "IMAGE DESCRIPTION" in document.content:
+            if document.content and "IMAGE DESCRIPTION" in document.content:
                 logger.debug("Skipping document with existing description")
                 continue
 
             # If tags include "described", skip
-            if any(tag == TAG_DESCRIBED for tag in document.tags):
+            if any(tag.id == TAG_DESCRIBED for tag in document.tags):
                 logger.debug("Skipping document with 'described' tag")
                 continue
 
             # If tags DO NOT include "needs-description", skip
-            if not any(tag == TAG_NEEDS_DESCRIPTION for tag in document.tags):
+            if not any(tag.id == TAG_NEEDS_DESCRIPTION for tag in document.tags):
                 logger.debug("Skipping document without 'needs-description' tag")
                 continue
 
             # Check it is a supported extension
-            if not any(document.original_file_name.lower().endswith(ext) for ext in OPENAI_ACCEPTED_FORMATS):
-                logger.debug("Skipping document with unsupported extension: %s", document.original_file_name)
+            original_filename = document.original_filename or ""
+            if not any(original_filename.lower().endswith(ext) for ext in OPENAI_ACCEPTED_FORMATS):
+                logger.debug("Skipping document with unsupported extension: %s", original_filename)
                 continue
 
             yield document
 
-    def fetch_documents_with_tag(self, tag_name: str | None = None) -> Iterator[PaperlessDocument]:
-        """
-        Fetches documents with the specified tag from the Paperless NGX instance.
-
-        Args:
-            tag_name (str): The tag to filter documents by.
-
-        Yields:
-            Iterator[PaperlessDocument]: yields document objects with the specified tag.
-        """
+    def fetch_documents_with_tag(self, tag_name: str | None = None) -> AsyncIterator[Document]:
+        """Fetches documents with the specified tag from Paperless NGX."""
         tag_name = tag_name or self.paperless_tag
+        tag_id = None
 
-        if not (data := self.get('api/documents/', params={"tag": tag_name})):
-            return
-        
-        results = data.get("results", [])
-        yield from self.filter_documents(results)
-            
-        next = data.get("next", None)
-        while next:
-            logger.debug('Requesting next page of results')
-            if not (data := self.get(next)):
+        for tag in self.paperless_client.get_tags():
+            if tag.name == tag_name:
+                tag_id = tag.id
                 break
-            results = data.get("results", [])
-            yield from self.filter_documents(results)
-            next = data.get("next", None)
-            
-        return
 
-    def remove_tag(self, document: PaperlessDocument, tag_name: int | str) -> dict:
-        """
-        Removes a tag from a document.
+        if tag_id is None:
+            logger.error(f"Tag '{tag_name}' not found")
+            return
 
-        Args:
-            document (dict): The document to remove the tag from.
-            tag_name (str): The tag to remove.
+        for doc in self.paperless_client.get_documents():
+            if tag_id in doc.tags:
+                yield doc
 
-        Returns:
-            dict: The document with the tag removed.
-        """
-        logger.debug(f"Removing tag '{tag_name}' from document {document.id}")
-        
-        if isinstance(tag_name, int):
-            tag_id = tag_name
-        elif not (tag_id := self.get_tag_id(tag_name)):
-            logger.error(f"Failed to get ID for tag '{tag_name}'")
-            return document
-        
-        tags = [tag for tag in document.tags if tag != tag_id]
-        payload = {"tags": tags}
-        data = self.patch(f"api/documents/{document.id}/", payload)
-        
-        logger.debug(f"Successfully removed tag '{tag_name}' from document {document.id}")
-        return data
+    def remove_tag(self, document: Document, tag_id: int) -> Document:
+        """Removes a tag from a document."""
+        updated_tags = [tag for tag in document.tags if tag.id != tag_id]
+        return document.update(tags=updated_tags)
 
-    def get_tag_id(self, tag_name: str) -> int | None:
-        """
-        Fetches the ID of a tag from the Paperless NGX instance.
 
-        Args:
-            tag_name (str): The tag to fetch the ID of.
+    def add_tag(self, document: Document, tag_id: int) -> Document:
+        """Adds a tag to a document."""
+        if tag_id not in document.tags:
+            updated_tags = document.tags + [tag_id]
+            return document.update(tags=updated_tags)
+        return document
 
-        Returns:
-            int: The ID of the tag.
-        """
-        if not (data := self.get("api/tags/")):
-            return None
-
-        for tag in data.get("results", []):
-            if tag["name"] == tag_name:
-                return tag["id"]
-
-        return None
-
-    def add_tag(self, document: PaperlessDocument, tag_name: int | str) -> dict:
-        """
-        Adds a tag to a document.
-
-        Args:
-            document (dict): The document to add the tag to.
-            tag_name (str): The tag to add.
-
-        Returns:
-            dict: The document with the tag added.
-        """
-        logger.debug(f"Adding tag '{tag_name}' to document {document.id}")
-        
-        if isinstance(tag_name, int):
-            tag_id = tag_name
-        elif not (tag_id := self.get_tag_id(tag_name)):
-            logger.error(f"Failed to get ID for tag '{tag_name}'")
-            return document
-        
-        tags = document.tags + [tag_id]
-        payload = {"tags": tags}
-        data = self.patch(f"api/documents/{document.id}/", payload)
-        
-        logger.debug(f"Successfully added tag '{tag_name}' to document {document.id}")
-        return data
-
-    def download_document(self, document: PaperlessDocument) -> bytes | None:
-        """
-        Downloads a document from Paperless NGX.
-
-        Access /api/documents/{pk}/download
-
-        Args:
-            document (dict): The document to download.
-
-        Returns:
-            bytes: The content of the document.
-        """
+    def download_document(self, document: Document) -> bytes | None:
+        """Downloads a document from Paperless NGX."""
         try:
             logger.debug(f"Downloading document {document.id} from Paperless...")
-
-            response = requests.get(
-                f"{self.paperless_url}/api/documents/{document.id}/download/",
-                headers={"Authorization": f"Token {self.paperless_key}"}
-            )
-            response.raise_for_status()
-            content = response.content
-            logger.debug(f"Downloaded document {document.id} from Paperless")
+            content = document.download()
+            logger.debug(f"Downloaded document {document.id}")
             return content
-        except requests.RequestException as e:
+        except Exception as e:
             logger.error(f"Failed to download document {document.id}: {e}")
+            return None
 
-        return None
-
-
-    def extract_images_from_pdf(self, pdf_bytes: bytes, max_images : int = 2) -> list[bytes]:
+    def extract_images_from_pdf(self, pdf_bytes: bytes, max_images: int = 2) -> list[bytes]:
         """
         Extracts the first image from a PDF file.
 
@@ -480,48 +332,59 @@ class DescribePhotos(BaseModel):
 
         return results
 
-    def append_document_content(self, document: PaperlessDocument, content: str) -> PaperlessDocument:
+    def append_document_content(self, document: Document, content: str) -> Document:
         """
         Appends content to a document.
 
         Args:
-            document (dict): The document to append content to.
+            document (Document): The document to append content to.
             content (str): The content to append.
 
         Returns:
-            dict: The document with the content appended.
+            Document: The document with the content appended.
         """
         if not content:
             raise ValueError("Content should not be empty.")
 
-        logger.debug(f"Appending content to document {document.id}")
-        payload = {"content": document.content + "\n\r\n\r" + content}
-        data = self.patch(f"api/documents/{document.id}/", payload)
-        logger.debug(f"Successfully appended content to document {document.id} -> {data}")
-        updated_document = PaperlessDocument.model_validate(data)
-        return updated_document
+        current_content = document.content or ""
+        new_content = current_content + "\n\r\n\r" + content
 
-    def update_document_title(self, document: PaperlessDocument, title: str) -> PaperlessDocument:
+        logger.debug(f"Appending content to document {document.id}")
+        
+        # Use pypaperless to update the document content
+        updated_doc = self.paperless_client.documents.update(
+            document.id,
+            content=new_content
+        )
+        
+        logger.debug(f"Successfully appended content to document {document.id}")
+        return updated_doc
+
+    def update_document_title(self, document: Document, title: str) -> Document:
         """
         Updates the title of a document.
 
         Args:
-            document (dict): The document to update.
+            document (Document): The document to update.
             title (str): The new title.
 
         Returns:
-            dict: The updated document.
+            Document: The updated document.
         """
         title = str(title).strip()
         if not title or len(title) < 10:
             raise ValueError("Title should be at least 10 characters.")
         
         logger.debug(f"Updating title of document {document.id} to '{title}'")
-        payload = {"title": title}
-        data = self.patch(f"api/documents/{document.id}/", payload)
+        
+        # Use pypaperless to update the document title
+        updated_doc = self.paperless_client.documents.update(
+            document.id,
+            title=title
+        )
+        
         logger.debug(f"Successfully updated title of document {document.id} to '{title}'")
-        updated_document = PaperlessDocument.model_validate(data)
-        return updated_document
+        return updated_doc
 
     def parse_date(self, date_str: str) -> date | None:
         """
@@ -551,16 +414,16 @@ class DescribePhotos(BaseModel):
             raise ValueError(f"Invalid date format: {date_str=}")
         return parsed_date.date()
 
-    def update_document_date(self, document: PaperlessDocument, date: str | date | datetime) -> PaperlessDocument:
+    def update_document_date(self, document: Document, date: str | date | datetime) -> Document:
         """
         Updates the date of a document.
 
         Args:
-            document (dict): The document to update.
+            document (Document): The document to update.
             date (str): The new date in 'YYYY-MM-DD' format.
 
         Returns:
-            dict: The updated document.
+            Document: The updated document.
         """
         parsed_date = date
         if isinstance(parsed_date, str):
@@ -572,14 +435,20 @@ class DescribePhotos(BaseModel):
             return document
         
         logger.debug(f"Updating date of document {document.id} to '{parsed_date}'")
-        payload = {"created_date": parsed_date.strftime("%Y-%m-%d")} 
-        data = self.patch(f"api/documents/{document.id}/", payload)
+        
+        # Use pypaperless to update the document date
+        updated_doc = self.paperless_client.documents.update(
+            document.id,
+            created=parsed_date.strftime("%Y-%m-%d")
+        )
+        
         logger.debug(f"Successfully updated date of document {document.id} to '{parsed_date}'")
-        updated_document = PaperlessDocument.model_validate(data)
-        return updated_document
+        return updated_doc
 
-    def standardize_image_contents(self, content : str) -> list[str]:
-            
+    def standardize_image_contents(self, content: bytes) -> list[str]:
+        """
+        Standardize image contents to base64-encoded PNG format.
+        """    
         try:
             return [self._convert_to_png(content)]
         except Exception as e:
@@ -591,7 +460,7 @@ class DescribePhotos(BaseModel):
 
         raise ValueError("Unable to standardize image.")
 
-    def _convert_to_png(self, content : str) -> str:
+    def _convert_to_png(self, content: bytes) -> str:
         img = Image.open(BytesIO(content))
 
         # Resize large images
@@ -606,15 +475,26 @@ class DescribePhotos(BaseModel):
         # Convert to base64
         return base64.b64encode(buf.read()).decode("utf-8")
             
+    def _send_describe_request(self, content: bytes | list[bytes], document: Document) -> str | None:
+        """
+        Send an image description request to OpenAI.
 
-    def _send_describe_request(self, content : str | bytes | list[str | bytes], document : PaperlessDocument) -> str | None:
+        Args:
+            content: Document content as bytes or list of bytes
+            document: The document to describe
 
-        description : str | None = None
+        Returns:
+            str: The description generated by OpenAI
+        """
+        description: str | None = None
         if not isinstance(content, list):
             content = [content]
             
         try:
-            images = [self.standardize_image_contents(image) for image in content]
+            # Convert all images to standardized format
+            images = []
+            for image_content in content:
+                images.extend(self.standardize_image_contents(image_content))
 
             message_contents = [
                 {
@@ -643,18 +523,21 @@ class DescribePhotos(BaseModel):
             logger.debug(f"Generated description: {description}")
 
         except ValueError as ve:
-            logger.warning("Failed to generate description for document #%s: %s. Continuing with next image -> %s", document.id, document.original_file_name, ve)
+            logger.warning("Failed to generate description for document #%s: %s. Continuing with next image -> %s", 
+                document.id, document.original_filename, ve)
 
         except UnidentifiedImageError as uii:
-            logger.warning('Failed to identify image format for document #%s: %s. Continuing with next image -> %s', document.id, document.original_file_name, uii)
+            logger.warning('Failed to identify image format for document #%s: %s. Continuing with next image -> %s', 
+                document.id, document.original_filename, uii)
         
         except Exception as e:
-            logger.error("Unexpected Error generating description for document #%s: %s -> %s", document.id, document.original_file_name, e)
+            logger.error("Unexpected Error generating description for document #%s: %s -> %s", 
+                document.id, document.original_filename, e)
             raise
 
         return description
 
-    def describe_document(self, document: PaperlessDocument) -> PaperlessDocument:
+    def describe_document(self, document: Document) -> Document:
         """
         Describes a single document using OpenAI's GPT-4o model.
 
@@ -696,12 +579,13 @@ class DescribePhotos(BaseModel):
 
         return document
 
-    def parse_json(self, response : str, document : PaperlessDocument) -> dict | None:
+    def parse_json(self, response: str, document: Document) -> dict | None:
         # Attempt to parse response as json
         try:
             return json.loads(response)
         except json.JSONDecodeError:
-            logger.debug("Failed to parse response as JSON. Saving response raw in document content. Document #%s: %s", document.id, document.original_file_name)
+            logger.debug("Failed to parse response as JSON. Saving response raw in document content. Document #%s: %s", 
+                document.id, document.original_filename)
 
         # If "```json" is present, strip everything before it
         if "```json" in response:
@@ -716,11 +600,22 @@ class DescribePhotos(BaseModel):
         except json.JSONDecodeError:
             logger.debug('Failed again after stripping json block')
 
-        logger.error('Failed to parse response as JSON. Saving response raw in document content. Document #%s: %s', document.id, document.original_file_name)
+        logger.error('Failed to parse response as JSON. Saving response raw in document content. Document #%s: %s', 
+            document.id, document.original_filename)
         self.append_document_content(document, response)
         return None
 
-    def process_response(self, response : str, document : PaperlessDocument):
+    def process_response(self, response: str, document: Document) -> Document:
+        """
+        Process the response from OpenAI and update the document.
+        
+        Args:
+            response (str): The response from OpenAI
+            document (Document): The document to update
+            
+        Returns:
+            Document: The updated document
+        """
         # Attempt to parse response as json
         if not (parsed_response := self.parse_json(response, document)):
             logger.debug('Unable to process response after failed json parsing')
@@ -728,7 +623,8 @@ class DescribePhotos(BaseModel):
 
         # Check if parsed_response is a dictionary
         if not isinstance(parsed_response, dict):
-            logger.error("Parsed response is not a dictionary. Saving response raw in document content. Document #%s: %s", document.id, document.original_file_name)
+            logger.error("Parsed response is not a dictionary. Saving response raw in document content. Document #%s: %s", 
+                document.id, document.original_filename)
             self.append_document_content(document, response)
             return document
         
@@ -747,7 +643,7 @@ class DescribePhotos(BaseModel):
             Inferred Date: {date}
             Suggested Tags: {tags}
             Previous Title: {document.title}
-            Previous Date: {document.created_date}
+            Previous Date: {document.created}
         """
 
         if summary:
@@ -759,44 +655,50 @@ class DescribePhotos(BaseModel):
         if not any([description, summary, content]):
             full_description += f"\n\nFull AI Response: {parsed_response}"
 
-        if title and TAG_NEEDS_TITLE in document.tags:
+        updated_document = document
+        
+        if title and any(tag.id == TAG_NEEDS_TITLE for tag in document.tags):
             try:
-                updated_document = self.update_document_title(document, title)
-                updated_document = self.remove_tag(document, TAG_NEEDS_TITLE)
+                updated_document = self.update_document_title(updated_document, title)
+                updated_document = self.remove_tag(updated_document, TAG_NEEDS_TITLE)
             except Exception as e:
-                logger.error("Failed to update document title. Document #%s: %s -> %s", document.id, document.original_file_name, e)
+                logger.error("Failed to update document title. Document #%s: %s -> %s", 
+                    document.id, document.original_filename, e)
 
-        if date and TAG_NEEDS_DATE in document.tags:
+        if date and any(tag.id == TAG_NEEDS_DATE for tag in document.tags):
             try:
-                updated_document = self.update_document_date(document, date)
-                updated_document = self.remove_tag(document, TAG_NEEDS_DATE)
+                updated_document = self.update_document_date(updated_document, date)
+                updated_document = self.remove_tag(updated_document, TAG_NEEDS_DATE)
             except Exception as e:
-                logger.error("Failed to update document date. Document #%s: %s -> %s", document.id, document.original_file_name, e)
+                logger.error("Failed to update document date. Document #%s: %s -> %s", 
+                    document.id, document.original_filename, e)
 
         # Append the description to the document
-        updated_document = self.append_document_content(document, full_description)
-        self.remove_tag(document, TAG_NEEDS_DESCRIPTION)
-        self.add_tag(document, TAG_DESCRIBED)
+        updated_document = self.append_document_content(updated_document, full_description)
+        updated_document = self.remove_tag(updated_document, TAG_NEEDS_DESCRIPTION)
+        updated_document = self.add_tag(updated_document, TAG_DESCRIBED)
+        
         logger.debug(f"Successfully described document {document.id}")
         return updated_document
 
-    def describe_documents(self, documents : list[PaperlessDocument] | None = None) -> list[PaperlessDocument]:
+    def describe_documents(self, documents: list[Document] | None = None) -> list[Document]:
         """
         Describes a list of documents using OpenAI's GPT-4o model.
 
         Args:
-            documents (list[dict]): The documents to describe.
+            documents (list[Document]): The documents to describe.
 
         Returns:
-            list[dict]: The documents with the descriptions added.
+            list[Document]: The documents with the descriptions added.
         """
-        documents = documents or self.fetch_documents_with_tag()
+        if documents is None:
+            documents = list(self.fetch_documents_with_tag())
         
         results = []
         with alive_bar(title='Running', unknown='waves') as self._progress_bar:
             for document in documents:
-                if (description := self.describe_document(document)):
-                    results.append(description)
+                if (updated_document := self.describe_document(document)):
+                    results.append(updated_document)
                 self.progress_bar()
         return results
 
@@ -845,7 +747,7 @@ class ArgNamespace(argparse.Namespace):
     key: str
     model: str | None = None
     prompt: str | None = None
-    force_openai : bool = False
+    force_openai: bool = False
 
 def main():
     try:

@@ -19,3 +19,4 @@ pymupdf==1.24.5
 jinja2
 dateparser
 opencv-python==4.11.0
+pypaperless
