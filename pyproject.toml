@@ -18,7 +18,9 @@ dependencies = [
     "python-dotenv==1.0.1",
     'sqlalchemy',
     "types-cachetools==5.5.0.20240820",
-    "types-tqdm"
+    "types-tqdm",
+    "ffmpeg-python>=0.2.0",
+    "pydub>=0.25.1",
 ]
 requires-python = ">=3.12"
 

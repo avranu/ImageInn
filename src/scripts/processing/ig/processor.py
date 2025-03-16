@@ -191,6 +191,8 @@ class IGImageProcessor(FileManager):
 
     @property
     def output_dir(self) -> Path:
+        if self.input_dir.is_file():
+            return self.input_dir.parent / self.output_folder
         return self.input_dir / self.output_folder
 
     def get_file_suffix(self) -> str:
@@ -206,6 +208,9 @@ class IGImageProcessor(FileManager):
         return f"_{fmt}{self.file_suffix}.jpg"
 
     def _get_images(self) -> list[Path]:
+        if self.input_dir.is_file():
+            return [self.input_dir]
+        
         globs = ['*.jpg', '*.png']
         files = []
         for glob in globs:
@@ -232,7 +237,6 @@ class IGImageProcessor(FileManager):
         error_count : int = 0
         images = self._get_images()
         total = len(images)
-
 
         try:
             # Ensure output dirs exist
