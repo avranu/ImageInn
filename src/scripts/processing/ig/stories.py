@@ -33,6 +33,8 @@ from tqdm import tqdm
 import ffmpeg
 import tempfile
 import shutil
+import uuid
+import re
 from pydantic import Field, field_validator
 from decimal import Decimal
 from scripts.processing.ig.processor import IGImageProcessor
@@ -56,9 +58,9 @@ class IGMusicStoryProcessor(IGImageProcessor):
     """
     music_file: Path
     duration: Decimal = Field(default=15.0)
-    fade_in: Decimal = Field(default=1.0)
-    fade_out: Decimal = Field(default=1.0)
-    volume: Decimal = Field(default=0.7)
+    fade_in: Decimal = Field(default=0.0)
+    fade_out: Decimal = Field(default=0.0)
+    volume: Decimal = Field(default=1.0)
     output_folder: str = Field(default="music_stories")
     skip_image_adjustments: bool = Field(default=True)
 
@@ -133,21 +135,17 @@ class IGMusicStoryProcessor(IGImageProcessor):
         """
         count : int = 0
         error_count : int = 0
-        images = self._get_images()
-        total = len(images)
-
+        
         try:
+            images = self._get_images()
+            total = len(images)
+
             # Ensure output dirs exist
             self.output_dir.mkdir(exist_ok=True)
 
             with tqdm(total=total, desc="Processing images") as self._progress_bar:
                 for file_path in images:
                     try:
-                        """
-                        if self.check_if_processed(file_path):
-                            logger.debug(f"Skipping {file_path.name}. Already processed.")
-                            continue
-                        """
                         self.process_image(file_path)
                         count += 1
                     except Exception as e:
@@ -176,38 +174,53 @@ class IGMusicStoryProcessor(IGImageProcessor):
             if topaz_file_path := self.apply_topaz(file_path):
                 file_path = topaz_file_path
 
-        # Create IGImage instance
-        self.update_progress(f"Setting up image frame: {file_path.name}")
-        image = Image.open(file_path)
-        
-        # Save the processed image to a temp file
+        # Create a simplified output filename
+        base_name = re.sub(r'[^a-zA-Z0-9]', '_', file_path.stem)[:50]  # Limit length and remove problematic chars
+        unique_id = str(uuid.uuid4())[:8]  # Add a unique ID to prevent overwrites
+        output_filename = f"{base_name}_{unique_id}_story_music.mp4"
+        final_output_path = self.output_dir / output_filename
+
+        # Create temp directory
         temp_dir = Path(tempfile.mkdtemp())
         temp_image_path = temp_dir / f"temp_image.jpg"
         temp_video_path = temp_dir / f"temp_video.mp4"
-        final_output_path = self.output_dir / f"{file_path.stem}_story_music.mp4"
         
-        self.update_progress(f"Saving temporary image")
-        image.save(temp_image_path)
-        
-        # Create video from image
-        self.update_progress(f"Creating video from image")
-        self.create_video_from_image(temp_image_path, temp_video_path)
-        
-        # Add music to video
-        self.update_progress(f"Adding music to video")
-        self.add_music_to_video(temp_video_path, self.music_file, final_output_path)
-        
-        # Clean up temp files
-        self.update_progress(f"Cleaning up")
-        shutil.rmtree(temp_dir)
-        
-        if topaz_file_path:
-            topaz_file_path.unlink()
+        try:
+            # Open and process image
+            self.update_progress(f"Setting up image frame")
+            image = Image.open(file_path)
             
-        # Copy to Instagram folder if available
-        if self.ig_output_dir:
-            self.update_progress(f'Copying to Instagram folder: {final_output_path.name}')
-            self.copy_file(final_output_path, self.ig_output_dir / final_output_path.name, skip_existing=True)
+            # Ensure output directory exists
+            self.output_dir.mkdir(exist_ok=True)
+            
+            # Save the processed image to a temp file
+            self.update_progress(f"Saving temporary image")
+            image.save(temp_image_path)
+            
+            # Create video from image
+            self.update_progress(f"Creating video from image")
+            self.create_video_from_image(temp_image_path, temp_video_path)
+            
+            # Add music to video
+            self.update_progress(f"Adding music to video")
+            self.add_music_to_video(temp_video_path, self.music_file, final_output_path)
+            
+            # Copy to Instagram folder if available
+            if self.ig_output_dir:
+                self.update_progress(f'Copying to Instagram folder: {final_output_path.name}')
+                self.copy_file(final_output_path, self.ig_output_dir / final_output_path.name, skip_existing=True)
+                
+        except Exception as e:
+            logger.error(f"Error processing {file_path}: {e}")
+            raise
+            
+        finally:
+            # Clean up temp files
+            self.update_progress(f"Cleaning up")
+            shutil.rmtree(temp_dir)
+            
+            if topaz_file_path and topaz_file_path.exists():
+                topaz_file_path.unlink()
 
     def create_video_from_image(self, image_path: Path, output_path: Path) -> None:
         """
@@ -223,41 +236,62 @@ class IGMusicStoryProcessor(IGImageProcessor):
                 .run()
             )
         except ffmpeg.Error as e:
-            logger.error(f"Failed to create video: {e.stderr.decode() if e.stderr else str(e)}")
-            raise
+            error_msg = e.stderr.decode() if e.stderr else str(e)
+            logger.error(f"Failed to create video: {error_msg}")
+            raise RuntimeError(f"FFMPEG error creating video: {error_msg}")
 
     def add_music_to_video(self, video_path: Path, music_path: Path, output_path: Path) -> None:
         """
         Add music to a video with fade in/out effects.
         """
         try:
-            logger.debug('Inputting video path into ffmpeg')
-            video = ffmpeg.input(str(video_path))
-            logger.debug('Inputting music path into ffmpeg (afade in %s, out %s, volume %s)', self.fade_in, float(self.duration)-float(self.fade_out), self.volume)
-            audio = (
-                ffmpeg
-                .input(str(music_path))
-                .filter('afade', type='in', start_time=0, duration=float(self.fade_in))
-                .filter('afade', type='out', start_time=float(self.duration)-float(self.fade_out), duration=float(self.fade_out))
-                .filter('volume', volume=float(self.volume))
-            )
-
-            loglevel = 'info' if logger.isEnabledFor(logging.DEBUG) else 'error'
-
-            logger.debug('Outputting video with music. Output path: %s, duration: %s', output_path, self.duration)
-            logger.debug('You can reproduce with the following cli command: %s', f'ffmpeg -i "{video_path}" -i "{music_path}" -af afade=in:st=0:d={self.fade_in},afade=out:st={float(self.duration)-float(self.fade_out)}:d={self.fade_out},volume={self.volume} -t {self.duration} {output_path} -loglevel "info')
-            (
-                ffmpeg
-                .output(video.video, audio, str(output_path), t=float(self.duration), shortest=None)
-                .global_args('-loglevel', loglevel)
-                .run()
-            )
-        except ffmpeg.Error as e:
-            logger.error(f"Failed to add music: {e.stderr.decode() if e.stderr else str(e)} -> {e}")
+            # Logging details
+            logger.debug('Adding music to video: %s + %s -> %s', video_path, music_path, output_path)
+            logger.debug('Parameters: duration=%s, fade_in=%s, fade_out=%s, volume=%s', 
+                        self.duration, self.fade_in, self.fade_out, self.volume)
+            
+            # Alternative implementation using subprocess instead of python-ffmpeg
+            # This can be more reliable in some cases
+            fade_out_start = float(self.duration) - float(self.fade_out)
+            cmd = [
+                'ffmpeg',
+                '-i', str(video_path),
+                '-i', str(music_path),
+                '-c:v', 'copy',  # Copy video codec to avoid re-encoding
+                '-af', f'afade=in:st=0:d={self.fade_in},afade=out:st={fade_out_start}:d={self.fade_out},volume={self.volume}',
+                '-t', str(self.duration),
+                '-shortest',
+                '-y',  # Overwrite output files without asking
+                str(output_path)
+            ]
+            
+            # Add loglevel for debugging if verbose
+            if logger.isEnabledFor(logging.DEBUG):
+                cmd.extend(['-loglevel', 'info'])
+            else:
+                cmd.extend(['-loglevel', 'error'])
+                
+            logger.debug('Running command: %s', ' '.join(cmd))
+            
+            # Run the command
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                logger.error(f"FFMPEG command failed: {result.stderr}")
+                raise RuntimeError(f"FFMPEG command failed: {result.stderr}")
+                
+            # Verify the output was created successfully
+            if not output_path.exists():
+                raise RuntimeError(f"Output file was not created: {output_path}")
+                
+            logger.debug('Successfully created music video at %s', output_path)
+            
+        except Exception as e:
+            logger.error(f"Failed to add music: {e}")
             # If the file exists, delete it
             if output_path.exists():
                 output_path.unlink()
-            raise
+            raise RuntimeError(f"Failed to add music: {e}")
 
 def main() -> None:
     """
@@ -265,14 +299,13 @@ def main() -> None:
     """
     parser = argparse.ArgumentParser(description='''Instagram Music Story Creator.
                     This script processes images into Instagram stories with music background.''')
-    parser.add_argument('input_dir', type=Path, help='Path to the input directory containing images.')
-    parser.add_argument('music_file', type=Path, help='Path to the music file to use.')
+    parser.add_argument('input_dir', type=str, help='Path to the input directory containing images or a single image file.')
+    parser.add_argument('music_file', type=str, default=None, help='Path to the music file to use.')
     parser.add_argument('--duration', type=Decimal, default=15.0, help='Duration of the story in seconds (default: 15).')
-    parser.add_argument('--fade-in', type=Decimal, default=1.0, help='Fade in duration in seconds (default: 1).')
-    parser.add_argument('--fade-out', type=Decimal, default=1.0, help='Fade out duration in seconds (default: 1).')
-    parser.add_argument('--volume', type=Decimal, default=0.7, help='Music volume (0.0-1.0, default: 0.7).')
+    parser.add_argument('--fade-in', type=Decimal, default=0.0, help='Fade in duration in seconds (default: 1).')
+    parser.add_argument('--fade-out', type=Decimal, default=0.0, help='Fade out duration in seconds (default: 1).')
+    parser.add_argument('--volume', type=Decimal, default=1.0, help='Music volume (0.0-1.0, default: 0.7).')
     parser.add_argument('--margin', type=int, default=50, help='Margin size for the canvas.')
-    #parser.add_argument('--skip-adjustments', action='store_true', help='Skip adjustments to the main image.')
     parser.add_argument('--topaz-exe', type=Path, help='Path to the Topaz DeNoise AI executable.')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging.')
     
@@ -281,16 +314,20 @@ def main() -> None:
     if args.verbose:
         logger.setLevel(logging.DEBUG)
 
+    if args.music_file is None:
+        args.music_file = os.getenv('IMAGEINN_MUSIC_FILE', None)
+        if not args.music_file:
+            raise ValueError("Music file is required")
+
     processor = IGMusicStoryProcessor(
-        input_dir=args.input_dir,
-        music_file=args.music_file,
+        input_dir=Path(args.input_dir),
+        music_file=Path(args.music_file),
         duration=args.duration,
         fade_in=args.fade_in,
         fade_out=args.fade_out,
         volume=args.volume,
         margin=args.margin,
-        #skip_image_adjustments=args.skip_adjustments,
-        topaz_exe=args.topaz_exe
+        topaz_exe=args.topaz_exe if args.topaz_exe else None
     )
     processor.process_images()
 
