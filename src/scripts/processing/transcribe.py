@@ -1,6 +1,10 @@
 """*********************************************************************************************************************
 *                                                                                                                      *
 *                                                                                                                      *
+    Benchmarks on 5 second mp4 (5 MB): 
+        - Failing before transcription:  5.94s user 6.25s system 11% cpu 1:48.22 total
+        - Running "small":  25.95s user 21.73s system 17% cpu 4:28.99 total
+        - Running "medium": 18.24s user 54.26s system 12% cpu 9:18.94 total
 *                                                                                                                      *
 *                                                                                                                      *
 * -------------------------------------------------------------------------------------------------------------------- *
@@ -23,6 +27,7 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 import argparse
+from typing import Literal
 import logging
 import os
 import sys
@@ -43,7 +48,7 @@ logging.basicConfig(
 class VideoTranscriber:
     """Handles video transcription using Whisper and generates SRT subtitles."""
 
-    def __init__(self, video_path: Path):
+    def __init__(self, video_path: Path, size : Literal['small', 'medium', 'large'] = 'small'):
         """
         Initializes the transcriber with a given video file.
 
@@ -51,9 +56,19 @@ class VideoTranscriber:
             video_path (Path): Path to the video file.
         """
         self.video_path: Path = video_path.resolve()
-        self.audio_path: Path = self.video_path.with_suffix(".wav")
+        self.audio_path: Path = self._generate_unique_audio_path()
         self.srt_path: Path = self.video_path.with_stem(f"{self.video_path.stem}.US").with_suffix(".srt")
-        self.model = whisper.load_model("small")  # Change to 'medium' or 'large' if needed
+        self.model = whisper.load_model(size)
+
+    def _generate_unique_audio_path(self) -> Path:
+        """Generates a unique file path for the audio file to avoid conflicts."""
+        base_audio_path = self.video_path.with_suffix(".wav")
+        audio_path = base_audio_path
+        counter = 1
+        while audio_path.exists():
+            audio_path = base_audio_path.with_stem(f"{base_audio_path.stem}_{counter}")
+            counter += 1
+        return audio_path
 
     def extract_audio(self) -> None:
         """Extracts audio from the video using FFmpeg and saves it as a WAV file."""
@@ -143,6 +158,7 @@ def parse_args() -> argparse.Namespace:
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(description="Transcribe video audio to an SRT subtitle file using Whisper.")
     parser.add_argument("video_file", type=Path, help="Path to the input video file.")
+    parser.add_argument("--size", type=str, default="small", help="Model size to use (small, medium, large).")
     return parser.parse_args()
 
 def main() -> None:
@@ -153,7 +169,7 @@ def main() -> None:
         logging.error(f"File not found: {args.video_file}")
         sys.exit(1)
 
-    transcriber = VideoTranscriber(args.video_file)
+    transcriber = VideoTranscriber(args.video_file, size=args.size)
     transcriber.process()
 
 
