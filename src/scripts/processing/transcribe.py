@@ -32,6 +32,7 @@ import logging
 import os
 import sys
 from datetime import timedelta
+from tqdm import tqdm
 from pathlib import Path
 
 import ffmpeg
@@ -157,7 +158,7 @@ class VideoTranscriber:
 def parse_args() -> argparse.Namespace:
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(description="Transcribe video audio to an SRT subtitle file using Whisper.")
-    parser.add_argument("video_file", type=Path, help="Path to the input video file.")
+    parser.add_argument("input_path", type=Path, help="Path to the input video file or directory.")
     parser.add_argument("--size", type=str, default="small", help="Model size to use (small, medium, large).")
     return parser.parse_args()
 
@@ -165,13 +166,37 @@ def main() -> None:
     """Main function to handle argument parsing and transcription."""
     args = parse_args()
     
-    if not args.video_file.exists():
-        logging.error(f"File not found: {args.video_file}")
+    if not args.input_path.exists():
+        logging.error(f"Path not found: {args.input_path}")
         sys.exit(1)
 
-    transcriber = VideoTranscriber(args.video_file, size=args.size)
+    if args.input_path.is_file():
+        process_file(args.input_path, args.size)
+    elif args.input_path.is_dir():
+        process_directory(args.input_path, args.size)
+    else:
+        logging.error(f"Invalid path: {args.input_path}")
+        sys.exit(1)
+
+def process_file(video_file: Path, size: str) -> None:
+    """Process a single video file."""
+    srt_path = video_file.with_stem(f"{video_file.stem}.US").with_suffix(".srt")
+    if srt_path.exists():
+        logging.info(f"Skipping {video_file.name}, SRT already exists.")
+        return
+
+    transcriber = VideoTranscriber(video_file, size=size)
     transcriber.process()
 
+def process_directory(directory: Path, size: str) -> None:
+    """Process all mp4 files in a directory and its subdirectories."""
+    video_files = directory.rglob("*.mp4")
+    with tqdm(desc="Processing videos", unit="file") as pbar:
+        for video_file in video_files:
+            try:
+                process_file(video_file, size)
+            finally:
+                pbar.update(1)
 
 if __name__ == "__main__":
     main()
