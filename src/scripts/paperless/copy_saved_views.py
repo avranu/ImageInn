@@ -132,7 +132,7 @@ class Paperless(BaseModel):
         return self.post("api/saved_views/", view_data)
 
 
-    def replicate_saved_views(self, source_user_id: int, target_user_ids: List[int]) -> None:
+    def replicate_saved_views(self, source_user_id: int, target_user_ids: list[int]) -> None:
         """Replicate saved views from one user to others."""
         saved_views = self.fetch_saved_views() #source_user_id)
         if not saved_views:

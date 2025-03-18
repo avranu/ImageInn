@@ -69,7 +69,7 @@ class InstaloaderRunner(BaseModel):
     - Handles retries with exponential backoff.
     - Manages login using username and password from environment variables.
     """
-    profiles: List[str] = Field(default_factory=list)
+    profiles: list[str] = Field(default_factory=list)
     profiles_file: Path | None = None
     max_retries: int = 5
     delay: int = 5  # Initial delay between retries in seconds
@@ -85,8 +85,8 @@ class InstaloaderRunner(BaseModel):
     # Private attributes
     _username: str = PrivateAttr(default='')
     _password: str = PrivateAttr(default='')
-    _success_profiles: List[str] = PrivateAttr(default_factory=list)
-    _failed_profiles: List[str] = PrivateAttr(default_factory=list)
+    _success_profiles: list[str] = PrivateAttr(default_factory=list)
+    _failed_profiles: list[str] = PrivateAttr(default_factory=list)
     _instaloader: instaloader.Instaloader = PrivateAttr()
 
     class Config:
@@ -235,7 +235,7 @@ class InstaloaderRunner(BaseModel):
             logger.warning("Failed profiles: %s", ', '.join(self._failed_profiles))
 
 class ArgumentNamespace(argparse.Namespace):
-    profiles : List[str] = []
+    profiles : list[str] = []
     profiles_file : str | None = None
     stories : bool = False
     comments : bool = False

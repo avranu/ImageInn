@@ -35,7 +35,7 @@ class PhotoStack:
 
 	Internally, this is represented as a dict.
 	"""
-	_photos: Dict[str, Photo]
+	_photos: dict[str, Photo]
 	_bias_gap: Decimal | None = None
 	_value_gap: Decimal | None = None
 

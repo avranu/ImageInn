@@ -32,7 +32,7 @@ from scripts.import_sd.photo import Photo
 logger = logging.getLogger(__name__)
 
 # Generic type that can be list[Photo] or Photo. This allows us to enforce the return type of a method matches its parameter
-BracketOrPhoto = TypeVar('BracketOrPhoto', List[Photo], Photo)
+BracketOrPhoto = TypeVar('BracketOrPhoto', list[Photo], Photo)
 MAX_THREADS = 4
 
 

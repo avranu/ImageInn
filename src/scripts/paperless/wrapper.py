@@ -68,12 +68,12 @@ class PaperlessWrapper:
         """
         return asyncio.run(coro)
 
-    def get_documents(self) -> List[Document]:
+    def get_documents(self) -> list[Document]:
         """
         Fetches all documents.
 
         Returns:
-            List[Document]: A list of documents.
+            list[Document]: A list of documents.
         """
 
         logger.info('Getting all documents')
@@ -100,7 +100,7 @@ class PaperlessWrapper:
 
         return self._run(_fetch())
 
-    def get_documents_by_tag(self, tag_name: str) -> List[Document]:
+    def get_documents_by_tag(self, tag_name: str) -> list[Document]:
         """
         Fetches documents with a specific tag.
 
@@ -108,7 +108,7 @@ class PaperlessWrapper:
             tag_name (str): The tag name.
 
         Returns:
-            List[Document]: List of documents with the tag.
+            list[Document]: List of documents with the tag.
         """
         logger.info('Getting documents with tag %s', tag_name)
         async def _fetch():
@@ -120,12 +120,12 @@ class PaperlessWrapper:
 
         return self._run(_fetch())
 
-    def get_tags(self) -> List[Tag]:
+    def get_tags(self) -> list[Tag]:
         """
         Fetches all available tags.
 
         Returns:
-            List[Tag]: A list of tags.
+            list[Tag]: A list of tags.
         """
         logger.info('Getting all tags')
         async def _fetch():

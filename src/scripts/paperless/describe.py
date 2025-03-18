@@ -206,12 +206,12 @@ class DescribePhotos(BaseModel):
             return template.render(document=document)
         return None
         
-    def filter_documents(self, documents: List[Document]) -> Iterator[Document]:
+    def filter_documents(self, documents: list[Document]) -> Iterator[Document]:
         """
         Yields documents from the Paperless NGX instance that need description.
 
         Args:
-            documents (List[Document]): The documents to filter
+            documents (list[Document]): The documents to filter
 
         Yields:
             Iterator[Document]: The filtered documents.

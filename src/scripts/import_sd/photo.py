@@ -198,7 +198,7 @@ class Photo(FilePath):
 		return self.date.strftime('%Y%m%d')
 
 	@property
-	def dimensions(self) -> Dict[str, int] | None:
+	def dimensions(self) -> dict[str, int] | None:
 		"""
 		Get the dimensions from the EXIF data of the given file.
 
