@@ -70,7 +70,7 @@ class VideoTranscriber:
             audio_path = base_audio_path.with_stem(f"{base_audio_path.stem}_{counter}")
             counter += 1
         return audio_path
-
+    
     def extract_audio(self) -> None:
         """Extracts audio from the video using FFmpeg and saves it as a WAV file."""
         logging.info(f"Extracting audio from {self.video_path.name}...")
@@ -80,14 +80,23 @@ class VideoTranscriber:
             self.audio_path.unlink()
 
         try:
-            ffmpeg.input(str(self.video_path)).output(
-                str(self.audio_path),
-                acodec="pcm_s16le",
-                ar="16000"
-            ).run(overwrite_output=True, quiet=True)
+            process = (
+                ffmpeg.input(str(self.video_path))
+                .output(
+                    str(self.audio_path),
+                    acodec="pcm_s16le",
+                    ar="16000",
+                    threads=2  # Limit CPU usage
+                )
+                .global_args("-filter_threads", "1", "-nostats")  # Optimize processing
+                .run(overwrite_output=True, capture_stderr=True, quiet=True)
+            )
+            logging.info(f"Audio extraction completed: {self.audio_path.name}")
+
         except ffmpeg.Error as e:
-            logging.error(f"FFmpeg failed: {e}")
-            sys.exit(1)
+            error_message = e.stderr.decode("utf-8") if e.stderr else str(e)
+            logging.error(f"FFmpeg failed: {error_message}")
+            raise RuntimeError(f"FFmpeg audio extraction failed: {error_message}") from e
 
     def transcribe_audio(self) -> list[dict]:
         """
