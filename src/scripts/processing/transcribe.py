@@ -542,7 +542,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--memory-limit",
         type=int,
-        default=2048,
+        default=10240,
         help="Maximum memory usage in MB."
     )
     parser.add_argument(
