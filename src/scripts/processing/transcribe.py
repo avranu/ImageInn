@@ -657,7 +657,7 @@ def main() -> int:
         return 130
     except Exception as e:
         logger.exception(f"An error occurred during processing: {e}")
-        return 1
+        raise
     
     logger.info("Processing completed successfully")
     return 0
