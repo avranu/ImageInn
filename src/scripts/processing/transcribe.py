@@ -60,6 +60,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+class AudioExtractionFailedError(Exception):
+    """Raised when audio extraction fails."""
+    pass
+
 
 @dataclass
 class TranscriptionConfig:
@@ -221,7 +225,7 @@ class AudioExtractor:
         except ffmpeg.Error as e:
             error_message = e.stderr.decode("utf-8") if e.stderr else str(e)
             logger.error(f"FFmpeg failed: {error_message}")
-            raise RuntimeError(f"FFmpeg audio extraction failed: {error_message}") from e
+            raise AudioExtractionFailedError(f"FFmpeg failed: {error_message}") from e
 
 
 class SubtitleFormatter:
@@ -504,15 +508,21 @@ class VideoProcessor:
                           for video_file in video_files]
                 
                 for future in tqdm(futures, desc="Processing videos", unit="file"):
-                    result = future.result()
-                    if result:
-                        results.append(result)
+                    try:
+                        result = future.result()
+                        if result:
+                            results.append(result)
+                    except AudioExtractionFailedError as e:
+                        logger.error(f"Failed to extract audio: {e}")
         else:
             # Sequential processing with progress bar
             for video_file in tqdm(video_files, desc="Processing videos", unit="file"):
-                result = self.process_file(video_file)
-                if result:
-                    results.append(result)
+                try:
+                    result = self.process_file(video_file)
+                    if result:
+                        results.append(result)
+                except AudioExtractionFailedError as e:
+                    logger.error(f"Failed to extract audio: {e}")
         
         return results
 
