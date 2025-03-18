@@ -280,7 +280,7 @@ class WhisperTranscriber:
             try:
                 self.model = whisper.load_model(
                     self.config.model_size, 
-                    device=self.config.device
+                    #device=self.config.device
                 )
                 logger.debug(f"Model loaded successfully")
             except Exception as e:
@@ -413,6 +413,7 @@ class VideoTranscriber:
                 logger.debug(f"Deleted temporary audio file: {self.audio_path.name}")
             except Exception as e:
                 logger.warning(f"Failed to delete temporary audio file: {e}")
+                raise
 
 
 class VideoProcessor:
@@ -448,7 +449,7 @@ class VideoProcessor:
             return transcriber.process()
         except Exception as e:
             logger.error(f"Failed to process {video_file.name}: {e}")
-            return None
+            raise
 
     def find_video_files(self, directory: Path) -> Generator[Path, None, None]:
         """
