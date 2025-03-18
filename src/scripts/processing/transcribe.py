@@ -39,9 +39,15 @@ from typing import Generator, Literal, Optional, Dict, List, Any, Union, Iterato
 import ffmpeg
 import psutil
 import pysrt
-import resource
 import whisper
 from tqdm import tqdm
+
+import sys
+import platform
+
+if platform.system() != "Windows":
+    import resource
+
 
 # Configure logging
 logging.basicConfig(
@@ -92,13 +98,17 @@ class ResourceManager:
             logger.warning(f"Failed to set CPU affinity: {e}")
 
         # Set memory limits
-        try:
-            if hasattr(resource, "RLIMIT_AS"):
-                memory_bytes = memory_limit_mb * 1024 * 1024
-                resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
-                logger.debug(f"Set memory limit to {memory_limit_mb}MB")
-        except Exception as e:
-            logger.warning(f"Failed to set memory limit: {e}")
+        if platform.system() != "Windows":
+            try:
+                if hasattr(resource, "RLIMIT_AS"):
+                    memory_bytes = memory_limit_mb * 1024 * 1024
+                    resource.setrlimit(resource.RLIMIT_AS, (memory_bytes, memory_bytes))
+                    logger.debug(f"Set memory limit to {memory_limit_mb}MB")
+            except Exception as e:
+                logger.warning(f"Failed to set memory limit: {e}")
+        else:
+            logger.info("Memory limits not enforced on Windows.")
+
 
     @contextmanager
     def limit_resources(self, cpu_limit: int, memory_limit_mb: int) -> Generator[None, None, None]:
