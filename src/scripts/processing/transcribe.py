@@ -42,7 +42,6 @@ import pysrt
 import whisper
 from tqdm import tqdm
 
-import sys
 import platform
 
 if platform.system() != "Windows":
@@ -296,7 +295,7 @@ class WhisperTranscriber:
                     self.config.model_size, 
                     #device=self.config.device
                 )
-                logger.debug(f"Model loaded successfully")
+                logger.debug("Model loaded successfully")
             except Exception as e:
                 logger.error(f"Failed to load Whisper model: {e}")
                 raise
@@ -452,7 +451,7 @@ class VideoProcessor:
         Returns:
             Path to the generated subtitle file or None if skipped/failed
         """
-        srt_path = video_file.with_stem(f"{video_file.stem}.US").with_suffix(".srt")
+        srt_path = video_file.with_stem(f"{video_file.stem}.en").with_suffix(".srt")
         if srt_path.exists():
             logger.info(f"Skipping {video_file.name}, SRT already exists.")
             return None
