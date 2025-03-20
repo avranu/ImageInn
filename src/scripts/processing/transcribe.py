@@ -152,6 +152,8 @@ class SignalHandler:
     
     def _handler(self, signum: int, frame: Any) -> None:
         logger.warning(f"Received signal {signum}, initiating graceful shutdown")
+        if self.keep_running is False:
+            raise KeyboardInterrupt("Forced exit")
         self.keep_running = False
 
 
