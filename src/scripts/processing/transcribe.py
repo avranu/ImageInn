@@ -360,7 +360,7 @@ class VideoTranscriber:
         
         # Set up audio and subtitle paths
         self.audio_path = self._generate_unique_audio_path(temp_dir)
-        self.srt_path = self.video_path.with_stem(f"{self.video_path.stem}.US").with_suffix(".srt")
+        self.srt_path = self.video_path.with_stem(f"{self.video_path.stem}.en").with_suffix(".srt")
         
         # Initialize components
         self.audio_extractor = AudioExtractor(config)
@@ -526,6 +526,19 @@ class VideoProcessor:
         
         return results
 
+    def rename_srt(self, input_path : Path):
+        """
+        Rename the generated SRT files to change .US.srt to _en.srt.
+        """
+        if not input_path.is_dir():
+            raise ValueError("Input path must be a directory")
+        
+        for file in input_path.rglob('*.US.srt'):
+            if file.suffix == ".srt":
+                new_name = file.name.replace(".US.srt", ".en.srt")
+                file.rename(file.with_name(new_name))
+                logger.info(f"Renamed {file.name} to {new_name}")
+                
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments."""
