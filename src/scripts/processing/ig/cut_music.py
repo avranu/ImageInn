@@ -88,6 +88,16 @@ class MP3Splitter:
         except Exception as e:
             logger.error(f"Error processing file: {e}", exc_info=True)
 
+def split_directory(input_dir: Path, output_dir: Path | None = None) -> None:
+    """Splits all MP3 files in the specified directory."""
+    if output_dir is None:
+        output_dir = input_dir / "split"
+
+    for file in input_dir.glob("*.mp3"):
+        logger.info(f"Processing file: {file}")
+        splitter = MP3Splitter(file, output_dir)
+        splitter.split()
+
 
 def main():
     parser = argparse.ArgumentParser(description="Split an MP3 file into 15-second segments.")
@@ -95,6 +105,11 @@ def main():
     parser.add_argument("--output_dir", "-o", type=Path, help="Directory to save split files.")
     
     args = parser.parse_args()
+
+    input_dir = Path(args.input_file)
+    if input_dir.is_dir():
+        split_directory(input_dir, args.output_dir)
+        return
     
     splitter = MP3Splitter(args.input_file, args.output_dir)
     splitter.split()

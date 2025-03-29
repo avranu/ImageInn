@@ -59,6 +59,8 @@ class IGImage:
             match self.processor.format:
                 case Formats.POST.value:
                     self.canvas_size = (2160, 2700)
+                case Formats.REEL.value:
+                    self.canvas_size = (2160, 2700)
                 case Formats.STORY.value:
                     self.canvas_size = (2160, 3840)
                 case _:
@@ -126,7 +128,13 @@ class IGImage:
         self.adjust_image()
 
     def open_image(self) -> Image.Image:
-        self._original = Image.open(self.file_path)
+        img = Image.open(self.file_path)
+        
+        if img.mode != "RGB":
+            logger.debug("Converting image mode from %s to RGB: %s", img.mode, self.file_path.name)
+            img = img.convert("RGB")
+
+        self._original = img
         return self._original
 
     def recalculate_canvas_size(self) -> None:

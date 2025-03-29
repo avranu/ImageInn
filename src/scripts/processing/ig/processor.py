@@ -199,6 +199,8 @@ class IGImageProcessor(FileManager):
         match self.format:
             case Formats.POST.value:
                 fmt = 'post'
+            case Formats.REEL.value:
+                fmt = 'reel'
             case Formats.STORY.value:
                 fmt = 'story'
             case _:
@@ -211,21 +213,22 @@ class IGImageProcessor(FileManager):
         if not self.input_dir.is_dir():
             return [self.input_dir]
 
-        globs = ['*.jpg', '*.png']
+        globs = ['*.jpg', '*.png', '*.tif']
         files = []
         for glob in globs:
-            files.extend([img for img in self.input_dir.glob(glob) if img.is_file() and img.stem.endswith(self.get_file_suffix())])
-
-        # Check if any files will be overwritten -- TODO: this is broken.
-        existing_files = [str(img) for img in files if (self.input_dir / f"{img.stem}{self.get_file_suffix()}.jpg").exists()]
-        if existing_files:
-            logger.warning(f"{len(existing_files)} files will be overwritten. Waiting for 10 seconds before continuing")
-            time.sleep(10)
+            files.extend([img for img in self.input_dir.glob(glob) if img.is_file()])
 
         return files
 
     def create_image(self, file_path : Path) -> IGImage:
         return IGImage(file_path = file_path, processor = self, output_dir = self.output_dir, place_into_canvas=self.place_into_canvas)
+
+    def get_topaz_dir(self) -> Path:
+        if not self.topaz_output_dir:
+            self.topaz_output_dir = self.input_dir / 'topaz'
+        if not self.topaz_output_dir.exists():
+            self.topaz_output_dir.mkdir(exist_ok=True)
+        return self.topaz_output_dir
 
     def process_images(self) -> None:
         """
@@ -245,10 +248,9 @@ class IGImageProcessor(FileManager):
             if not self.skip_image_adjustments:
                 if self.topaz_available:
                     total *= 2
-                    self.topaz_output_dir = self.input_dir / 'topaz'
-                    self.topaz_output_dir.mkdir(exist_ok=True)
+                    self.get_topaz_dir()
 
-            with tqdm(total=total, desc="Processing images") as self._progress_bar:
+            with tqdm(total=total, desc=f"Processing {total} images") as self._progress_bar:
                 for file_path in images:
                     try:
                         if self.check_if_processed(file_path):
@@ -355,9 +357,13 @@ class IGImageProcessor(FileManager):
 
         self.update_progress(f'Applying Topaz DeNoise AI: {image_path.name}')
 
+        # If the filename ends with -topaz, skip
+        if image_path.stem.endswith('-topaz'):
+            return None
+
         # Convert paths to windows format for Topaz CLI
         input_path = to_windows_path(image_path)
-        output_path = to_windows_path(self.topaz_output_dir)
+        output_path = to_windows_path(self.get_topaz_dir())
 
         # Run Topaz DeNoise AI
         topaz_path = self.topaz_exe
@@ -367,7 +373,7 @@ class IGImageProcessor(FileManager):
         subprocess.run(cmd, capture_output=True, check=True, timeout=timeout)
 
         # Check for output. Original filename in the output_path dir
-        topaz_output = self.topaz_output_dir / image_path.name
+        topaz_output = self.get_topaz_dir() / image_path.name
         if not topaz_output.exists():
             logger.error("Topaz output not found: %s", topaz_output)
             return None

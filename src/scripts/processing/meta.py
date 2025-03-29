@@ -51,6 +51,7 @@ class AdjustmentTypes(Enum):
 class Formats(Enum):
     POST = 'post'
     STORY = 'story'
+    REEL = 'reel'
 
 def get_topaz_path() -> Path | None:
     if platform.system() == 'Linux' and ('Microsoft' in platform.release()):

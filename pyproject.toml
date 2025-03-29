@@ -2,7 +2,7 @@
 name = "ImageInn"
 version = "0.2.0"
 description = "Processing and Organizing Photos"
-authors = [{ name="Jess Mann", email="jess.a.mann@gmail.com" }]
+authors = [{ name = "Jess Mann", email = "jess.a.mann@gmail.com" }]
 dependencies = [
     "tqdm==4.66.5",
     "alive-progress==3.1.5",
@@ -45,6 +45,12 @@ include = ["scripts*"]
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[dependency-groups]
+dev = [
+    "opencv-python>=4.11.0.86",
+    "ruff>=0.11.2",
+]
 
 [tool.pydoctor]
 add-package = ["./scripts"]
@@ -93,7 +99,18 @@ fail-under = 10
 # from-stdin =
 
 # Files or directories to be skipped. They should be base names, not paths.
-ignore = ["CVS", "manage.py", "webpack", "logs", "downloads", "sample_data.py", "logs", "node_modules", "settings", "migrations"]
+ignore = [
+    "CVS",
+    "manage.py",
+    "webpack",
+    "logs",
+    "downloads",
+    "sample_data.py",
+    "logs",
+    "node_modules",
+    "settings",
+    "migrations",
+]
 
 # Add files or directories matching the regex patterns to the ignore-list. The
 # regex matches against paths and can be in Posix or Windows format.
@@ -395,7 +412,13 @@ logging-modules = ["logging"]
 [tool.pylint."messages control"]
 # Only show warnings with the listed confidence levels. Leave empty to show all.
 # Valid levels: HIGH, CONTROL_FLOW, INFERENCE, INFERENCE_FAILURE, UNDEFINED.
-confidence = ["HIGH", "CONTROL_FLOW", "INFERENCE", "INFERENCE_FAILURE", "UNDEFINED"]
+confidence = [
+    "HIGH",
+    "CONTROL_FLOW",
+    "INFERENCE",
+    "INFERENCE_FAILURE",
+    "UNDEFINED",
+]
 
 # Disable the message, report, category or checker with the given id(s). You can
 # either give multiple identifiers separated by comma (,) or put this option
@@ -406,7 +429,31 @@ confidence = ["HIGH", "CONTROL_FLOW", "INFERENCE", "INFERENCE_FAILURE", "UNDEFIN
 # --enable=similarities". If you want to run only the classes checker, but have
 # no Warning level messages displayed, use "--disable=all --enable=classes
 # --disable=W".
-disable = ["raw-checker-failed", "bad-inline-option", "locally-disabled", "file-ignored", "suppressed-message", "useless-suppression", "deprecated-pragma", "use-symbolic-message-instead", "missing-function-docstring", "pointless-string-statement", "multiple-imports", "missing-final-newline", "too-few-public-methods", "too-many-lines", "broad-exception-caught", "invalid-name", "logging-fstring-interpolation", "too-many-ancestors", "too-many-public-methods", "too-many-arguments", "trailing-newlines", "too-many-instance-attributes", "unnecessary-pass"]
+disable = [
+    "raw-checker-failed",
+    "bad-inline-option",
+    "locally-disabled",
+    "file-ignored",
+    "suppressed-message",
+    "useless-suppression",
+    "deprecated-pragma",
+    "use-symbolic-message-instead",
+    "missing-function-docstring",
+    "pointless-string-statement",
+    "multiple-imports",
+    "missing-final-newline",
+    "too-few-public-methods",
+    "too-many-lines",
+    "broad-exception-caught",
+    "invalid-name",
+    "logging-fstring-interpolation",
+    "too-many-ancestors",
+    "too-many-public-methods",
+    "too-many-arguments",
+    "trailing-newlines",
+    "too-many-instance-attributes",
+    "unnecessary-pass",
+]
 
 
 # Enable the message, report, category or checker with the given id(s). You can
@@ -527,12 +574,22 @@ ignore-none = true
 ignore-on-opaque-inference = true
 
 # List of symbolic message names to ignore for Mixin members.
-ignored-checks-for-mixins = ["no-member", "not-async-context-manager", "not-context-manager", "attribute-defined-outside-init"]
+ignored-checks-for-mixins = [
+    "no-member",
+    "not-async-context-manager",
+    "not-context-manager",
+    "attribute-defined-outside-init",
+]
 
 # List of class names for which member attributes should not be checked (useful
 # for classes with dynamically set attributes). This supports the use of
 # qualified names.
-ignored-classes = ["optparse.Values", "thread._local", "_thread._local", "argparse.Namespace"]
+ignored-classes = [
+    "optparse.Values",
+    "thread._local",
+    "_thread._local",
+    "argparse.Namespace",
+]
 
 # Show a hint with possible names when a member name was not found. The aspect of
 # finding the hint is based on edit distance.
@@ -580,7 +637,13 @@ init-import = false
 
 # List of qualified module names which can have objects that can redefine
 # builtins.
-redefining-builtins-modules = ["six.moves", "past.builtins", "future.builtins", "builtins", "io"]
+redefining-builtins-modules = [
+    "six.moves",
+    "past.builtins",
+    "future.builtins",
+    "builtins",
+    "io",
+]
 
 [tool.yapf]
 based_on_style = "google"
@@ -590,9 +653,7 @@ column_limit = 250
 
 # must ignore this until yapf supports match/case from python 3.12
 [tool.yapfignore]
-ignore_patterns = [
-  "src/scripts/db.py",
-]
+ignore_patterns = ["src/scripts/db.py"]
 
 [tool.ruff]
 # Basic configuration options
@@ -620,7 +681,7 @@ extend-exclude = [
     "node_modules",
     "__pycache__",
     "tests",
-    "__init__.py"
+    "__init__.py",
 ]
 #max-complexity = 10
 output-format = 'concise'
