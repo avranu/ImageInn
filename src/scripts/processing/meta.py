@@ -41,6 +41,7 @@ DEFAULT_BRIGHTNESS : Number = 1.8
 DEFAULT_CONTRAST : Number = 0.3
 DEFAULT_SATURATION : Number = 0.4
 
+
 class AdjustmentTypes(Enum):
     BASIC = 'basic-adjustments'
     COLOR = 'color'

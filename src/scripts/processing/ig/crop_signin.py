@@ -43,7 +43,7 @@ class PaperCropper:
                     logger.warning(f"Could not crop image {img_path}")
             except Exception as exc:
                 logger.error(f"Failed to process {img_path}: {exc}")
-
+                
     def crop_image(self, img_path: Path) -> np.ndarray | None:
         image = cv2.imread(str(img_path))
         if image is None:
@@ -52,12 +52,17 @@ class PaperCropper:
 
         resized = cv2.resize(image, (0, 0), fx=0.5, fy=0.5)
         gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        h_img, w_img = resized.shape[:2]
+        scale_x, scale_y = image.shape[1] / w_img, image.shape[0] / h_img
+
+        # Adaptive threshold to isolate bright regions (paper)
         thresh = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY, 11, 2
+            gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 11, 10
         )
-        thresh = cv2.bitwise_not(thresh)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        thresh = cv2.bitwise_not(thresh)  # paper becomes white
+
+        # Clean up with morphological closing
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
         closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
         contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -65,68 +70,74 @@ class PaperCropper:
             logger.warning(f"No contours found in {img_path}")
             return None
 
-        h_img, w_img = resized.shape[:2]
-        candidate = max(contours, key=cv2.contourArea)
-        peri = cv2.arcLength(candidate, True)
-        approx = cv2.approxPolyDP(candidate, 0.02 * peri, True)
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)
+        sheet_corners = None
 
-        if len(approx) < 4:
-            logger.warning(f"Not enough points in polygon for {img_path}")
-            return None
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < 0.1 * (w_img * h_img):
+                continue
 
-        # Try using approximated polygon for tighter fit
-        peri = cv2.arcLength(candidate, True)
-        approx = cv2.approxPolyDP(candidate, 0.015 * peri, True)  # more aggressive than 0.02
+            peri = cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, 0.02 * peri, True)
+            if len(approx) == 4:
+                corners = np.array([[int(x * scale_x), int(y * scale_y)] for [x, y] in approx.reshape(4, 2)], dtype="float32")
 
-        if len(approx) == 4:
-            box_points = approx.reshape(4, 2)
-        else:
-            # fallback to minAreaRect
+                # Check aspect ratio
+                width = np.linalg.norm(corners[0] - corners[1])
+                height = np.linalg.norm(corners[1] - corners[2])
+                ratio = height / width if width > 0 else 0
+
+                if 1.2 < ratio < 2.5:
+                    sheet_corners = corners
+                    break
+
+        if sheet_corners is None:
+            logger.warning(f"Primary 4-point page detection failed in {img_path}, attempting fallback.")
+
+            candidate = max(contours, key=cv2.contourArea)
             box = cv2.minAreaRect(candidate)
-            box_points = cv2.boxPoints(box)
-            box_points = box_points.astype(np.int32)
+            box_points = cv2.boxPoints(box).astype(np.float32)
+            box_points *= np.array([scale_x, scale_y], dtype=np.float32)
+
+            # Validate fallback shape
+            w = np.linalg.norm(box_points[0] - box_points[1])
+            h = np.linalg.norm(box_points[1] - box_points[2])
+            aspect = h / w if w > 0 else 0
+            area = w * h
+            min_area = image.shape[0] * image.shape[1] * 0.05
+
+            if 1.2 < aspect < 2.5 and area > min_area:
+                sheet_corners = box_points
+                logger.debug(f"Fallback bounding box used for {img_path}")
+            else:
+                logger.warning(f"Fallback also failed for {img_path} (aspect={aspect:.2f}, area={area:.0f})")
+                return None
 
 
-        # Scale box points back to full-res image
-        scale_x, scale_y = image.shape[1] / resized.shape[1], image.shape[0] / resized.shape[0]
-        box_points = np.array([[int(x * scale_x), int(y * scale_y)] for x, y in box_points])
-
-        # Warp the perspective to get a tight crop
-        width = int(max(np.linalg.norm(box_points[0] - box_points[1]),
-                        np.linalg.norm(box_points[2] - box_points[3])))
-        height = int(max(np.linalg.norm(box_points[1] - box_points[2]),
-                        np.linalg.norm(box_points[3] - box_points[0])))
-
-        dst_pts = np.array([
-            [0, 0],
-            [width - 1, 0],
-            [width - 1, height - 1],
-            [0, height - 1]
-        ], dtype="float32")
-
-        # Sort points: top-left, top-right, bottom-right, bottom-left
-        def sort_pts(pts):
+        # Order corners: TL, TR, BR, BL
+        def order_points(pts):
             s = pts.sum(axis=1)
             diff = np.diff(pts, axis=1)
             return np.array([
                 pts[np.argmin(s)],
                 pts[np.argmin(diff)],
                 pts[np.argmax(s)],
-                pts[np.argmax(diff)],
-            ])
+                pts[np.argmax(diff)]
+            ], dtype="float32")
 
-        sorted_box = sort_pts(box_points).astype("float32")
+        src_pts = order_points(sheet_corners)
+        dst_pts = np.array([
+            [0, 0],
+            [1559, 0],
+            [1559, 2501],
+            [0, 2501]
+        ], dtype="float32")
 
-        M = cv2.getPerspectiveTransform(sorted_box, dst_pts)
-        warped = cv2.warpPerspective(image, M, (width, height))
+        M = cv2.getPerspectiveTransform(src_pts, dst_pts)
+        warped = cv2.warpPerspective(image, M, (1560, 2502))
 
-        # Final resize to fixed output size for timelapse consistency
-        final_size = (1560, 2502)
-        resized = cv2.resize(warped, final_size, interpolation=cv2.INTER_CUBIC)
-
-        return resized
-
-
+        return warped
 
 
 def main():
