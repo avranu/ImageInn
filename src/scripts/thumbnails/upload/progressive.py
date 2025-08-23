@@ -547,12 +547,12 @@ class ImmichProgressiveUploader(ImmichInterface):
             processed = (
                 self.files_uploaded
                 + self.files_duplicated
-                + self.files_skipped
                 + self.errors
             )
+            total = planned - self.files_skipped
 
             if planned > 0:
-                remaining = max(0, planned - processed)
+                remaining = max(0, total - processed)
                 # time basis: elapsed seconds since first upload started
                 if self._start_ns and processed > 0:
                     elapsed = max(1e-6, (time.time_ns() - self._start_ns) / 1e9)
@@ -565,7 +565,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                 else:
                     eta_str = "--"
 
-                eta_disp = f"{YELLOW}ETA:{RESET} {eta_str} {YELLOW2}({remaining} left/{planned}){RESET}"
+                eta_disp = f"{YELLOW}ETA:{RESET} {eta_str} {YELLOW2}({remaining} left/{total}){RESET}"
                 buffer.append(f"{eta_disp:28s}")
 
         if file_buffer:
