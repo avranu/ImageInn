@@ -546,10 +546,9 @@ class ImmichProgressiveUploader(ImmichInterface):
                 planned = self._planned_total_files
             processed = (
                 self.files_uploaded
-                + self.files_duplicated
                 + self.errors
             )
-            total = planned - self.files_skipped
+            total = planned - self.files_skipped - self.files_duplicated
 
             if planned > 0:
                 remaining = max(0, total - processed)
