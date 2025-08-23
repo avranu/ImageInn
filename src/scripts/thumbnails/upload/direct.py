@@ -1,5 +1,18 @@
 """*********************************************************************************************************************
 *                                                                                                                      *
+Upload files to Immich.
+
+Deprecated. Another approach, competing with progressive.py
+
+Version 1.0
+Date: 2024-09-20
+Status: Working
+
+Example:
+    >>> python direct.py
+    >>> python direct.py -d /mnt/i/Phone
+    # bash_aliases defines `upload` to run this script for the current dir
+    >>> upload
 *                                                                                                                      *
 *                                                                                                                      *
 *                                                                                                                      *
@@ -22,22 +35,6 @@
 *        2024-10-29     By Jess Mann                                                                                   *
 *                                                                                                                      *
 *********************************************************************************************************************"""
-#!/usr/bin/env python3
-"""
-Upload files to Immich.
-
-Deprecated. Another approach, competing with progressive.py
-
-Version 1.0
-Date: 2024-09-20
-Status: Working
-
-Example:
-    >>> python direct.py
-    >>> python direct.py -d /mnt/i/Phone
-    # bash_aliases defines `upload` to run this script for the current dir
-    >>> upload
-"""
 from __future__ import annotations
 import logging
 import os

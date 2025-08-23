@@ -23,6 +23,7 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
+from typing import Any
 from abc import ABC
 import os
 import subprocess
@@ -61,7 +62,7 @@ class Script(BaseModel, ABC):
         return value
 
     @classmethod
-    def subprocess(cls, command : list[str] | str, **kwargs) -> subprocess.CompletedProcess:
+    def subprocess(cls, command : list[str] | str, **kwargs : Any) -> subprocess.CompletedProcess:
         # default check=True
         if 'check' not in kwargs:
             kwargs['check'] = True
@@ -111,7 +112,8 @@ class Script(BaseModel, ABC):
         Retrieves the SSID of the current network.
         """
         # If not on Windows, return an empty string
-        if os.name != 'nt' or not shutil.which('powershell.exe'):
+        if not shutil.which('powershell.exe'):
+            logger.error("This method is only supported on Windows with PowerShell installed. OS: %s", os.name)
             return ""
         
         try:
@@ -127,7 +129,9 @@ class Script(BaseModel, ABC):
         except subprocess.CalledProcessError as e:
             logger.error("Error retrieving the current SSID.")
             logger.debug(e)
-            return ""
+
+        logger.error("Could not find SSID in the output of 'netsh wlan show interfaces'.")
+        return ""
 
 
     @classmethod
@@ -138,10 +142,12 @@ class Script(BaseModel, ABC):
         if not (home_network_name := os.getenv("IMAGEINN_HOME_NETWORK")):
             logger.error("Home network name not set. Set the IMAGEINN_HOME_NETWORK environment variable.")
             return False
-        
+
+        logger.debug("Checking if current network is the home network: %s == %s", home_network_name, cls.get_network_ssid())
+
         return cls.get_network_ssid().lower() == home_network_name.lower()
 
-    def progress_message(self, message: str | None = None, *args, max_length : int = 30, advance : int = 0) -> None:
+    def progress_message(self, message: str | None = None, *args : Any, max_length : int = 30, advance : int = 0) -> None:
         """
         Update the progress bar with a message.
 

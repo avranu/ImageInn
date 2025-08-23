@@ -23,6 +23,7 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
+from typing import Iterator, Literal, Any
 import asyncio
 from enum import Enum
 import os
@@ -31,7 +32,6 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Iterator, Literal
 
 from alive_progress import alive_bar
 
@@ -116,7 +116,7 @@ class FileManager(Script):
         return v or cls.get_default_glob_pattern()
 
     @field_validator('directory', mode='before')
-    def validate_directory(cls, v):
+    def validate_directory(cls, v) -> Path:
         return Path(v)
 
     @field_validator('filename_pattern', mode='before')
@@ -449,7 +449,7 @@ class FileManager(Script):
 
         return False
 
-    def should_ignore_file(self, file_path: Path, *, allow_hidden : bool = True, **kwargs) -> bool:
+    def should_ignore_file(self, file_path: Path, *, allow_hidden : bool = True, **kwargs : Any) -> bool:
         """
         Check if a file should be ignored based on the name.
 
@@ -564,7 +564,7 @@ class FileManager(Script):
                 if self.should_include_file(filepath):
                     yield filepath
 
-    def iterfiles(self, directory : Path | None = None) -> Iterator[Path]:
+    def iterfiles(self, directory : Path | None = None, max_retries : int = 5, wait_time : int = 5) -> Iterator[Path]:
         """
         Yield files in a directory, manually matching our glob criteria.
 
@@ -584,8 +584,16 @@ class FileManager(Script):
         directory = directory or self.directory
         
         for filepath in directory.iterdir():
-            if self.file_matches_globs(filepath) and self.should_include_file(filepath):
-                yield filepath
+            for i in range(max_retries):
+                try:
+                    if self.file_matches_globs(filepath) and self.should_include_file(filepath):
+                        yield filepath
+                    break
+                except OSError as ose:
+                    logger.error('Access Error. Retry %s: %s -> %s', i, filepath, ose)
+                    if i == max_retries - 1:
+                        raise
+                    time.sleep(wait_time)
 
     def get_all_files(self, directory : Path | None = None, *, recursive : bool = True) -> list[Path]:
         """

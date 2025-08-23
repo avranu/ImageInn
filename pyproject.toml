@@ -47,10 +47,7 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [dependency-groups]
-dev = [
-    "opencv-python>=4.11.0.86",
-    "ruff>=0.11.2",
-]
+dev = ["opencv-python>=4.11.0.86", "ruff>=0.11.2"]
 
 [tool.pydoctor]
 add-package = ["./scripts"]
@@ -687,4 +684,4 @@ extend-exclude = [
 output-format = 'concise'
 
 [tool.ruff.lint.per-file-ignores]
-"*.py" = ["F401"]
+"*.py" = ["F401", "E402"]

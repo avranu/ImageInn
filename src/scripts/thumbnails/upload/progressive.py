@@ -198,8 +198,6 @@ class ImmichProgressiveUploader(ImmichInterface):
         # default is failure
         result = False
 
-        filename = image_path.name
-
         for i in range(MAX_RETRIES):
             try:
                 result = self._upload_file(image_path)
@@ -547,7 +545,10 @@ def main():
         
         url = os.getenv("IMMICH_INSTANCE_URL")
         if home_network := ImmichProgressiveUploader.is_home_network():
+            logger.info('Detected home network.')
             url = os.getenv("IMMICH_LOCAL_URL")
+        else:
+            logger.info('Detected remote network.')
 
         parser = argparse.ArgumentParser(description="Upload files to Immich.")
         parser.add_argument("--url", help="Immich URL", default=url)

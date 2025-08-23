@@ -40,6 +40,7 @@
 *                                                                                                                      *
 *********************************************************************************************************************"""
 from __future__ import annotations
+from typing import Any
 import os
 import sys
 import threading
@@ -51,7 +52,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 import subprocess
 from pathlib import Path
 from pydantic import Field, PrivateAttr, field_validator
-from typing import Iterable
+from collections.abc import Iterable
 from abc import ABC, abstractmethod
 from scripts import setup_logging
 from scripts.lib.file_manager import FileManager
@@ -212,7 +213,7 @@ class ImmichInterface(FileManager, ABC):
         """
         raise NotImplementedError("upload method must be implemented in a subclass.")
 
-    def should_ignore_file(self, image_path: Path, *, allow_hidden : bool = True, **kwargs) -> bool:
+    def should_ignore_file(self, image_path: Path, *, allow_hidden : bool = True, **kwargs : Any) -> bool:
         """
         Check if a file should be ignored based on the extension, size, and status.
 
