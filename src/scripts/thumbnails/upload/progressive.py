@@ -548,9 +548,9 @@ class ImmichProgressiveUploader(ImmichInterface):
                 self.files_uploaded
                 + self.errors
             )
-            total = planned - self.files_skipped - self.files_duplicated
 
             if planned > 0:
+                total = max(0, planned - self.files_skipped - self.files_duplicated)
                 remaining = max(0, total - processed)
                 # time basis: elapsed seconds since first upload started
                 if self._start_ns and processed > 0:

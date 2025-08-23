@@ -25,7 +25,7 @@
 from __future__ import annotations
 from decimal import Decimal
 
-def seconds_to_human(total_seconds: int | float | Decimal) -> str:
+def seconds_to_human(total_seconds: int | float | Decimal, max_parts : int = 0) -> str:
     """
     Convert seconds to human readable format
     """
@@ -44,4 +44,6 @@ def seconds_to_human(total_seconds: int | float | Decimal) -> str:
         parts.append(f"{int(minutes)} minute{'s' if minutes > 1 else ''}")
     if seconds:
         parts.append(f"{round(seconds)} second{'s' if seconds > 1 else ''}")
+    if max_parts > 0 and max_parts < len(parts):
+        return ', '.join(parts[:max_parts])
     return ', '.join(parts)
