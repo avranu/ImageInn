@@ -80,9 +80,17 @@ from scripts.thumbnails.upload.interface import ImmichInterface
 from scripts.thumbnails.upload.status import FileStatus, DirectoryStatus, StatusOptions
 from scripts.thumbnails.upload.template import PixelFiles
 
+from threading import Event
+
+
 logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
+
+    
+    _planned_total_files: int = PrivateAttr(default=0)
+    _plan_ready: Event = PrivateAttr(default_factory=Event)
+    _plan_lock: threading.Lock = PrivateAttr(default_factory=threading.Lock)
     
     @property
     def files_uploaded(self) -> int:
@@ -296,19 +304,37 @@ class ImmichProgressiveUploader(ImmichInterface):
         if not self.exists(directory):
             raise FileNotFoundError(f"Directory {directory} does not exist.")
 
-        with alive_bar(title=f"{CYAN2}Uploading{RESET} {str(directory.absolute())[-25:]}/", unit='files', dual_line=True, unknown='waves') as self._progress_bar:
+        # --- start background counter early; won't block uploads ---
+        try:
+            self._plan_ready.clear()
+            t = threading.Thread(
+                target=self._count_files_background, args=(directory,), daemon=True
+            )
+            t.start()
+        except Exception as e:
+            logger.debug("Unable to start background counter: %s", e)
+        # -----------------------------------------------------------
+
+        with alive_bar(
+            title=f"{CYAN2}Uploading{RESET} {str(directory.absolute())[-25:]}/",
+            unit='files',
+            dual_line=True,
+            unknown='waves'
+        ) as self._progress_bar:
             self.progress_message('Searching...')
-            
+
             for subdir in self.yield_directories(directory, recursive=recursive):
                 self.progress_message(f'Counting files in {subdir.name}')
                 last_modified_time = self.get_last_modified_time(subdir)
                 files_to_upload = self.get_all_files(subdir, recursive=False)
                 file_count = len(files_to_upload)
 
-                if DirectoryStatus.has_directory_changed(subdir, file_count, last_modified_time, self.get_glob_patterns()):
+                if DirectoryStatus.has_directory_changed(
+                    subdir, file_count, last_modified_time, self.get_glob_patterns()
+                ):
                     logger.info('Skipping subdir because it has not changed since last upload: %s', subdir)
                     continue
-                
+
                 self.progress_message(f'{file_count} files queued')
 
                 # Remove previous uploads from the list
@@ -321,18 +347,17 @@ class ImmichProgressiveUploader(ImmichInterface):
                     logger.info('Pruned %d files from %s', pruned_count, subdir)
 
                 with ThreadPoolExecutor(max_workers=self.max_threads) as executor:
-                    # initialize the start time for calculating upload speed
+                    # initialize the start time for calculating upload speed / ETA
                     self._start_ns = time.time_ns()
-                    
+
                     futures = []
                     for filepath in files_to_upload:
-                        future = executor.submit(self.upload_file_threadsafe, filepath)
-                        futures.append(future)
+                        futures.append(executor.submit(self.upload_file_threadsafe, filepath))
 
                     for future in as_completed(futures):
                         for i in range(MAX_RETRIES):
                             try:
-                                future.result()    
+                                future.result()
                             except OSError as ose:
                                 # Catch error 112 (host is down) and retry
                                 if ose.errno == 112:
@@ -351,7 +376,7 @@ class ImmichProgressiveUploader(ImmichInterface):
 
                 # IFF we finish looping without error, update the DirectoryStatus
                 DirectoryStatus.update(subdir, file_count, last_modified_time, self.get_glob_patterns())
-
+                
     def upload_from_db(self):
         """
         Upload files from a database to Immich.
@@ -426,10 +451,56 @@ class ImmichProgressiveUploader(ImmichInterface):
         # Otherwise, upload files from the root directory
         self.upload(sd_directory)
         return True
-    
-    def report(self, message_prefix : str | None = None) -> str:
+
+    def _count_files_background(self, root: Path) -> None:
         """
-        Create a report of the process so far.
+        Count, in the background, how many files *will* be attempted for upload.
+        Respects templates, ignore rules, 'skip', and unchanged-directory pruning.
+        When finished, sets self._planned_total_files and flips self._plan_ready.
+        """
+        try:
+            total = 0
+            for subdir in self.yield_directories(root, recursive=True):
+                try:
+                    last_modified_time = self.get_last_modified_time(subdir)
+                    # List candidates quickly (non-recursive per your main loop)
+                    files = self.get_all_files(subdir, recursive=False)
+                    file_count = len(files)
+
+                    # Mimic main-loop pruning: skip unchanged dirs
+                    if DirectoryStatus.has_directory_changed(
+                        subdir, file_count, last_modified_time, self.get_glob_patterns()
+                    ):
+                        continue
+
+                    # Remove files that won't be processed (skip per status/templates/etc)
+                    # - honor per-file ignore rules and 'skip' of already-successful uploads
+                    pruned = 0
+                    for f in files:
+                        if self.should_ignore_file(f):
+                            pruned += 1
+                            continue
+                        if self.skip and FileStatus.was_successful(f):
+                            pruned += 1
+                            continue
+                        total += 1
+                except Exception as e:
+                    # Non-fatal: keep counting other dirs
+                    logger.debug("Background count error in %s -> %s", subdir, e)
+
+            with self._plan_lock:
+                self._planned_total_files = total
+                self._plan_ready.set()
+            # Nudge the UI once plan is ready; message kept short to avoid noise.
+            self.progress_message("ETA ready")
+        except Exception as e:
+            logger.error("Background counting failed: %s", e)
+            # Still flip the event so we don't wait forever; total stays 0.
+            self._plan_ready.set()
+
+    def report(self, message_prefix: str | None = None) -> str:
+        """
+        Create a report of the process so far (extended to include ETA once count is ready).
 
         Args:
             message_prefix: An optional message to prefix the report with.
@@ -439,7 +510,7 @@ class ImmichProgressiveUploader(ImmichInterface):
         """
         if message_prefix is None:
             message_prefix = self._progress_message
-            
+
         # Files
         file_buffer = []
         if self.files_uploaded > 0:
@@ -452,7 +523,7 @@ class ImmichProgressiveUploader(ImmichInterface):
             file_buffer.append(f'{self.files_deleted} deleted')
         if self.files_skipped > 0:
             file_buffer.append(f'{self.files_skipped} skipped')
-            
+
         # Directories
         directory_buffer = []
         if self.directories_created > 0:
@@ -468,7 +539,35 @@ class ImmichProgressiveUploader(ImmichInterface):
         if upload_speed:
             speed_str = f"{BLUE}{upload_speed} MB/s{RESET}"
             buffer.append(f"{speed_str:10s}")
-        
+
+        # --- ETA once background count finishes ---
+        if self._plan_ready.is_set():
+            with self._plan_lock:
+                planned = self._planned_total_files
+            processed = (
+                self.files_uploaded
+                + self.files_duplicated
+                + self.files_skipped
+                + self.errors
+            )
+
+            if planned > 0:
+                remaining = max(0, planned - processed)
+                # time basis: elapsed seconds since first upload started
+                if self._start_ns and processed > 0:
+                    elapsed = max(1e-6, (time.time_ns() - self._start_ns) / 1e9)
+                    files_per_sec = processed / elapsed
+                    if files_per_sec > 0:
+                        eta_secs = int(remaining / files_per_sec)
+                        eta_str = seconds_to_human(eta_secs)
+                    else:
+                        eta_str = "--"
+                else:
+                    eta_str = "--"
+
+                eta_disp = f"{YELLOW}ETA:{RESET} {eta_str} {YELLOW2}({remaining} left/{planned}){RESET}"
+                buffer.append(f"{eta_disp:28s}")
+
         if file_buffer:
             files_str = f"{PURPLE}Files [{', '.join(file_buffer)}]{RESET}"
             buffer.append(f"{files_str:50s}")
@@ -481,7 +580,6 @@ class ImmichProgressiveUploader(ImmichInterface):
             error_str = f"{RED}Errors: {self.errors}{RESET}"
             buffer.append(f'{error_str:12s}')
 
-            
         return f"{RESET}{' '.join(buffer) or '...'}{RESET}"
 
     def run(self):
