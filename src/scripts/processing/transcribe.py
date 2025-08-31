@@ -523,8 +523,16 @@ class VideoProcessor:
                     if result:
                         results.append(result)
                 except AudioExtractionFailedError as e:
-                    logger.error(f"Failed to extract audio: {e}")
-        
+                    logger.error("Failed to extract audio for %s: %s", video_file.name, e)
+                except MemoryError as me:
+                    logger.error("Memory error occurred for %s: %s", video_file.name, me)
+                except RuntimeError as rte:
+                    # Check for "can't allocate memory" and continue
+                    if "can't allocate memory" in str(rte):
+                        logger.error("Unable to allocate memory for %s: %s", video_file.name, rte)
+                    else:
+                        raise
+
         return results
 
     def rename_srt(self, input_path : Path):
