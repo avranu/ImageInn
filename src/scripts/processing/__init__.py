@@ -34,3 +34,4 @@ from scripts.processing.meta import (
 	Formats,
 )
 from scripts.processing.ig import IGImageProcessor, IGImage
+from scripts.processing.bluesky import BlueskyProcessor, BlueskyImage
