@@ -670,7 +670,7 @@ def main():
         if args.verbose:
             logger.setLevel(logging.DEBUG)
 
-        if not validate_args(args):
+        if not validate_args(args) and not args.info:
             sys.exit(1)
 
         templates = []
@@ -706,8 +706,17 @@ def main():
 
         if args.info:
             print(f"""
+                    Env:
+                    API Key: {api_key[1:3]+"..." if api_key else 'N/A'}
+                    URL: {url or 'N/A'}
+                    ----------------------------------------
+                    Args: 
+                    {args}
+                    ----------------------------------------
+                    Immich Configuration:
+                    ----------------------------------------
                     URL: {immich.url}
-                    API Key: {immich.api_key}
+                    API Key: {immich.api_key[1:3]}...{immich.api_key[-3:]}
                     Import Path: {immich.directory}
                     Use DB: {immich.db is not None}
                     DB Path: {immich.db_path if immich.db else 'N/A'}
