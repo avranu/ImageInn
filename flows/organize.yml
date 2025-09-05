@@ -1,0 +1,38 @@
+id: organize-photos
+namespace: personal.automation
+
+# Run "organize" script on chiron
+tasks:
+  - id: organize-photos
+    type: io.kestra.plugin.fs.ssh.Command
+    host: chiron
+    port: "22"
+    authMethod: PUBLIC_KEY
+    username: snow
+    privateKey: "{{ secret('SSH_HOME_PRIVATE_KEY') }}"
+    warningOnStdErr: false
+    commands:
+      - export PATH=$PATH:~/.local/bin
+      - bash -c "organize -t /mnt/j/Photos -d /mnt/j/Import"
+
+# Run daily at 3am
+triggers:
+  - id: daily
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 3 * * *"
+
+# On failure, send message via gotify
+errors:
+  - id: gotify-notification
+    type: io.kestra.plugin.core.http.Request
+    uri: "{{ envs.gotify_url }}/message"
+    method: POST
+    contentType: application/json
+    headers:
+      X-Gotify-Key: "{{ secret('GOTIFY_TOKEN') }}"
+    body: |
+      {
+        "title": "Failure Organizing Photos",
+        "message": "Flow {{ flow.id }} execution {{ execution.id }} has failed.\nCheck details: https://kestra.jmann.me/executions/{{ execution.id }}",
+        "priority": 5
+      }
