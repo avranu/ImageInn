@@ -1,6 +1,6 @@
 [project]
 name = "ImageInn"
-version = "0.2.2"
+version = "0.2.3"
 description = "Processing and Organizing Photos"
 authors = [{ name = "Jess Mann", email = "jess.a.mann@gmail.com" }]
 dependencies = [

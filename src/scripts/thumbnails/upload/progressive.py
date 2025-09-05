@@ -684,6 +684,35 @@ def main():
                         logger.error("Unknown template: %s. See --help for available templates.", template)
                         sys.exit(1)
 
+        if args.info:
+            print(f"""
+                    Env:
+                    API Key: {api_key[1:3]+"..." if api_key else 'N/A'}
+                    URL: {url or 'N/A'}
+                    ----------------------------------------
+                    Args: 
+                    {args}
+                    ----------------------------------------
+                    """)
+            """
+                    Immich Configuration:
+                    ----------------------------------------
+                    URL: {immich.url}
+                    API Key: {immich.api_key[1:3]}...{immich.api_key[-3:]}
+                    Import Path: {immich.directory}
+                    Use DB: {immich.db is not None}
+                    DB Path: {immich.db_path if immich.db else 'N/A'}
+                    Album: {immich.album or 'N/A'}
+                    Skip previously uploaded: {immich.skip}
+                    Move after upload: {immich.move_after_upload or 'N/A'}
+                    Max Threads: {immich.max_threads}
+                    Templates: {', '.join([t.__name__ for t in immich.templates]) or 'N/A'}
+                    Allowed Extensions: {', '.join(immich.extensions) if immich.extensions else 'All'}
+                    Ignored Extensions: {', '.join(immich.ignore_extensions) if immich.ignore_extensions else 'None'}
+                    Ignored Paths: {', '.join(immich.ignore_paths) if immich.ignore_paths else 'None'}
+            """
+            sys.exit(0)
+            
         immich = ImmichProgressiveUploader(
             url=args.url,
             api_key=args.api_key,
@@ -703,33 +732,6 @@ def main():
             large_file_size = 0 if home_network else (1024 * 1024 * 100),
             move_after_upload=args.move_after_upload
         )
-
-        if args.info:
-            print(f"""
-                    Env:
-                    API Key: {api_key[1:3]+"..." if api_key else 'N/A'}
-                    URL: {url or 'N/A'}
-                    ----------------------------------------
-                    Args: 
-                    {args}
-                    ----------------------------------------
-                    Immich Configuration:
-                    ----------------------------------------
-                    URL: {immich.url}
-                    API Key: {immich.api_key[1:3]}...{immich.api_key[-3:]}
-                    Import Path: {immich.directory}
-                    Use DB: {immich.db is not None}
-                    DB Path: {immich.db_path if immich.db else 'N/A'}
-                    Album: {immich.album or 'N/A'}
-                    Skip previously uploaded: {immich.skip}
-                    Move after upload: {immich.move_after_upload or 'N/A'}
-                    Max Threads: {immich.max_threads}
-                    Templates: {', '.join([t.__name__ for t in immich.templates]) or 'N/A'}
-                    Allowed Extensions: {', '.join(immich.extensions) if immich.extensions else 'All'}
-                    Ignored Extensions: {', '.join(immich.ignore_extensions) if immich.ignore_extensions else 'None'}
-                    Ignored Paths: {', '.join(immich.ignore_paths) if immich.ignore_paths else 'None'}
-                    """)
-            sys.exit(0)
                 
         try:
             if args.sd:
