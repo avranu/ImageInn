@@ -58,7 +58,6 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Protocol
-from dotenv import load_dotenv
 import argparse
 from pydantic import PrivateAttr
 from alive_progress import alive_bar
@@ -636,8 +635,6 @@ def main():
     Called when the script is run from the command line. Parses arguments and uploads files to Immich.
     """
     try:
-        load_dotenv()
-
         api_key = os.getenv("IMMICH_API_KEY")
         thumbnails_dir = os.getenv("IMMICH_THUMBNAILS_DIR", '.')
         
@@ -670,7 +667,7 @@ def main():
         if args.verbose:
             logger.setLevel(logging.DEBUG)
 
-        if not validate_args(args) and not args.info:
+        if not args.info and not validate_args(args):
             sys.exit(1)
 
         templates = []
