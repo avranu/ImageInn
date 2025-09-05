@@ -45,7 +45,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 
 import subprocess
 from pathlib import Path
-from dotenv import load_dotenv
 import argparse
 from scripts import setup_logging
 from scripts.thumbnails.upload.exceptions import AuthenticationError
@@ -121,8 +120,6 @@ def main():
     """
     try:
         logger.warning('Using ImmichDirectUploader is not recommended. Use ImmichProgressiveUploader instead.')
-
-        load_dotenv()
 
         url = os.getenv("IMMICH_URL")
         api_key = os.getenv("IMMICH_API_KEY")
