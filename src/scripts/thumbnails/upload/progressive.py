@@ -86,7 +86,6 @@ from threading import Event
 logger = setup_logging()
 
 class ImmichProgressiveUploader(ImmichInterface):
-
     
     _planned_total_files: int = PrivateAttr(default=0)
     _plan_ready: Event = PrivateAttr(default_factory=Event)
@@ -610,6 +609,7 @@ class ArgNamespace(argparse.Namespace):
     album : str
     skip : bool
     move_after_upload : str | None = None
+    info : bool = False
     
 def validate_args(args: ArgNamespace) -> bool:
     """
@@ -663,6 +663,7 @@ def main():
         parser.add_argument('--album', '-A', help='Immich album to upload files to')
         parser.add_argument('--skip', help='Skip assets that were previously uploaded.', action='store_true')
         parser.add_argument('--move-after-upload', help='Move files to this directory after uploading', default=None)
+        parser.add_argument('--info', action='store_true', help='Show information about the script and exit')
         parser.add_argument("import_path", nargs='?', default=thumbnails_dir, help="Path to import files from")
         args = parser.parse_args(namespace=ArgNamespace())
 
@@ -704,6 +705,23 @@ def main():
         )
 
         try:
+            if args.info:
+                print(f"""
+                      URL: {immich.url}
+                      API Key: {immich.api_key}
+                      Import Path: {immich.directory}
+                      Use DB: {immich.db is not None}
+                      DB Path: {immich.db_path if immich.db else 'N/A'}
+                      Album: {immich.album or 'N/A'}
+                      Skip previously uploaded: {immich.skip}
+                      Move after upload: {immich.move_after_upload or 'N/A'}
+                      Max Threads: {immich.max_threads}
+                      Templates: {', '.join([t.__name__ for t in immich.templates]) or 'N/A'}
+                      Allowed Extensions: {', '.join(immich.extensions) if immich.extensions else 'All'}
+                      Ignored Extensions: {', '.join(immich.ignore_extensions) if immich.ignore_extensions else 'None'}
+                      Ignored Paths: {', '.join(immich.ignore_paths) if immich.ignore_paths else 'None'}
+                      """)
+                sys.exit(0)
             if args.sd:
                 immich.handle_sd_card()
             else:
