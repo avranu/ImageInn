@@ -704,24 +704,25 @@ def main():
             move_after_upload=args.move_after_upload
         )
 
+        if args.info:
+            print(f"""
+                    URL: {immich.url}
+                    API Key: {immich.api_key}
+                    Import Path: {immich.directory}
+                    Use DB: {immich.db is not None}
+                    DB Path: {immich.db_path if immich.db else 'N/A'}
+                    Album: {immich.album or 'N/A'}
+                    Skip previously uploaded: {immich.skip}
+                    Move after upload: {immich.move_after_upload or 'N/A'}
+                    Max Threads: {immich.max_threads}
+                    Templates: {', '.join([t.__name__ for t in immich.templates]) or 'N/A'}
+                    Allowed Extensions: {', '.join(immich.extensions) if immich.extensions else 'All'}
+                    Ignored Extensions: {', '.join(immich.ignore_extensions) if immich.ignore_extensions else 'None'}
+                    Ignored Paths: {', '.join(immich.ignore_paths) if immich.ignore_paths else 'None'}
+                    """)
+            sys.exit(0)
+                
         try:
-            if args.info:
-                print(f"""
-                      URL: {immich.url}
-                      API Key: {immich.api_key}
-                      Import Path: {immich.directory}
-                      Use DB: {immich.db is not None}
-                      DB Path: {immich.db_path if immich.db else 'N/A'}
-                      Album: {immich.album or 'N/A'}
-                      Skip previously uploaded: {immich.skip}
-                      Move after upload: {immich.move_after_upload or 'N/A'}
-                      Max Threads: {immich.max_threads}
-                      Templates: {', '.join([t.__name__ for t in immich.templates]) or 'N/A'}
-                      Allowed Extensions: {', '.join(immich.extensions) if immich.extensions else 'All'}
-                      Ignored Extensions: {', '.join(immich.ignore_extensions) if immich.ignore_extensions else 'None'}
-                      Ignored Paths: {', '.join(immich.ignore_paths) if immich.ignore_paths else 'None'}
-                      """)
-                sys.exit(0)
             if args.sd:
                 immich.handle_sd_card()
             else:
