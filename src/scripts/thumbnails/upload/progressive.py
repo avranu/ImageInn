@@ -330,7 +330,7 @@ class ImmichProgressiveUploader(ImmichInterface):
                 if DirectoryStatus.has_directory_changed(
                     subdir, file_count, last_modified_time, self.get_glob_patterns()
                 ):
-                    logger.info('Skipping subdir because it has not changed since last upload: %s', subdir)
+                    logger.debug('Skipping subdir because it has not changed since last upload: %s', subdir)
                     continue
 
                 self.progress_message(f'{file_count} files queued')
