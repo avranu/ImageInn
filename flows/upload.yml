@@ -13,7 +13,7 @@ tasks:
     warningOnStdErr: false
     commands:
       - export PATH=$PATH:~/.local/bin
-      - bash -c "upload --url {{ secret('IMMICH_URL') }} --api-key {{ secret('IMMICH_API_KEY') }}"
+      - bash -c "upload /mnt/j/Photos/
 
 # Run daily at 3am
 triggers:
