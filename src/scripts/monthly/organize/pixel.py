@@ -62,31 +62,27 @@ class PixelFileOrganizer(FileOrganizer):
     def get_default_filename_pattern(cls):
         return r'^PXL_(20\d{6})_'
 
-    def find_subdir(self, filepath: Path) -> str:
+    def determine_ymd(self, filepath : Path) -> tuple[str, str, str]:
         """
-        Find the subdirectory for a file based on its filename.
+        Determine the year, month, and day for a file based on its filename or metadata.
 
         Args:
-            filename: The file path to extract the date from.
+            filepath: The file path to extract the date from.
 
         Returns:
-            The name of the proposed subdirectory.
-
-        Raises:
-            ValueError: If the filename does not match the expected format.
+            A tuple of (year, month, day).
         """
         filename = filepath.name
 
         if not (matches := self.filename_match(filename)):
             raise ValueError(f"Invalid filename format: {filename}")
 
-        # Subdir name
         date_part = matches.group(1)
         year = date_part[:4]
         month = date_part[4:6]
-        dir_name = f"{year}/{year}-{month}"
+        day = date_part[6:8]
 
-        return dir_name
+        return year, month, day
 
 def main():
     logger = setup_logging()

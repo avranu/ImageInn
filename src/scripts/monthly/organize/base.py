@@ -88,8 +88,9 @@ from scripts.lib.file_manager import FileManager
 logger = logging.getLogger(__name__)
 
 filename_date_patterns = [
-    re.compile(r'[_\s-](?P<year>20[012]\d)(?P<month>[01]\d)(?P<day>[0123]\d)[_\s-]'),
-    re.compile(r'[_\s](?P<year>20[012]\d)-(?P<month>[01]\d)-(?P<day>[0123]\d)[_\s]'),
+    re.compile(r'[^_\s-](?P<year>20[012]\d)(?P<month>[01]\d)(?P<day>[0123]\d)[_\s$-]'),
+    re.compile(r'[^_\s-](?P<year>20[012]\d)-(?P<month>[01]\d)-(?P<day>[0123]\d)[_\s$-]'),
+    re.compile(r'[^_\s-](?P<year>20[012]\d)_(?P<month>[01]\d)_(?P<day>[0123]\d)[_\s$-]'),
 ]
 
 class FileOrganizer(FileManager):
@@ -507,28 +508,42 @@ class FileOrganizer(FileManager):
         Returns:
             The name of the proposed subdirectory.
         """
-        # Prefer a date in the filename, if one exists, over the file metadata
-        if (match := self.match_date_in_filename(filepath.name)):
-            year, month, day = match
-        else:
-            try:
-                # Get the created date from the filepath
-                file_stat = filepath.stat()
-                created_time = datetime.datetime.fromtimestamp(file_stat.st_ctime)
-
-                # Extract the year and month
-                year = created_time.strftime('%Y')
-                month = created_time.strftime('%m')
-                day = created_time.strftime('%d')
-
-            except OSError as ose:
-                logger.error("Error occurred while finding subdirectory: %s", ose)
-                raise ValueError(f"Unable to determine a subdir from: {filepath.absolute()=} -> {ose=}") from ose
+        year, month, day = self.determine_ymd(filepath)
 
         # Generate the directory name in the format year/year-month
         dir_name = f"{year}/{year}-{month}-{day}/"
             
         return dir_name
+
+    def determine_ymd(self, filepath : Path) -> tuple[str, str, str]:
+        """
+        Determine the year, month, and day for a file based on its filename or metadata.
+
+        Args:
+            filepath: The file path to extract the date from.
+
+        Returns:
+            A tuple of (year, month, day).
+        """
+        # Prefer a date in the filename, if one exists, over the file metadata
+        if (match := self.match_date_in_filename(filepath.name)):
+            return match
+        
+        try:
+            # Get the created date from the filepath
+            file_stat = filepath.stat()
+            created_time = datetime.datetime.fromtimestamp(file_stat.st_ctime)
+
+            # Extract the year and month
+            year = created_time.strftime('%Y')
+            month = created_time.strftime('%m')
+            day = created_time.strftime('%d')
+
+        except OSError as ose:
+            logger.error("Error occurred while determining year/month/day: %s", ose)
+            raise ValueError(f"Unable to determine year/month/day from: {filepath.absolute()=} -> {ose=}") from ose
+        
+        return (year, month, day)
 
     def create_subdir(self, filepath : Path, parent_directory : Path | None = None) -> Path:
         """
