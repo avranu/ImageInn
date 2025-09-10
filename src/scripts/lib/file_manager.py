@@ -949,8 +949,11 @@ class FileManager(Script):
         if name in JUNK_FILENAMES:
             return True
 
-        # Toss prproj files
+        # Toss prproj files, on1 edits
         if name.endswith('.prproj') or name.endswith('.AAE'):
+            return True
+
+        if name.endswith('on1') and filesize < (1024 * 15):
             return True
 
         # Less than 10k
