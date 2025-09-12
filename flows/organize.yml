@@ -14,6 +14,10 @@ tasks:
     commands:
       - export PATH=$PATH:~/.local/bin
       - bash -c "organize -t /mnt/j/Photos -d /mnt/j/Import"
+      - bash -c "organize --copy -t /mnt/j/Photos -d '/mnt/nfs/Huveane/Backup/Syncthing/Pixel 8 Pro/DCIM'"
+      - bash -c "organize --copy -t /mnt/j/Photos -d '/mnt/nfs/Huveane/Backup/Syncthing/Pixel 8 Pro/Pictures'"
+      - bash -c "organize --copy -t /mnt/j/Photos -d '/mnt/nfs/Huveane/Backup/Syncthing/Pixel 7a/DCIM'"
+      - bash -c "organize --copy -t /mnt/j/Photos -d '/mnt/nfs/Huveane/Backup/Syncthing/Pixel 7a/Pictures'"
 
 # Run daily at 3am
 triggers:
