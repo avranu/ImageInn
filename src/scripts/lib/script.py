@@ -145,6 +145,9 @@ class Script(BaseModel, ABC):
 
         logger.debug("Checking if current network is the home network: %s == %s", home_network_name, cls.get_network_ssid())
 
+        if home_network_name.lower() == "any":
+            return True
+
         return cls.get_network_ssid().lower() == home_network_name.lower()
 
     def progress_message(self, message: str | None = None, *args : Any, max_length : int = 30, advance : int = 0) -> None:

@@ -340,8 +340,8 @@ class FileOrganizer(FileManager):
                 except OneFileException as e:
                     logger.error("Error processing file (process_file_threadsafe) %s: %s", file.absolute(), e)
                 except OSError as ose: 
-                    # Check for errno 107, and if so, wait and retry
-                    if ose.errno == 107:
+                    # Check for errno 107 or 112 (host down), and if so, wait and retry
+                    if ose.errno in {107, 112}:
                         wait_time = min(60, 5 * i)
                         logger.warning("There may be a network issue. Waiting %ss to retry: %s", wait_time, ose)
                         time.sleep(wait_time)

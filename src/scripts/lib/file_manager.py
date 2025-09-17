@@ -757,7 +757,7 @@ class FileManager(Script):
         if not destination_path.exists():
             return False
 
-        # If the files refer to the same destination, 
+        # If the files refer to the same destination, then...
         # ...we're doing something upstream that we don't think we're doing
         if source_path.samefile(destination_path):
             raise ValueError(f"Source and destination files are the same: {source_path}")
