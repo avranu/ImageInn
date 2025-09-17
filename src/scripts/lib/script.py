@@ -145,7 +145,7 @@ class Script(BaseModel, ABC):
 
         logger.debug("Checking if current network is the home network: %s == %s", home_network_name, cls.get_network_ssid())
 
-        if home_network_name.lower() == "any":
+        if home_network_name == "*":
             return True
 
         return cls.get_network_ssid().lower() == home_network_name.lower()
