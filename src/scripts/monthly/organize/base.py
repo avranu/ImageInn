@@ -379,7 +379,7 @@ class FileOrganizer(FileManager):
         destination_dir = self.create_subdir(file_path)
         destination_path = destination_dir / filename
 
-        if destination_path.exists() and file_path.samefile(destination_path):
+        if destination_path.exists() and (self.skip_collision or file_path.samefile(destination_path)):
             self.record_skip_file()
             logger.debug(f"Skipping file {file_path.absolute()=} as it is already in the correct directory")
             return None
