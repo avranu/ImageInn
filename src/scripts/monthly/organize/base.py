@@ -167,9 +167,9 @@ class FileOrganizer(FileManager):
         try:
             return super().hash_file(filename, partial, hashing_algorithm)
         except IOError as e:
-            raise OneFileException(f"Error reading file {filename}") from e
+            raise OneFileException(f"IO Error reading file {filename}") from e
 
-    def files_match(self, source_file : Path, destination_path: Path, skip_hash : bool = False) -> bool:
+    def files_match(self, source_file : Path, destination_path: Path, skip_hash : bool | None = None) -> bool:
         """
         Check if the MD5 hashes of two files match.
 
@@ -184,9 +184,10 @@ class FileOrganizer(FileManager):
             OneFileException: If an error occurs while hashing either file.
             ValueError: If the source and destination files are the same.
         """
-        skip_hash = skip_hash or self.skip_hash
+        if skip_hash is None:
+            skip_hash = self.skip_hash
 
-        return super().files_match(source_file, destination_path, skip_hash)
+        return super().files_match(source_file, destination_path, skip_hash=skip_hash)
     
     def fetch_files_from_ftp(self, host: str, user: str, password: str, remote_dir: str = '/device/DCIM/Camera') -> None:
         """
@@ -326,12 +327,12 @@ class FileOrganizer(FileManager):
         """
         Process a single file and handle exceptions safely.
         """
-        # default is failure
-        result = False
-
         try:
             # Allow for retries in case of network issues
             for i in range(10000):
+                # default is failure
+                result = False
+                
                 try:
                     result = self.process_file(file)
                 except DuplicationHandledException:
@@ -339,6 +340,7 @@ class FileOrganizer(FileManager):
                     result = True
                 except OneFileException as e:
                     logger.error("Error processing file (process_file_threadsafe) %s: %s", file.absolute(), e)
+                    logger.exception(e)
                 except OSError as ose: 
                     # Check for errno 107 or 112 (host down), and if so, wait and retry
                     if ose.errno in {107, 112}:
@@ -612,7 +614,7 @@ class FileOrganizer(FileManager):
             logger.debug(f"Skipping file {source_path.absolute()=} due to collision with {destination_path.absolute()=}")
             raise DuplicationHandledException(f"Duplicate file {source_path.absolute()=} skipped")
         
-        if self.files_match(source_path, destination_path, skip_hash=self.skip_hash):
+        if self.files_match(source_path, destination_path):
             logger.debug('Duplicate file found: %s', source_path)
             self.record_duplicate_file()
             
