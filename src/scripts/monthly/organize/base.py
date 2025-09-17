@@ -166,6 +166,8 @@ class FileOrganizer(FileManager):
         """
         try:
             return super().hash_file(filename, partial, hashing_algorithm)
+        except PermissionError:
+            raise
         except IOError as e:
             raise OneFileException(f"IO Error reading file {filename}") from e
 
@@ -312,7 +314,7 @@ class FileOrganizer(FileManager):
             try:
                 result = future.result()
                 results.append(result)
-            except OneFileException as ofe:
+            except (OneFileException, PermissionError) as ofe:
                 logger.error("Error organizing file: %s", ofe)
                 results.append(False)
             except Exception as e:
@@ -338,6 +340,8 @@ class FileOrganizer(FileManager):
                 except DuplicationHandledException:
                     logger.debug("Duplicate file handled: %s", file.absolute())
                     result = True
+                except PermissionError as pe:
+                    logger.error("Permission error processing file (process_file_threadsafe) %s: %s", file.absolute(), pe)
                 except OneFileException as e:
                     logger.error("Error processing file (process_file_threadsafe) %s: %s", file.absolute(), e)
                     logger.exception(e)
