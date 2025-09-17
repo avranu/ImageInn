@@ -61,6 +61,7 @@ class PaperlessWrapper:
         self._host = host
         self._token = token
         self._client = Paperless(host, token)
+        logger.info('Initialized PaperlessWrapper for host %s', host)
 
     def _run(self, coro):
         """

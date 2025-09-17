@@ -24,6 +24,11 @@ dependencies = [
     "openai-whisper>=20240930",
     "pysrt>=1.1.2",
     "psutil>=7.0.0",
+    "openai>=1.107.3",
+    "pymupdf>=1.26.4",
+    "jinja2>=3.1.6",
+    "dateparser>=1.2.2",
+    "pypaperless>=4.1.0",
 ]
 requires-python = ">=3.12"
 
