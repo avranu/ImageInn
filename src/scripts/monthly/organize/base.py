@@ -401,6 +401,7 @@ class FileOrganizer(FileManager):
                 logger.warning("File not found while moving file. Attempt(%d/%d). source_path='%s' -> %s", i, MAX_ATTEMPTS, file_path, fnf)
             except PermissionError as pe:
                 logger.warning("Permission error moving file. Attempt(%d/%d). destination_path='%s' -> %s", i, MAX_ATTEMPTS, destination_file, pe)
+                break
             except BrokenPipeError as bpe:
                 logger.warning("Broken pipe error moving file. Attempt(%d/%d). destination_path='%s' -> %s", i, MAX_ATTEMPTS, destination_file, bpe)
             except subprocess.TimeoutExpired as te:
@@ -411,8 +412,8 @@ class FileOrganizer(FileManager):
             wait_time = max(1, (i - 1) * 10)
             time.sleep(wait_time)
 
-        logger.error("File could not be moved after 3 attempts. destination_path='%s'", destination_file)
-        raise OneFileException(f"File could not be moved after 3 attempts. {destination_file.absolute()=}")
+        logger.error("File could not be moved after %s attempts. destination_path='%s'", i, destination_file)
+        raise OneFileException(f"File could not be moved after {MAX_ATTEMPTS} attempts. {destination_file.absolute()=}")
 
     def mkdir(self, directory: Path | str, success_message: str | None = "Created directory", *, parents: bool = True, exist_ok : bool = True) -> Path:
         """
