@@ -132,12 +132,12 @@ class ExifToolUpdater(MetadataUpdater):
             "-overwrite_original",
             f"-DateTimeOriginal={dt_str}",
             f"-CreateDate={dt_str}",
-            f"-ModifyDate={dt_str}",
+            #f"-ModifyDate={dt_str}",
             # For some RAW containers:
             f"-TrackCreateDate={dt_str}",
-            f"-TrackModifyDate={dt_str}",
+            #f"-TrackModifyDate={dt_str}",
             f"-MediaCreateDate={dt_str}",
-            f"-MediaModifyDate={dt_str}",
+            #f"-MediaModifyDate={dt_str}",
             str(file_path),
         ]
         logger.debug("Running exiftool: %s", " ".join(cmd))
@@ -229,6 +229,7 @@ class PhotoMover:
         """Yield candidate files under base_directory (bounded by max_depth)."""
         base = self.config.base_directory
         max_depth = self.config.max_depth
+        logger.info('Scanning files...')
         for path in base.rglob("*"):
             if not path.is_file():
                 continue
@@ -254,8 +255,8 @@ class PhotoMover:
         try:
             day_dir = file_path.parent.name  # YYYY-MM-DD
             year_dir = file_path.parent.parent.name  # YYYY
-            year = int(year_dir) if re.fullmatch(r"\d{4}", year_dir) else None
-            day = day_dir if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day_dir) else None
+            year = int(year_dir) if re.fullmatch(r"20\d{2}", year_dir) else None
+            day = day_dir if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", day_dir) else None
             return year, day
         except Exception:  # noqa: BLE001
             return None, None
@@ -296,50 +297,48 @@ class PhotoMover:
 
     def process(self) -> tuple[int, int]:
         """Process all candidate files. Returns (checked, moved)."""
-        candidates = list(self.scan_files())
         moved = 0
         checked = 0
-        logger.info("Scanning %s files...", len(candidates))
-        with alive_bar(len(candidates), title="Processing") as bar:
-            for file_path in candidates:
-                checked += 1
-                fname = file_path.name
-                shot_date = FilenameParser.parse_date(fname)
-                bar()  # tick regardless
-
-                if not shot_date:
-                    logger.debug("No date in filename: %s", fname)
-                    continue
-
-                if self.is_correct_location(file_path, shot_date):
-                    logger.debug("Already in correct location: %s", file_path)
-                    continue
-
-                # Update EXIF (if possible) and file times
+        with alive_bar(title="Processing", dual_line=True, unknown='waves') as bar:
+            for file_path in self.scan_files():
                 try:
-                    self.updater.update_dates(file_path, shot_date, self.config.dry_run)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Metadata update failed for %s: %s", fname, exc)
+                    checked += 1
+                    fname = file_path.name
+                    shot_date = FilenameParser.parse_date(fname)
 
-                try:
-                    self._set_file_times(file_path, shot_date, self.config.dry_run)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Failed to set file times for %s: %s", fname, exc)
+                    if not shot_date:
+                        logger.debug("No date in filename: %s", fname)
+                        continue
 
-                # Compute destination and move
-                dest_dir = self._expected_dir(self.config.base_directory, shot_date)
-                destination = dest_dir / fname
-                try:
-                    destination = self._ensure_unique_destination(destination)
-                    logger.info("MOVE %s -> %s", file_path, destination)
-                    if not self.config.dry_run:
-                        dest_dir.mkdir(parents=True, exist_ok=True)
-                        shutil.move(str(file_path), str(destination))
-                    moved += 1
-                except FileExistsError as exc:
-                    logger.info("Skipping (exists): %s", exc)
-                except Exception as exc:  # noqa: BLE001
-                    logger.error("Move failed for %s: %s", file_path, exc)
+                    if self.is_correct_location(file_path, shot_date):
+                        logger.debug("Already in correct location: %s", file_path)
+                        continue
+
+                    # Update EXIF (if possible) and file times
+                    try:
+                        self.updater.update_dates(file_path, shot_date, self.config.dry_run)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("Metadata update failed for %s: %s", fname, exc)
+
+                    try:
+                        self._set_file_times(file_path, shot_date, self.config.dry_run)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("Failed to set file times for %s: %s", fname, exc)
+
+                    # Compute destination and move
+                    dest_dir = self._expected_dir(self.config.base_directory, shot_date)
+                    destination = dest_dir / fname
+                    try:
+                        destination = self._ensure_unique_destination(destination)
+                        bar.text(f"Moving to: {destination}")
+                        if not self.config.dry_run:
+                            dest_dir.mkdir(parents=True, exist_ok=True)
+                            shutil.move(str(file_path), str(destination))
+                        moved += 1
+                    except FileExistsError as exc:
+                        bar.text(f"Skipping (exists): {exc}")
+                finally:
+                    bar()  # tick regardless
 
         return checked, moved
 
