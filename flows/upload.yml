@@ -11,9 +11,13 @@ tasks:
     username: snow
     privateKey: "{{ secret('SSH_HOME_PRIVATE_KEY') }}"
     warningOnStdErr: false
+    env:
+      IMAGEINN_HOME_NETWORK: "{{ secret('IMAGEINN_HOME_NETWORK') }}"
+      IMMICH_INSTANCE_URL: "{{ secret('IMMICH_INSTANCE_URL') }}"
+      IMMICH_API_KEY: "{{ secret('IMMICH_API_KEY') }}"
     commands:
       - export PATH=$PATH:~/.local/bin
-      - bash -c "upload /mnt/j/Photos/
+      - zsh -c "upload /mnt/j/Photos/"
 
 # Run daily at 3am
 triggers:
@@ -32,7 +36,7 @@ errors:
       X-Gotify-Key: "{{ secret('GOTIFY_TOKEN') }}"
     body: |
       {
-        "title": "Failure Organizing Photos",
+        "title": "Failure Uploading Photos",
         "message": "Flow {{ flow.id }} execution {{ execution.id }} has failed.\nCheck details: https://kestra.jmann.me/executions/{{ execution.id }}",
         "priority": 5
       }
