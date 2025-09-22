@@ -162,11 +162,24 @@ class PiexifUpdater(MetadataUpdater):
         return self._available
 
     def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> None:
+        """
+        Update EXIF dates for JPEGs using piexif.
+
+        Notes:
+        - 'CreateDate' in exiftool maps to EXIF's DateTimeDigitized (Tag 36868).
+        - Skip non-JPEGs and Google Motion Photos (e.g., PXL_*_MP.jpg) here; let exiftool handle those.
+        """
         if not self.available:
             raise RuntimeError("piexif not available")
 
-        if file_path.suffix.lower() not in {".jpg", ".jpeg"}:
+        suffix = file_path.suffix.lower()
+        if suffix not in {".jpg", ".jpeg"}:
             logger.debug("piexif only supports JPEG; skipping %s", file_path.name)
+            return
+
+        # Google Motion Photos often have complex XMP/MPF; piexif can choke. Prefer exiftool for these.
+        if "_MP" in file_path.stem.upper():
+            logger.debug("Likely Motion Photo; skipping piexif for %s", file_path.name)
             return
 
         import piexif  # type: ignore
@@ -177,11 +190,18 @@ class PiexifUpdater(MetadataUpdater):
 
         try:
             exif_dict = piexif.load(str(file_path))
+            # Ensure dictionaries exist
             exif_dict.setdefault("Exif", {})
             exif_dict.setdefault("0th", {})
+
+            # Map:
+            # - DateTimeOriginal (36867) ~ when the photo was taken
+            # - DateTimeDigitized (36868) ~ "CreateDate" in exiftool vocabulary
+            # - 0th/IFD0 DateTime (306) ~ generic timestamp
             exif_dict["Exif"][piexif.ExifIFD.DateTimeOriginal] = date_str.encode()
-            exif_dict["Exif"][piexif.ExifIFD.CreateDate] = date_str.encode()
+            exif_dict["Exif"][piexif.ExifIFD.DateTimeDigitized] = date_str.encode()
             exif_dict["0th"][piexif.ImageIFD.DateTime] = date_str.encode()
+
             exif_bytes = piexif.dump(exif_dict)
             piexif.insert(exif_bytes, str(file_path))
         except Exception as exc:  # noqa: BLE001
