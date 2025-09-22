@@ -29,6 +29,7 @@ dependencies = [
     "jinja2>=3.1.6",
     "dateparser>=1.2.2",
     "pypaperless>=4.1.0",
+    "piexif>=1.1.3",
 ]
 requires-python = ">=3.12"
 

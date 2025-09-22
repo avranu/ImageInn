@@ -255,8 +255,8 @@ class PhotoMover:
         try:
             day_dir = file_path.parent.name  # YYYY-MM-DD
             year_dir = file_path.parent.parent.name  # YYYY
-            year = int(year_dir) if re.fullmatch(r"20\d{2}", year_dir) else None
-            day = day_dir if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", day_dir) else None
+            year = int(year_dir) if re.fullmatch(r"\d{4}", year_dir) else None
+            day = day_dir if re.fullmatch(r"\d{4}-\d{2}-\d{2}", day_dir) else None
             return year, day
         except Exception:  # noqa: BLE001
             return None, None
