@@ -408,27 +408,33 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 def main(argv: Optional[list[str]] = None) -> int:
-    parser = build_arg_parser()
-    args = parser.parse_args(argv)
-
     try:
-        config = AppConfig(
-            base_directory=args.base_directory,
-            dry_run=args.dry_run,
-            skip_existing=args.skip_existing,
-            prefer_piexif=args.prefer_piexif,
-            max_depth=args.max_depth,
-            verbose=args.verbose,
-        )
-    except ValidationError as ve:
-        logger.error("Invalid configuration: %s", ve)
-        return 2
+        parser = build_arg_parser()
+        args = parser.parse_args(argv)
 
-    updater = CompositeUpdater(prefer_piexif=config.prefer_piexif)
-    mover = PhotoMover(config, updater)
-    checked, moved = mover.process()
-    logger.info("Done. Checked: %s, Moved: %s%s",
-                checked, moved, " (dry-run)" if config.dry_run else "")
+        try:
+            config = AppConfig(
+                base_directory=args.base_directory,
+                dry_run=args.dry_run,
+                skip_existing=args.skip_existing,
+                prefer_piexif=args.prefer_piexif,
+                max_depth=args.max_depth,
+                verbose=args.verbose,
+            )
+        except ValidationError as ve:
+            logger.error("Invalid configuration: %s", ve)
+            return 2
+
+        updater = CompositeUpdater(prefer_piexif=config.prefer_piexif)
+        mover = PhotoMover(config, updater)
+        checked, moved = mover.process()
+        logger.info("Done. Checked: %s, Moved: %s%s",
+                    checked, moved, " (dry-run)" if config.dry_run else "")
+
+    except KeyboardInterrupt:
+        logger.warning("Interrupted by user.")
+        return 130
+
     return 0
 
 if __name__ == "__main__":
