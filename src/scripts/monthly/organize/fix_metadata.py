@@ -363,12 +363,12 @@ class PhotoMover:
                     # Update EXIF (if possible) and file times
                     try:
                         self.updater.update_dates(file_path, shot_date, self.config.dry_run)
-                    except Exception as exc:  # noqa: BLE001
+                    except (OSError, PermissionError) as exc:  # noqa: BLE001
                         logger.warning("Metadata update failed for %s: %s", fname, exc)
 
                     try:
                         self._set_file_times(file_path, shot_date, self.config.dry_run)
-                    except Exception as exc:  # noqa: BLE001
+                    except (OSError, PermissionError) as exc:  # noqa: BLE001
                         logger.warning("Failed to set file times for %s: %s", fname, exc)
 
                     # Compute destination and move
@@ -376,7 +376,7 @@ class PhotoMover:
                     destination = dest_dir / fname
                     try:
                         destination = self._ensure_unique_destination(destination)
-                        bar.text(f"Moving to: {destination}")
+                        bar.text(f"({moved}/{checked}) Moving to: {destination}")
                         if not self.config.dry_run:
                             dest_dir.mkdir(parents=True, exist_ok=True)
                             shutil.move(str(file_path), str(destination))
