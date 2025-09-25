@@ -62,12 +62,20 @@ class FilenameParser:
     """Parses a filename to extract a date."""
     # (IMG|PXL|dji_fly|PSX|Manly)_YYYYMMDD_\d+.[ext]
     _re_compact: Final[re.Pattern[str]] = re.compile(
-        r"^(?P<prefix>IMG|PXL|dji_fly|PSX|Manly)_(?P<ymd>\d{8})_(?P<seq>\d+).*?\.(?P<ext>jpe?g|png|arw|dng)$",
+        r"^(?P<prefix>IMG|PXL|dji_fly|PSX|Manly)_(?P<ymd>20\d{2}[01]\d[0-3]\d)_(?P<seq>\d+).*?\.(?P<ext>jpe?g|png|arw|dng)$",
         re.IGNORECASE,
     )
     # signal-YYYY-MM-DD-.*.[ext]
     _re_signal: Final[re.Pattern[str]] = re.compile(
         r"^signal-(?P<ymd_dash>\d{4}-\d{2}-\d{2})-.*?\.(?P<ext>jpe?g|png)$",
+        re.IGNORECASE,
+    )
+    _re_date: Final[re.Pattern[str]] = re.compile(
+        r"^(?P<year>20\d{2})-((?P<month>[01]\d)-(?P<day>[0-3]\d))([^\d][\s()\d_-]*)?\.(?P<ext>jpe?g|png|arw|dng)$",
+        re.IGNORECASE,
+    )
+    _re_airbrush: Final[re.Pattern[str]] = re.compile(
+        r"^AirBrush_(?P<ymd>20[0-2]\d[01]\d[0-3]\d)\d*?\.(?P<ext>jpe?g|png)$",
         re.IGNORECASE,
     )
 
@@ -89,6 +97,24 @@ class FilenameParser:
                 return datetime.strptime(ymd_dash, "%Y-%m-%d").date()
             except ValueError:
                 logger.debug("Signal date parse failed for %s", filename)
+
+        m3 = cls._re_date.match(filename)
+        if m3:
+            try:
+                year = int(m3.group("year"))
+                month = int(m3.group("month"))
+                day = int(m3.group("day"))
+                return date(year, month, day)
+            except (ValueError, TypeError):
+                logger.debug("Date parse failed for %s", filename)
+
+        m4 = cls._re_airbrush.match(filename)
+        if m4:
+            ymd = m4.group("ymd")
+            try:
+                return datetime.strptime(ymd, "%Y%m%d").date()
+            except ValueError:
+                logger.debug("AirBrush date parse failed for %s", filename)
 
         return None
 
