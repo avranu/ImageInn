@@ -125,7 +125,7 @@ class FilenameParser:
 class MetadataUpdater:
     """Strategy interface to update image metadata dates."""
 
-    def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> None:
+    def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> bool:
         """Update metadata to shot_date (EXIF DateTimeOriginal/CreateDate, etc.)."""
         raise NotImplementedError
 
@@ -147,7 +147,7 @@ class ExifToolUpdater(MetadataUpdater):
     def available(self) -> bool:
         return self._available
 
-    def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> None:
+    def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> bool:
         if not self.available:
             raise RuntimeError("exiftool not available")
 
@@ -168,10 +168,13 @@ class ExifToolUpdater(MetadataUpdater):
         ]
         logger.debug("Running exiftool: %s", " ".join(cmd))
         if dry_run:
-            return
+            return True
+        
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode != 0:
             raise RuntimeError(f"exiftool failed for {file_path}: {res.stderr.strip()}")
+
+        return True
 
 class PiexifUpdater(MetadataUpdater):
     """Fallback for JPEG files using piexif (if installed)."""
@@ -187,7 +190,7 @@ class PiexifUpdater(MetadataUpdater):
     def available(self) -> bool:
         return self._available
 
-    def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> None:
+    def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> bool:
         """
         Update EXIF dates for JPEGs using piexif.
 
@@ -201,18 +204,18 @@ class PiexifUpdater(MetadataUpdater):
         suffix = file_path.suffix.lower()
         if suffix not in {".jpg", ".jpeg"}:
             logger.debug("piexif only supports JPEG; skipping %s", file_path.name)
-            return
+            return False
 
         # Google Motion Photos often have complex XMP/MPF; piexif can choke. Prefer exiftool for these.
         if "_MP" in file_path.stem.upper():
             logger.debug("Likely Motion Photo; skipping piexif for %s", file_path.name)
-            return
+            return False
 
         import piexif  # type: ignore
 
         date_str = f"{shot_date.strftime('%Y:%m:%d')} 00:00:00"
         if dry_run:
-            return
+            return True
 
         try:
             exif_dict = piexif.load(str(file_path))
@@ -231,7 +234,12 @@ class PiexifUpdater(MetadataUpdater):
             exif_bytes = piexif.dump(exif_dict)
             piexif.insert(exif_bytes, str(file_path))
         except Exception as exc:  # noqa: BLE001
+            if "Given file is neither" in str(exc):
+                logger.warning("piexif cannot handle this JPEG (corrupt?): %s", file_path.absolute())
+                return False
+            
             raise RuntimeError(f"piexif update failed for {file_path}: {exc}") from exc
+        return True
 
 class CompositeUpdater(MetadataUpdater):
     """Try exiftool first (broad support), then piexif, else warn."""
@@ -241,24 +249,23 @@ class CompositeUpdater(MetadataUpdater):
         self.piexif = PiexifUpdater()
         self.prefer_piexif = prefer_piexif
 
-    def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> None:
+    def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> bool:
         # Choose updater
         if self.prefer_piexif and self.piexif.available:
             try:
-                self.piexif.update_dates(file_path, shot_date, dry_run)
-                return
+                return self.piexif.update_dates(file_path, shot_date, dry_run)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("piexif failed for %s: %s; trying exiftool", file_path.name, exc)
 
         if self.exiftool.available:
             self.exiftool.update_dates(file_path, shot_date, dry_run)
-            return
+            return True
 
         if self.piexif.available:
-            self.piexif.update_dates(file_path, shot_date, dry_run)
-            return
+            return self.piexif.update_dates(file_path, shot_date, dry_run)
 
         logger.warning("No metadata tool available for %s; EXIF not updated.", file_path.name)
+        return False
 
 # --------------------------------------------------------------------------------------
 # File Moving
