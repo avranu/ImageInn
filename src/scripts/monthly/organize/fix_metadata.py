@@ -251,20 +251,23 @@ class CompositeUpdater(MetadataUpdater):
 
     def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> bool:
         # Choose updater
-        if self.prefer_piexif and self.piexif.available:
-            try:
+        try:
+            if self.prefer_piexif and self.piexif.available:
+                try:
+                    return self.piexif.update_dates(file_path, shot_date, dry_run)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("piexif failed for %s: %s; trying exiftool", file_path.name, exc)
+
+            if self.exiftool.available:
+                self.exiftool.update_dates(file_path, shot_date, dry_run)
+                return True
+
+            if self.piexif.available:
                 return self.piexif.update_dates(file_path, shot_date, dry_run)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("piexif failed for %s: %s; trying exiftool", file_path.name, exc)
 
-        if self.exiftool.available:
-            self.exiftool.update_dates(file_path, shot_date, dry_run)
-            return True
-
-        if self.piexif.available:
-            return self.piexif.update_dates(file_path, shot_date, dry_run)
-
-        logger.warning("No metadata tool available for %s; EXIF not updated.", file_path.name)
+            logger.warning("No metadata tool available for %s; EXIF not updated.", file_path.name)
+        except RuntimeError as rexc:
+            logger.warning("Metadata update failed for %s: %s", file_path.name, rexc)
         return False
 
 # --------------------------------------------------------------------------------------
