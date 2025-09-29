@@ -62,7 +62,7 @@ class FilenameParser:
     """Parses a filename to extract a date."""
     # (IMG|PXL|dji_fly|PSX|Manly)_YYYYMMDD_\d+.[ext]
     _re_compact: Final[re.Pattern[str]] = re.compile(
-        r"^(?P<prefix>IMG|PXL|dji_fly|PSX|Manly)_(?P<ymd>20\d{2}[01]\d[0-3]\d)_(?P<seq>\d+).*?\.(?P<ext>jpe?g|png|arw|dng|mp4)$",
+        r"^(?P<prefix>IMG|PXL|dji_fly|PSX|Manly)_(?P<ymd>20\d{2}[01]\d[0-3]\d)_(?P<seq>\d+).*?\.(?P<ext>jpe?g|png|arw|dng|mp4|psd|tif+)$",
         re.IGNORECASE,
     )
     # signal-YYYY-MM-DD-.*.[ext]
@@ -71,7 +71,7 @@ class FilenameParser:
         re.IGNORECASE,
     )
     _re_date: Final[re.Pattern[str]] = re.compile(
-        r"^(?P<year>20\d{2})-((?P<month>[01]\d)-(?P<day>[0-3]\d))([^\d][\s()\d_-]*)?\.(?P<ext>jpe?g|png|arw|dng|mp4)$",
+        r"^(?P<year>20\d{2})-((?P<month>[01]\d)-(?P<day>[0-3]\d))([^\d][\s()\d_-]*)?\.(?P<ext>jpe?g|png|arw|dng|mp4|psd|tif+)$",
         re.IGNORECASE,
     )
     _re_airbrush: Final[re.Pattern[str]] = re.compile(
