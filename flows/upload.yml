@@ -17,7 +17,7 @@ tasks:
       IMMICH_API_KEY: "{{ secret('IMMICH_API_KEY') }}"
     commands:
       - export PATH=$PATH:~/.local/bin
-      - zsh -c "upload /mnt/j/Photos/"
+      - bash -c "upload /mnt/j/Photos/"
 
 # Run daily at 3am
 triggers:
