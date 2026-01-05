@@ -25,6 +25,7 @@ import subprocess
 from datetime import datetime, date, time
 from pathlib import Path
 from typing import Final, Iterable, Optional
+import uuid
 
 from pydantic import BaseModel, Field, PositiveInt, ValidationError, field_validator, model_validator
 from alive_progress import alive_bar
@@ -150,12 +151,15 @@ class MetadataUpdater:
     def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> bool:
         """Update metadata to shot_date (EXIF DateTimeOriginal/CreateDate, etc.)."""
         raise NotImplementedError
-
+    
 class ExifToolUpdater(MetadataUpdater):
     """Uses exiftool if available to set multiple date tags in one go."""
 
+    _MP4_NO_DATA_REFERENCE_ERROR: Final[str] = "No data reference for sample description"
+
     def __init__(self) -> None:
         self._available = self._check_available()
+        self._ffmpeg_available = self._check_ffmpeg_available()
 
     @staticmethod
     def _check_available() -> bool:
@@ -165,38 +169,153 @@ class ExifToolUpdater(MetadataUpdater):
         except FileNotFoundError:
             return False
 
+    @staticmethod
+    def _check_ffmpeg_available() -> bool:
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=False)
+            return True
+        except FileNotFoundError:
+            return False
+
     @property
     def available(self) -> bool:
         return self._available
+
+    def _ensure_unique_sibling_path(self, desired_path: Path) -> Path:
+        """Return a unique path by appending -{n} if needed."""
+        if not desired_path.exists():
+            return desired_path
+
+        stem = desired_path.stem
+        suffix = desired_path.suffix
+        parent = desired_path.parent
+        index = 1
+        while True:
+            candidate = parent / f"{stem}-{index}{suffix}"
+            if not candidate.exists():
+                return candidate
+            index += 1
+
+    def _ffmpeg_remux_mp4_in_place(self, file_path: Path, dry_run: bool) -> bool:
+        """
+        Remux MP4 (stream-copy) to rebuild container tables.
+
+        Workflow:
+          - Create temp fixed file next to original
+          - Rename original to *_before-ffmpeg-fix.mp4 (preserve)
+          - Rename fixed temp to original filename
+          - Nothing deleted
+        """
+        if not self._ffmpeg_available:
+            logger.warning("ffmpeg not available; cannot repair MP4 container: %s", file_path)
+            return False
+
+        if file_path.suffix.lower() != ".mp4":
+            return False
+
+        before_fix_desired = file_path.with_name(f"{file_path.stem}_before-ffmpeg-fix{file_path.suffix}")
+        before_fix_path = self._ensure_unique_sibling_path(before_fix_desired)
+
+        temp_fixed_path = file_path.with_name(
+            f"{file_path.stem}.ffmpeg-fixed.{uuid.uuid4().hex}{file_path.suffix}"
+        )
+
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(file_path),
+            "-map",
+            "0",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            str(temp_fixed_path),
+        ]
+
+        logger.info("Repairing MP4 container with ffmpeg: %s", file_path.name)
+        logger.debug("Running ffmpeg: %s", " ".join(cmd))
+
+        if dry_run:
+            logger.info("Dry-run: would remux %s -> %s, rename original -> %s",
+                        file_path.name, temp_fixed_path.name, before_fix_path.name)
+            return True
+
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            stderr = (res.stderr or "").strip()
+            # If ffmpeg fails, don't rename anything.
+            raise RuntimeError(f"ffmpeg remux failed for {file_path}: {stderr}")
+
+        if not temp_fixed_path.exists() or temp_fixed_path.stat().st_size == 0:
+            raise RuntimeError(f"ffmpeg produced no output for {file_path}: {temp_fixed_path}")
+
+        # Preserve original by renaming it out of the way first.
+        file_path.rename(before_fix_path)
+
+        # Put fixed file into original filename.
+        temp_fixed_path.rename(file_path)
+
+        logger.info("MP4 repaired. Preserved original as %s; fixed file kept as %s",
+                    before_fix_path.name, file_path.name)
+        return True
 
     def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> bool:
         if not self.available:
             raise RuntimeError("exiftool not available")
 
         dt_str = f"{shot_date.strftime('%Y:%m:%d')} 00:00:00"
-        # Update common date tags; -overwrite_original to avoid _original files.
-        cmd = [
-            "exiftool",
-            "-overwrite_original",
-            f"-DateTimeOriginal={dt_str}",
-            f"-CreateDate={dt_str}",
-            #f"-ModifyDate={dt_str}",
-            # For some RAW containers:
-            f"-TrackCreateDate={dt_str}",
-            #f"-TrackModifyDate={dt_str}",
-            f"-MediaCreateDate={dt_str}",
-            #f"-MediaModifyDate={dt_str}",
-            str(file_path),
-        ]
-        logger.debug("Running exiftool: %s", " ".join(cmd))
-        if dry_run:
-            return True
-        
-        res = subprocess.run(cmd, capture_output=True, text=True)
-        if res.returncode != 0:
-            raise RuntimeError(f"exiftool failed for {file_path}: {res.stderr.strip()}")
 
-        return True
+        # Update common date tags; -overwrite_original to avoid _original files.
+        def run_exiftool(target_path: Path) -> subprocess.CompletedProcess[str]:
+            cmd = [
+                "exiftool",
+                "-overwrite_original",
+                f"-DateTimeOriginal={dt_str}",
+                f"-CreateDate={dt_str}",
+                f"-TrackCreateDate={dt_str}",
+                f"-MediaCreateDate={dt_str}",
+                str(target_path),
+            ]
+            logger.debug("Running exiftool: %s", " ".join(cmd))
+            return subprocess.run(cmd, capture_output=True, text=True)
+
+        if dry_run:
+            # We treat dry-run as success. If you want strict "simulate failure", change this.
+            return True
+
+        res = run_exiftool(file_path)
+        if res.returncode == 0:
+            return True
+
+        stderr = (res.stderr or "").strip()
+
+        # If exiftool fails with the known MP4 container issue, repair with ffmpeg and retry.
+        if file_path.suffix.lower() == ".mp4" and self._MP4_NO_DATA_REFERENCE_ERROR in stderr:
+            logger.warning(
+                "exiftool failed due to MP4 container issue; attempting ffmpeg repair: %s (%s)",
+                file_path,
+                stderr,
+            )
+
+            repaired = self._ffmpeg_remux_mp4_in_place(file_path, dry_run=False)
+            if not repaired:
+                raise RuntimeError(f"exiftool failed for {file_path}: {stderr}")
+
+            # Retry exiftool against the repaired file (now at the original filename).
+            res_retry = run_exiftool(file_path)
+            if res_retry.returncode == 0:
+                return True
+
+            stderr_retry = (res_retry.stderr or "").strip()
+            raise RuntimeError(
+                f"exiftool failed after ffmpeg repair for {file_path}: {stderr_retry}"
+            )
+
+        raise RuntimeError(f"exiftool failed for {file_path}: {stderr}")
 
 class PiexifUpdater(MetadataUpdater):
     """Fallback for JPEG files using piexif (if installed)."""
