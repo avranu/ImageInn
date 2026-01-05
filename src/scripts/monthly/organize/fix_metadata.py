@@ -4,10 +4,13 @@ Fix and reorganize photos whose filename encodes a date but are in the wrong fol
 
 Destination layout: /base/YYYY/YYYY-MM-DD/filename
 Patterns matched:
-  1) (IMG|PXL|dji_fly|PSX|Manly)_YYYYMMDD_\\d+.(jpe?g|png|arw|dng)
+  1) (IMG|PXL|dji_fly|PSX|Manly|VID|Screenshot|download)_YYYYMMDD_\\d+.(jpe?g|png|arw|dng)
   2) signal-YYYY-MM-DD-.*.(jpe?g|png)
+  3) YYYY_MMDD_\d{6}.mp4
 
-Author: You
+Each one supports {pattern}-01.{ext}, {pattern}-01-02.{ext}, etc.
+
+Author: Jess Mann
 Python: 3.12
 """
 
@@ -62,7 +65,7 @@ class FilenameParser:
     """Parses a filename to extract a date."""
     # (IMG|PXL|dji_fly|PSX|Manly)_YYYYMMDD_\d+.[ext]
     _re_compact: Final[re.Pattern[str]] = re.compile(
-        r"^(?P<prefix>IMG|PXL|dji_fly|PSX|Manly)_(?P<ymd>20\d{2}[01]\d[0-3]\d)_(?P<seq>\d+).*?\.(?P<ext>jpe?g|png|arw|dng|mp4|psd|tif+)$",
+        r"^(?P<prefix>IMG|PXL|dji_fly|PSX|Manly|VID|Screenshot|download)_(?P<ymd>20\d{2}[01]\d[0-3]\d)_(?P<seq>\d+).*?\.(?P<ext>jpe?g|png|arw|dng|mp4|psd|tif+)$",
         re.IGNORECASE,
     )
     # signal-YYYY-MM-DD-.*.[ext]
@@ -70,12 +73,14 @@ class FilenameParser:
         r"^signal-(?P<ymd_dash>\d{4}-\d{2}-\d{2})-.*?\.(?P<ext>jpe?g|png|mp4)$",
         re.IGNORECASE,
     )
+    # YYYY_MMDD_HHMMSS.[ext]
     _re_date: Final[re.Pattern[str]] = re.compile(
         r"^(?P<year>20\d{2})-((?P<month>[01]\d)-(?P<day>[0-3]\d))([^\d][\s()\d_-]*)?\.(?P<ext>jpe?g|png|arw|dng|mp4|psd|tif+)$",
         re.IGNORECASE,
     )
+    # AirBrush_YYYYMMDD[...].(jpe?g|png)
     _re_airbrush: Final[re.Pattern[str]] = re.compile(
-        r"^AirBrush_(?P<ymd>20[0-2]\d[01]\d[0-3]\d)\d*?\.(?P<ext>jpe?g|png)$",
+        r"^AirBrush_(?P<ymd>20[0-2]\d[01]\d[0-3]\d)[-\d]*?\.(?P<ext>jpe?g|png)$",
         re.IGNORECASE,
     )
 
@@ -243,15 +248,22 @@ class PiexifUpdater(MetadataUpdater):
 
 class CompositeUpdater(MetadataUpdater):
     """Try exiftool first (broad support), then piexif, else warn."""
+    acceptable_date_range : tuple[date, date]
 
     def __init__(self, prefer_piexif: bool = False) -> None:
         self.exiftool = ExifToolUpdater()
         self.piexif = PiexifUpdater()
         self.prefer_piexif = prefer_piexif
+        self.acceptable_date_range = (date(2000, 1, 1), datetime.now().date())
 
     def update_dates(self, file_path: Path, shot_date: date, dry_run: bool) -> bool:
         # Choose updater
         try:
+            if not (self.acceptable_date_range[0] <= shot_date <= self.acceptable_date_range[1]):
+                logger.warning("Shot date %s for %s is outside acceptable range %s - %s; skipping update.",
+                               shot_date, file_path.name, self.acceptable_date_range[0], self.acceptable_date_range[1])
+                return False
+
             if self.prefer_piexif and self.piexif.available:
                 try:
                     return self.piexif.update_dates(file_path, shot_date, dry_run)
@@ -276,10 +288,12 @@ class CompositeUpdater(MetadataUpdater):
 
 class PhotoMover:
     """Finds, validates, updates, and moves photos to correct dated folders."""
+    acceptable_date_range : tuple[date, date]
 
     def __init__(self, config: AppConfig, updater: MetadataUpdater) -> None:
         self.config = config
         self.updater = updater
+        self.acceptable_date_range = (date(2000, 1, 1), datetime.now().date())
 
     def scan_files(self) -> Iterable[Path]:
         """Yield candidate files under base_directory (bounded by max_depth)."""
@@ -364,6 +378,11 @@ class PhotoMover:
 
                     if not shot_date:
                         logger.debug("No date in filename: %s", fname)
+                        continue
+
+                    if not (self.acceptable_date_range[0] <= shot_date <= self.acceptable_date_range[1]):
+                        logger.warning("Shot date %s for %s is outside acceptable range %s - %s; skipping update.",
+                                       shot_date, fname, self.acceptable_date_range[0], self.acceptable_date_range[1])
                         continue
 
                     if self.is_correct_location(file_path, shot_date):
