@@ -6,7 +6,7 @@ Destination layout: /base/YYYY/YYYY-MM-DD/filename
 Patterns matched:
   1) (IMG|PXL|dji_fly|PSX|Manly|VID|Screenshot|download)_YYYYMMDD_\\d+.(jpe?g|png|arw|dng)
   2) signal-YYYY-MM-DD-.*.(jpe?g|png)
-  3) YYYY_MMDD_\d{6}.mp4
+  3) YYYY_MMDD_\\d{6}.mp4
 
 Each one supports {pattern}-01.{ext}, {pattern}-01-02.{ext}, etc.
 
@@ -26,7 +26,7 @@ from datetime import datetime, date, time
 from pathlib import Path
 from typing import Final, Iterable, Optional
 
-from pydantic import BaseModel, Field, PositiveInt, ValidationError
+from pydantic import BaseModel, Field, PositiveInt, ValidationError, field_validator, model_validator
 from alive_progress import alive_bar
 
 # --------------------------------------------------------------------------------------
@@ -47,11 +47,28 @@ logger.setLevel(logging.INFO)
 class AppConfig(BaseModel):
     """Configuration for the fixer."""
     base_directory: Path = Field(..., description="Root Photos directory (contains year subfolders).")
+    directory_to_sort: Path | None = Field(
+        None,
+        description="Directory to scan and fix. By default, same as base_directory.",
+    )
     dry_run: bool = Field(False, description="If True, do not perform any write operations.")
     skip_existing: bool = Field(False, description="If True, skip moves when the destination exists.")
     prefer_piexif: bool = Field(False, description="Force piexif over exiftool where possible.")
-    max_depth: PositiveInt = Field(6, description="Maximum directory depth to scan from base.")
+    max_depth: PositiveInt = Field(6, description="Maximum directory depth to scan from directory_to_sort.")
     verbose: bool = Field(False, description="Enable debug logging.")
+
+    @field_validator("base_directory", mode="before")
+    @classmethod
+    def _normalize_base_directory(cls, value: object) -> Path:
+        path = Path(value).expanduser().resolve()
+        return path
+
+    @field_validator("directory_to_sort", mode="before")
+    @classmethod
+    def _normalize_directory_to_sort(cls, value: object) -> Path | None:
+        if value is None:
+            return None
+        return Path(value).expanduser().resolve()
 
     def model_post_init(self, __context: dict) -> None:  # pydantic v2 hook
         if self.verbose:
@@ -297,21 +314,21 @@ class PhotoMover:
 
     def scan_files(self) -> Iterable[Path]:
         """Yield candidate files under base_directory (bounded by max_depth)."""
-        base = self.config.base_directory
+        directory_to_sort = self.config.directory_to_sort or self.config.base_directory
         max_depth = self.config.max_depth
         logger.info('Scanning files...')
-        for path in base.rglob("*"):
+        for path in directory_to_sort.rglob("*"):
             if not path.is_file():
                 continue
             # Enforce depth limit
             try:
-                rel = path.relative_to(base)
+                rel = path.relative_to(directory_to_sort)
             except ValueError:
                 continue
             if len(rel.parts) > max_depth:
                 continue
             # Quick suffix filter
-            if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".arw", ".dng"}:
+            if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".arw", ".nef", ".dng", ".mp4"}:
                 continue
             yield path
 
@@ -429,6 +446,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "base_directory", type=Path,
         help="Root Photos directory (e.g., /mnt/i/Photos)."
     )
+    parser.add_argument(
+        "--directory-to-sort", type=Path, default=None,
+        help="Directory to scan and fix. By default, same as base_directory."
+    )
     parser.add_argument("--dry-run", action="store_true", help="Do not write changes.")
     parser.add_argument("--skip-existing", action="store_true", help="Skip if destination file exists.")
     parser.add_argument("--prefer-piexif", action="store_true", help="Prefer piexif over exiftool when possible.")
@@ -444,6 +465,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         try:
             config = AppConfig(
                 base_directory=args.base_directory,
+                directory_to_sort=args.directory_to_sort,
                 dry_run=args.dry_run,
                 skip_existing=args.skip_existing,
                 prefer_piexif=args.prefer_piexif,
