@@ -89,8 +89,6 @@ class AppConfig(BaseModel):
 # --------------------------------------------------------------------------------------
 # Filename Parsers
 # --------------------------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class ParsedFilenameDatetime:
     shot_date: date
@@ -844,8 +842,12 @@ class PhotoMover:
         checked = 0
         errors = 0
 
+        if self.mover.is_same_filesystem(self.config.base_directory, self.config.directory_to_sort or self.config.base_directory):
+            logger.info("Moves will be atomic.")
+        else:
+            logger.info("Moving across Filesystems. Moves will be slow.")
+            
         with alive_bar(title="Processing", dual_line=True, unknown="waves") as bar:
-
             def progress_text(message: str, log_level: int | None = None) -> None:
                 bar.text(f"({moved} →/{errors} E/{checked} ✓) {message}")
                 if log_level is None:
