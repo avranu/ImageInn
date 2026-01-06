@@ -93,9 +93,9 @@ class FilenameParser:
         r"^signal-(?P<ymd_dash>\d{4}-\d{2}-\d{2})-.*?\.(?P<ext>jpe?g|png|mp4)$",
         re.IGNORECASE,
     )
-    # YYYY_MMDD_HHMMSS.[ext]
+    # YYYY-MM-DD-HHMMSS.[ext]
     _re_date: Final[re.Pattern[str]] = re.compile(
-        r"^(?P<year>20\d{2})-((?P<month>[01]\d)-(?P<day>[0-3]\d))([^\d][\s()\d_-]*)?\.(?P<ext>jpe?g|png|arw|dng|mp4|psd|tif+)$",
+        r"^(?P<year>20\d{2})-((?P<month>[01]\d)-(?P<day>[0-3]\d))([-_\s]?(?P<hms>\d{6}))?([^\d][\s()\d_-]*)?\.(?P<ext>jpe?g|png|arw|dng|mp4|psd|tif+)$",
         re.IGNORECASE,
     )
     # AirBrush_YYYYMMDD[...].(jpe?g|png)
