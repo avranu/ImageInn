@@ -52,8 +52,6 @@ logger.setLevel(logging.INFO)
 # --------------------------------------------------------------------------------------
 # Config (Pydantic)
 # --------------------------------------------------------------------------------------
-
-
 class AppConfig(BaseModel):
     """Configuration for the fixer."""
 
@@ -290,8 +288,6 @@ class FilenameParser:
 # --------------------------------------------------------------------------------------
 # Metadata Updaters (Strategy)
 # --------------------------------------------------------------------------------------
-
-
 class MetadataUpdater:
     """Strategy interface to update image metadata dates."""
 
@@ -729,8 +725,6 @@ class CompositeUpdater(MetadataUpdater):
 # --------------------------------------------------------------------------------------
 # File Moving
 # --------------------------------------------------------------------------------------
-
-
 class PhotoMover:
     """Finds, validates, updates, and moves photos to correct dated folders."""
 
@@ -930,8 +924,6 @@ class PhotoMover:
 # --------------------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------------------
-
-
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Find photos with date-encoded filenames not in the correct folder, fix metadata, and move."
