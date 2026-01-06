@@ -30,6 +30,8 @@ import uuid
 from pydantic import BaseModel, Field, PositiveInt, ValidationError, field_validator, model_validator
 from alive_progress import alive_bar
 
+from scripts.lib.file_manager import FileManager
+
 # --------------------------------------------------------------------------------------
 # Logging
 # --------------------------------------------------------------------------------------
@@ -425,11 +427,13 @@ class CompositeUpdater(MetadataUpdater):
 class PhotoMover:
     """Finds, validates, updates, and moves photos to correct dated folders."""
     acceptable_date_range : tuple[date, date]
+    mover : FileManager
 
     def __init__(self, config: AppConfig, updater: MetadataUpdater) -> None:
         self.config = config
         self.updater = updater
         self.acceptable_date_range = (date(2000, 1, 1), datetime.now().date())
+        self.mover = FileManager(dry_run = config.dry_run, directory=self.config.base_directory)
 
     def scan_files(self) -> Iterable[Path]:
         """Yield candidate files under base_directory (bounded by max_depth)."""
@@ -505,6 +509,7 @@ class PhotoMover:
         """Process all candidate files. Returns (checked, moved)."""
         moved = 0
         checked = 0
+        errors = 0
         with alive_bar(title="Processing", dual_line=True, unknown='waves') as bar:
             for file_path in self.scan_files():
                 try:
@@ -529,11 +534,13 @@ class PhotoMover:
                     try:
                         self.updater.update_dates(file_path, shot_date, self.config.dry_run)
                     except (OSError, PermissionError) as exc:  # noqa: BLE001
+                        errors += 1
                         logger.warning("Metadata update failed for %s: %s", fname, exc)
 
                     try:
                         self._set_file_times(file_path, shot_date, self.config.dry_run)
                     except (OSError, PermissionError) as exc:  # noqa: BLE001
+                        errors += 1
                         logger.warning("Failed to set file times for %s: %s", fname, exc)
 
                     # Compute destination and move
@@ -541,10 +548,8 @@ class PhotoMover:
                     destination = dest_dir / fname
                     try:
                         destination = self._ensure_unique_destination(destination)
-                        bar.text(f"({moved} →/{checked} ✓) Moving to: {destination}")
-                        if not self.config.dry_run:
-                            dest_dir.mkdir(parents=True, exist_ok=True)
-                            shutil.move(str(file_path), str(destination))
+                        bar.text(f"({moved} →/{errors} E/{checked} ✓) Moving to: {destination}")
+                        self.move(file_path, destination)
                         moved += 1
                     except FileExistsError as exc:
                         bar.text(f"Skipping (exists): {exc}")
@@ -552,6 +557,14 @@ class PhotoMover:
                     bar()  # tick regardless
 
         return checked, moved
+
+    def move(self, source: Path, destination: Path) -> None:
+        """Move file from source to destination."""
+        if self.config.dry_run:
+            logger.info("Dry-run: would move %s -> %s", source, destination)
+            return
+        self.mover.move_file(source, destination)
+        logger.info("Moved %s -> %s", source, destination)
 
 # --------------------------------------------------------------------------------------
 # CLI
