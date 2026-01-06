@@ -98,7 +98,7 @@ class FilenameParser:
     )
     # AirBrush_YYYYMMDD[...].(jpe?g|png)
     _re_airbrush: Final[re.Pattern[str]] = re.compile(
-        r"^AirBrush_(?P<ymd>20[0-2]\d[01]\d[0-3]\d)[-\d]*?\.(?P<ext>jpe?g|png)$",
+        r"^AirBrush_(?P<ymd>20[0-2]\d[01]\d[0-3]\d)[-\d()]*?\.(?P<ext>jpe?g|png)$",
         re.IGNORECASE,
     )
 
@@ -541,7 +541,7 @@ class PhotoMover:
                     destination = dest_dir / fname
                     try:
                         destination = self._ensure_unique_destination(destination)
-                        bar.text(f"({moved}/{checked}) Moving to: {destination}")
+                        bar.text(f"({moved} →/{checked} ✓) Moving to: {destination}")
                         if not self.config.dry_run:
                             dest_dir.mkdir(parents=True, exist_ok=True)
                             shutil.move(str(file_path), str(destination))
