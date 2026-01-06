@@ -506,7 +506,7 @@ class PhotoMover:
         os.utime(file_path, (ts, ts), follow_symlinks=False)
 
     def process(self) -> tuple[int, int]:
-        """Process all candidate files. Returns (checked, moved)."""
+        """Process all candidate files. Returns tuple: (checked, moved)."""
         moved = 0
         checked = 0
         errors = 0
