@@ -1136,7 +1136,7 @@ class FileManager(Script):
         destination_xmp_path : Path | None = destination_path.with_suffix('.xmp')
 
         destination_dir = destination_path.parent
-        if not self.check_dry_run(f'moving {source_path} to {destination_dir}'):
+        if not self.check_dry_run(f'moving {source_path} to {destination_dir}...'):
             # This verifies the destination path and compares checksums
             if not self._move_file(source_path, destination_path):
                 logger.error('Unable to move file: %s -> %s', source_path, destination_path)
