@@ -25,18 +25,16 @@ import argparse
 import hashlib
 import logging
 import re
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from alive_progress import alive_bar
 from typing import Iterator, Protocol
 
-LOGGER = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 # Only treat the trailing "-N" or "-N-M" as a duplicate marker when N/M are 1–2 digits.
 # This avoids stripping timestamp parts like "-094625".
-_DUP_SUFFIX_RE = re.compile(r"^(?P<base>.+?)(?:[-_](?P<n1>\d{1,2})(?:[-_](?P<n2>\d{1,2}))?)$")
-
+_DUP_SUFFIX_RE = re.compile(r"^(?P<base>.+?)(?:[-_\s(](?P<n1>\d{1,2})[)\s]?(?:[-_\s(](?P<n2>\d{1,2})[)\s]?)?)$")
 
 class Hasher(Protocol):
     """Hasher interface for file checksumming."""
@@ -122,20 +120,20 @@ class DuplicateVariantCleaner:
     def run(self) -> int:
         root = self._config.root
         if not root.exists():
-            LOGGER.error("Path does not exist: %s", root)
+            logger.error("Path does not exist: %s", root)
             return 2
         if not root.is_dir():
-            LOGGER.error("Path is not a directory: %s", root)
+            logger.error("Path is not a directory: %s", root)
             return 2
 
         groups: dict[tuple[Path, str, str], list[Path]] = {}
-        LOGGER.info("Scanning files under %s...", root)
+        logger.debug("Scanning files under %s...", root)
         with alive_bar(title="Scanning", unit="files", unknown="waves") as bar:
             for file_path in _iter_files(root, recursive=self._config.recursive):
                 groups.setdefault(_group_key_for(file_path), []).append(file_path)
                 bar()
         if not groups:
-            LOGGER.info("No files found under %s", root)
+            logger.info("No files found under %s", root)
             return 0
 
         checksum_cache: dict[Path, str] = {}
@@ -145,7 +143,7 @@ class DuplicateVariantCleaner:
         skipped_groups = 0
 
         files_total = sum(len(items) for items in groups.values())
-        LOGGER.info("Processing %d file(s) in %d group(s)...", files_total, len(groups))
+        logger.info("Processing %d file(s) in %d group(s)...", files_total, len(groups))
 
         with alive_bar(title="Processing", unit="files", total=files_total) as bar:
             for (_parent, base_stem, _ext_lower), files in groups.items():
@@ -164,7 +162,7 @@ class DuplicateVariantCleaner:
                             kept_checksum = self._config.hasher.checksum(kept_file)
                             checksum_cache[kept_file] = kept_checksum
                     except OSError as exc:
-                        LOGGER.warning("Failed to hash kept file %s: %s", kept_file, exc)
+                        logger.warning("Failed to hash kept file %s: %s", kept_file, exc)
                         skipped_groups += 1
                         for _ in files:
                             bar()
@@ -180,7 +178,7 @@ class DuplicateVariantCleaner:
                                 candidate_checksum = self._config.hasher.checksum(candidate)
                                 checksum_cache[candidate] = candidate_checksum
                         except OSError as exc:
-                            LOGGER.warning("Failed to hash candidate %s: %s", candidate, exc)
+                            logger.warning("Failed to hash candidate %s: %s", candidate, exc)
                             mismatches.append(candidate)
                             bar()
                             continue
@@ -196,7 +194,7 @@ class DuplicateVariantCleaner:
 
                     if mismatches:
                         skipped_groups += 1
-                        LOGGER.info(
+                        logger.debug(
                             "Not deleting for base=%s (kept=%s). %d mismatching candidate(s): %s",
                             base_stem,
                             kept_file.name,
@@ -211,55 +209,28 @@ class DuplicateVariantCleaner:
 
                     for delete_path in deletions:
                         if self._config.dry_run:
-                            LOGGER.info("[dry-run] Would delete %s", delete_path)
+                            logger.debug("[dry-run] Would delete %s", delete_path)
                             deleted_count += 1
                             continue
 
                         try:
                             delete_path.unlink()
-                            LOGGER.info("Deleted %s", delete_path)
+                            logger.debug("Deleted %s", delete_path)
                             deleted_count += 1
                         except OSError as exc:
-                            LOGGER.warning("Failed to delete %s: %s", delete_path, exc)
+                            logger.warning("Failed to delete %s: %s", delete_path, exc)
 
                     kept_groups += 1
                 finally:
                     pass
 
-        LOGGER.info(
+        logger.info(
             "Done. Kept groups: %d | Deleted files: %d | Skipped groups (mismatches/errors): %d",
             kept_groups,
             deleted_count,
             skipped_groups,
         )
         return 0
-
-
-def _progress_bar(total: int):
-    try:
-        from tqdm import tqdm  # type: ignore
-
-        return tqdm(total=total, unit="file")
-    except Exception:  # pragma: no cover
-        return _BasicProgress(total=total)
-
-
-class _BasicProgress:
-    def __init__(self, total: int) -> None:
-        self._total = max(total, 1)
-        self._done = 0
-
-    def update(self, n: int) -> None:
-        self._done += n
-        if self._done % 250 == 0 or self._done >= self._total:
-            percent = int(self._done * 100 / self._total)
-            sys.stderr.write(f"\rProgress: {percent:3d}% ({self._done}/{self._total})")
-            sys.stderr.flush()
-
-    def close(self) -> None:
-        sys.stderr.write("\n")
-        sys.stderr.flush()
-
 
 def _configure_logging(verbose: bool) -> None:
     level = logging.DEBUG if verbose else logging.INFO
