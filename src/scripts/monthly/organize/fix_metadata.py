@@ -511,6 +511,18 @@ class PhotoMover:
         checked = 0
         errors = 0
         with alive_bar(title="Processing", dual_line=True, unknown='waves') as bar:
+            def progress_text(s: str, log : int | None = None) -> None:
+                bar.text(f"({moved} →/{errors} E/{checked} ✓) {s}")
+                match log:
+                    case logging.INFO:
+                        logger.info(s)
+                    case logging.WARNING:
+                        logger.warning(s)
+                    case logging.ERROR:
+                        logger.error(s)
+                    case logging.DEBUG:
+                        logger.debug(s)
+            
             for file_path in self.scan_files():
                 try:
                     checked += 1
@@ -518,16 +530,15 @@ class PhotoMover:
                     shot_date = FilenameParser.parse_date(fname)
 
                     if not shot_date:
-                        logger.debug("No date in filename: %s", fname)
+                        progress_text(f"No date in filename: {fname}", log=logging.DEBUG)
                         continue
 
                     if not (self.acceptable_date_range[0] <= shot_date <= self.acceptable_date_range[1]):
-                        logger.warning("Shot date %s for %s is outside acceptable range %s - %s; skipping update.",
-                                       shot_date, fname, self.acceptable_date_range[0], self.acceptable_date_range[1])
+                        progress_text(f"Shot date {shot_date} for {fname} is outside acceptable range {self.acceptable_date_range[0]} - {self.acceptable_date_range[1]}; skipping update.", log=logging.INFO)
                         continue
 
                     if self.is_correct_location(file_path, shot_date):
-                        logger.debug("Already in correct location: %s", file_path)
+                        progress_text(f"Already in correct location: {file_path}", log=logging.DEBUG)
                         continue
 
                     # Update EXIF (if possible) and file times
@@ -535,24 +546,24 @@ class PhotoMover:
                         self.updater.update_dates(file_path, shot_date, self.config.dry_run)
                     except (OSError, PermissionError) as exc:  # noqa: BLE001
                         errors += 1
-                        logger.warning("Metadata update failed for %s: %s", fname, exc)
+                        progress_text(f"Metadata update failed for {fname}: {exc}", log=logging.WARNING)
 
                     try:
                         self._set_file_times(file_path, shot_date, self.config.dry_run)
                     except (OSError, PermissionError) as exc:  # noqa: BLE001
                         errors += 1
-                        logger.warning("Failed to set file times for %s: %s", fname, exc)
+                        progress_text(f"Failed to set file times for {fname}: {exc}", log=logging.WARNING)
 
                     # Compute destination and move
                     dest_dir = self._expected_dir(self.config.base_directory, shot_date)
                     destination = dest_dir / fname
                     try:
                         destination = self._ensure_unique_destination(destination)
-                        bar.text(f"({moved} →/{errors} E/{checked} ✓) Moving to: {destination}")
+                        progress_text(f"Moving to: {destination}")
                         self.move(file_path, destination)
                         moved += 1
                     except FileExistsError as exc:
-                        bar.text(f"Skipping (exists): {exc}")
+                        progress_text(f"Skipping (exists): {exc}", log=logging.DEBUG)
                 finally:
                     bar()  # tick regardless
 
